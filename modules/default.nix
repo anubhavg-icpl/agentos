@@ -1,4 +1,4 @@
-# AgentOS system modules - imports all submodules
+# AgentOS system modules — all submodules
 { ... }:
 {
   imports = [
@@ -25,6 +25,7 @@
     # Developer experience
     ./git-automation
     ./provisioning
+    ./editors
 
     # Automation
     ./scheduler
@@ -36,6 +37,12 @@
     ./dev-tools
     ./security-tools
     ./browser-tools
+    ./networking-tools
+    ./cloud-tools
+    ./package-managers
+
+    # AI/ML
+    ./ai-ml
 
     # VIBE integration (853 modes, 5340 skills)
     ./vibe-integration
