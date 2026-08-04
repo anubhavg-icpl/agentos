@@ -1,7 +1,6 @@
 <div align="center">
 
-<!-- IMAGE 1: Hero Banner — generate with docs/prompts/IMAGE-PROMPTS.md #1 -->
-<!-- Replace with: ![AgentOS](assets/hero.png) -->
+<img src="assets/hero.webp" alt="AgentOS" width="100%">
 
 <h1>🤖 AgentOS</h1>
 
@@ -66,13 +65,23 @@ droid     # Factory Droid
 aider     # AI pair programmer
 ```
 
----
+<div align="center">
 
-<!-- IMAGE 2: Architecture Diagram — generate with docs/prompts/IMAGE-PROMPTS.md #2 -->
+<img src="assets/boot-screen.webp" alt="AgentOS Boot Screen" width="90%">
+
+*AgentOS boots into a minimal terminal with all 27 modules loaded.*
+
+</div>
+
+---
 
 ## Pre-installed Agents (22)
 
-<!-- IMAGE 3: Agents Grid — generate with docs/prompts/IMAGE-PROMPTS.md #3 -->
+<div align="center">
+
+<img src="assets/agents-grid.webp" alt="22 Pre-installed AI Agents" width="95%">
+
+</div>
 
 ### Tier 1 — Primary (10)
 
@@ -156,9 +165,33 @@ See [docs/FEATURES.md](docs/FEATURES.md) for detailed documentation.
 
 ---
 
+## Multi-Agent Orchestration
+
+<div align="center">
+
+<img src="assets/swarm.webp" alt="Multi-Agent Swarm Collaboration" width="95%">
+
+*Multiple agents collaborating: planner-worker, swarm, and pipeline modes.*
+
+</div>
+
+Agents can work together through the orchestration module:
+
+```bash
+agentos-orchestrate run "build a REST API" claude-code
+agentos-orchestrate swarm "fix all failing tests" 3
+agentos-orchestrate status
+```
+
+---
+
 ## VIBE Integration
 
-<!-- IMAGE 5: VIBE Integration — generate with docs/prompts/IMAGE-PROMPTS.md #5 -->
+<div align="center">
+
+<img src="assets/vibe-integration.webp" alt="VIBE Library Integration" width="95%">
+
+</div>
 
 On first boot, AgentOS auto-installs the [VIBE library](https://github.com/anubhavg-icpl/vibe) into all 7 agent CLIs:
 
@@ -184,7 +217,11 @@ vibe list                  # List all assets
 
 ## MCP Server Registry (56 servers)
 
-<!-- IMAGE 4: MCP Network — generate with docs/prompts/IMAGE-PROMPTS.md #4 -->
+<div align="center">
+
+<img src="assets/mcp-network.webp" alt="MCP Server Network" width="95%">
+
+</div>
 
 | Category | Count | Servers |
 |----------|-------|---------|
@@ -205,7 +242,49 @@ agentos-mcp stats           # Show statistics
 
 ---
 
+## Budget & Safety
+
+<div align="center">
+
+<img src="assets/security-shield.webp" alt="Budget Controller and Security Shield" width="95%">
+
+*The budget controller prevents runaway spending. The circuit breaker kills runaway agents.*
+
+</div>
+
+| Feature | What It Does |
+|---------|-------------|
+| Budget caps | Per-agent daily/session spending limits (default: $50/day) |
+| Auto-shutdown | Kill agents that exceed their budget |
+| Rate limiting | Max API calls, file writes, shell commands per minute |
+| Circuit breaker | N consecutive failures pauses the agent for 5 minutes |
+| Resource limits | Kill agents exceeding CPU/memory thresholds |
+| Loop detection | Detect and break agents stuck repeating actions |
+| Egress firewall | Default-deny network access, only whitelisted domains |
+
+---
+
+## Observability
+
+<div align="center">
+
+<img src="assets/dashboard.webp" alt="AgentOS Monitoring Dashboard" width="95%">
+
+*Grafana dashboard at port 2342: agent status, token usage, cost tracking, live logs.*
+
+</div>
+
+Full observability stack built-in: OpenTelemetry traces, Prometheus metrics, Tempo distributed tracing, Grafana dashboards.
+
+---
+
 ## Architecture
+
+<div align="center">
+
+<img src="assets/architecture.webp" alt="AgentOS Architecture" width="95%">
+
+</div>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -285,7 +364,8 @@ agentos/
 │   ├── hosts/                     # Host configs (metal + ISO)
 │   └── packages/                  # Internal binaries + CLI
 ├── templates/                     # Agent workspace template
-└── docs/                          # Documentation + prompts
+├── assets/                        # WebP images for README
+└── docs/                          # Documentation
 ```
 
 ---
@@ -317,8 +397,6 @@ agentos/
 - 📖 [ISO-SIZE.md](docs/ISO-SIZE.md) — ISO size analysis
 - 📝 [CHANGELOG.md](CHANGELOG.md) — Version history
 - 🤝 [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute
-- 🎨 [IMAGE-PROMPTS.md](docs/prompts/IMAGE-PROMPTS.md) — Image generation prompts for assets
-- 📣 [SOCIAL-PROMPTS.md](docs/prompts/SOCIAL-PROMPTS.md) — Social media launch content prompts
 
 ---
 
@@ -336,6 +414,8 @@ agentos/
 ---
 
 <div align="center">
+
+<img src="assets/social-preview.webp" alt="AgentOS Social Preview" width="60%">
 
 ## License
 
