@@ -1,0 +1,306 @@
+# ═══════════════════════════════════════════════════════════════════════
+# AgentOS Git Automation Module
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Makes agents git-native:
+#   - Auto-create branches per agent session
+#   - Auto-commit after each meaningful change
+#   - Auto-generate commit messages from diffs
+#   - Create PRs when agent work is complete
+#   - Merge conflict detection and notification
+#   - Git hooks for quality gates (tests must pass before commit)
+#   - Diff visualization for human review
+#
+{ config, pkgs, lib, ... }:
+
+let
+  cfg = config.agentos.git-automation;
+in
+{
+  options.agentos.git-automation = {
+    enable = lib.mkEnableOption "AgentOS git automation";
+
+    autoBranch = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Automatically create a new branch per agent session";
+    };
+
+    branchPrefix = lib.mkOption {
+      type = lib.types.str;
+      default = "agent/";
+      description = "Prefix for agent-created branches";
+    };
+
+    autoCommit = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Automatically commit changes after each agent action";
+    };
+
+    autoPR = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Automatically create a PR when agent work is done";
+    };
+
+    requireTestsPass = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Require tests to pass before allowing commits";
+    };
+
+    commitMessageStyle = lib.mkOption {
+      type = lib.types.enum [ "conventional" "descriptive" "emoji" ];
+      default = "conventional";
+      description = "Style for auto-generated commit messages";
+    };
+  };
+
+  config = lib.mkIf cfg.enable {
+    # ─ Global git config for agents ──────────────────────────────────
+    programs.git = {
+      enable = true;
+      config = {
+        user = {
+          name = "AgentOS";
+          email = "agent@agentos.local";
+        };
+        init = {
+          defaultBranch = "main";
+        };
+        pull = {
+          rebase = true;
+        };
+        push = {
+          autoSetupRemote = true;
+        };
+        commit = {
+          gpgsign = false;
+        };
+        safe = {
+          directory = "*";
+        };
+      };
+    };
+
+    # ─ Git hooks installer ───────────────────────────────────────────
+    environment.etc."agentos/git-hooks/pre-commit".source = pkgs.writeShellScript "pre-commit" ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # AgentOS pre-commit hook
+      # Runs quality checks before allowing commits
+
+      RED='\033[0;31m'
+      GREEN='\033[0;32m'
+      NC='\033[0m'
+
+      # Check if tests exist and run them
+      if [ -f Makefile ] && grep -q "^test:" Makefile 2>/dev/null; then
+        echo "[agentos] Running tests..."
+        if ! make test 2>&1; then
+          echo -e "''${RED}[agentos] Tests failed. Commit blocked.''${NC}"
+          exit 1
+        fi
+      fi
+
+      # Check for common issues
+      # Block secrets from being committed
+      if git diff --cached | grep -iE '(api_key|secret|password|token)\s*=\s*["\x27]' 2>/dev/null; then
+        echo -e "''${RED}[agentos] Possible secret detected. Commit blocked.''${NC}"
+        echo "If this is a false positive, commit with --no-verify"
+        exit 1
+      fi
+
+      # Block large files
+      MAX_SIZE=$((10 * 1024 * 1024))  # 10MB
+      for file in $(git diff --cached --name-only); do
+        if [ -f "$file" ]; then
+          size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+          if [ "$size" -gt "$MAX_SIZE" ]; then
+            echo -e "''${RED}[agentos] File too large: $file ($((size / 1024 / 1024))MB). Commit blocked.''${NC}"
+            exit 1
+          fi
+        fi
+      done
+
+      echo -e "''${GREEN}[agentos] Pre-commit checks passed.''${NC}"
+    '';
+
+    environment.etc."agentos/git-hooks/prepare-commit-msg".source = pkgs.writeShellScript "prepare-commit-msg" ''
+      #!/usr/bin/env bash
+      # Auto-generate commit message if none provided
+      COMMIT_MSG_FILE="$1"
+      COMMIT_SOURCE="$2"
+
+      # Only auto-generate for agent commits (not merges/amends)
+      if [ -n "$COMMIT_SOURCE" ]; then
+        exit 0
+      fi
+
+      # Check if message is already set
+      if [ -s "$COMMIT_MSG_FILE" ]; then
+        exit 0
+      fi
+
+      # Generate from diff
+      DIFF=$(git diff --cached --stat 2>/dev/null)
+      if [ -z "$DIFF" ]; then
+        exit 0
+      fi
+
+      FILES=$(echo "$DIFF" | wc -l)
+      INSERTIONS=$(git diff --cached --shortstat 2>/dev/null | grep -oP '\d+(?= insertion)')
+      DELETIONS=$(git diff --cached --shortstat 2>/dev/null | grep -oP '\d+(?= deletion)')
+
+      cat > "$COMMIT_MSG_FILE" <<EOF
+      feat(agent): automated change
+
+      Files changed: $FILES
+      Insertions: ''${INSERTIONS:-0}
+      Deletions: ''${DELETIONS:-0}
+
+      Generated by AgentOS
+      EOF
+    '';
+
+    # ─ Git automation CLI ────────────────────────────────────────────
+    environment.systemPackages = [
+      (pkgs.writeShellScriptBin "agentos-git" ''
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        GREEN='\033[0;32m'
+        BLUE='\033[0;34m'
+        YELLOW='\033[1;33m'
+        NC='\033[0m'
+        info()  { echo -e "''${BLUE}[INFO]''${NC} $*"; }
+        ok()    { echo -e "''${GREEN}[OK]''${NC} $*"; }
+        warn()  { echo -e "''${YELLOW}[WARN]''${NC} $*"; }
+
+        PREFIX="${cfg.branchPrefix}"
+
+        case "''${1:-help}" in
+          init)
+            # Initialize a workspace with agent git hooks
+            if [ ! -d .git ]; then
+              git init --quiet
+              ok "Initialized git repo"
+            fi
+            # Install hooks
+            mkdir -p .git/hooks
+            cp /etc/agentos/git-hooks/pre-commit .git/hooks/pre-commit 2>/dev/null || true
+            cp /etc/agentos/git-hooks/prepare-commit-msg .git/hooks/prepare-commit-msg 2>/dev/null || true
+            chmod +x .git/hooks/*
+            ok "Agent git hooks installed"
+            ;;
+
+          branch)
+            # Create an agent branch
+            AGENT="''${2:-agent}"
+            BRANCH="$PREFIX$AGENT-$(date +%Y%m%d-%H%M%S)"
+            git checkout -b "$BRANCH"
+            ok "Created branch: $BRANCH"
+            echo "$BRANCH"
+            ;;
+
+          commit)
+            # Auto-commit changes
+            MSG="''${2:-}"
+            git add -A
+            if git diff --cached --quiet; then
+              warn "No changes to commit"
+              exit 0
+            fi
+            if [ -z "$MSG" ]; then
+              # Generate commit message
+              FILES=$(git diff --cached --stat | tail -1)
+              MSG="feat(agent): $FILES"
+            fi
+            git commit -m "$MSG" --quiet
+            ok "Committed: $MSG"
+            ;;
+
+          pr)
+            # Create a PR (requires GitHub CLI)
+            TITLE="''${2:-Agent: automated changes}"
+            BODY="## Summary
+            Automated changes by AgentOS agent.
+
+            ## Changes
+            $(git log main..HEAD --oneline 2>/dev/null || git log master..HEAD --oneline 2>/dev/null)
+
+            ## Diff
+            $(git diff main..HEAD --stat 2>/dev/null || git diff master..HEAD --stat 2>/dev/null)
+            ---
+            _Generated by AgentOS_"
+
+            if command -v gh &>/dev/null; then
+              gh pr create --title "$TITLE" --body "$BODY" --fill 2>/dev/null || \
+                gh pr create --title "$TITLE" --body "$BODY"
+              ok "PR created"
+            else
+              warn "GitHub CLI not available. Push branch manually:"
+              echo "  git push -u origin HEAD"
+            fi
+            ;;
+
+          snapshot)
+            # Create a quick checkpoint commit
+            git add -A
+            git commit --allow-empty -m "checkpoint(agent): snapshot at $(date -Iseconds)" --quiet 2>/dev/null || true
+            ok "Snapshot committed"
+            ;;
+
+          undo)
+            # Undo last commit but keep changes
+            git reset --soft HEAD~1
+            ok "Undid last commit (changes preserved)"
+            ;;
+
+          diffstat)
+            # Show diff from main
+            BASE=$(git rev-parse --verify main 2>/dev/null && echo main || echo master)
+            git diff "$BASE"..HEAD --stat
+            ;;
+
+          hooks)
+            # Install hooks in current repo
+            mkdir -p .git/hooks
+            cp /etc/agentos/git-hooks/* .git/hooks/ 2>/dev/null || warn "No hooks found"
+            chmod +x .git/hooks/*
+            ok "Hooks installed"
+            ;;
+
+          help|*)
+            cat <<'HELP'
+        AgentOS Git Automation
+
+        USAGE:
+            agentos-git <COMMAND> [ARGS]
+
+        COMMANDS:
+            init                 Initialize workspace with agent hooks
+            branch [agent-name]  Create an agent branch
+            commit [message]     Auto-commit changes
+            pr [title]           Create a pull request
+            snapshot             Create a checkpoint commit
+            undo                 Undo last commit (keep changes)
+            diffstat             Show diff from main
+            hooks                Install git hooks in current repo
+
+        CONFIG:
+            Auto-branch:    ${lib.boolToString cfg.autoBranch}
+            Auto-commit:    ${lib.boolToString cfg.autoCommit}
+            Auto-PR:        ${lib.boolToString cfg.autoPR}
+            Require tests:  ${lib.boolToString cfg.requireTestsPass}
+            Branch prefix:  ${cfg.branchPrefix}
+
+        HELP
+            ;;
+        esac
+      '')
+    ];
+  };
+}

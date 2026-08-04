@@ -1,0 +1,322 @@
+# ═══════════════════════════════════════════════════════════════════════
+# AgentOS MCP Tool Registry Module
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Manages MCP (Model Context Protocol) tool servers:
+#   - Auto-discovery of MCP servers on the network
+#   - Per-agent tool permissions
+#   - Tool version management
+#   - Health checking for tool servers
+#   - A marketplace-like registry of available tools
+#
+# MCP tools let agents do things beyond file editing:
+#   - Browser automation (Puppeteer, Playwright)
+#   - Database access (Postgres, SQLite, Redis)
+#   - Cloud APIs (AWS, GCP, Azure)
+#   - SaaS integrations (Slack, GitHub, Linear, Jira)
+#   - Code analysis (Semgrep, CodeQL)
+#   - Diagram generation (Mermaid, PlantUML)
+#
+{ config, pkgs, lib, ... }:
+
+let
+  cfg = config.agentos.mcp-registry;
+in
+{
+  options.agentos.mcp-registry = {
+    enable = lib.mkEnableOption "AgentOS MCP tool registry";
+
+    registryPort = lib.mkOption {
+      type = lib.types.port;
+      default = 9945;
+      description = "Port for the MCP registry API";
+    };
+
+    enableBuiltinTools = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Enable built-in MCP tool servers";
+    };
+
+    extraToolServers = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          command = lib.mkOption {
+            type = lib.types.str;
+            description = "Command to start the MCP server";
+          };
+          args = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [ ];
+            description = "Command arguments";
+          };
+          env = lib.mkOption {
+            type = lib.types.attrsOf lib.types.str;
+            default = { };
+            description = "Environment variables";
+          };
+          enabled = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+          };
+        };
+      });
+      default = { };
+      description = "Additional MCP tool servers to register";
+    };
+  };
+
+  config = lib.mkIf cfg.enable {
+    # ─ Built-in MCP tool servers config ──────────────────────────────
+    environment.etc."agentos/mcp-tools.json".text = builtins.toJSON {
+      tools = [
+        {
+          name = "filesystem";
+          description = "Read, write, and search files";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-filesystem" "/var/lib/agentos/workspaces" ];
+          category = "core";
+          enabled = true;
+        }
+        {
+          name = "git";
+          description = "Git operations (commit, branch, diff, log)";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-git" ];
+          category = "core";
+          enabled = true;
+        }
+        {
+          name = "github";
+          description = "GitHub API (issues, PRs, actions)";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-github" ];
+          env = { GITHUB_PERSONAL_ACCESS_TOKEN = "\${GITHUB_TOKEN}"; };
+          category = "integration";
+          enabled = true;
+        }
+        {
+          name = "postgres";
+          description = "PostgreSQL database access";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-postgres" ];
+          category = "database";
+          enabled = false;
+        }
+        {
+          name = "sqlite";
+          description = "SQLite database access";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-sqlite" ];
+          category = "database";
+          enabled = true;
+        }
+        {
+          name = "fetch";
+          description = "Fetch web pages and APIs";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-fetch" ];
+          category = "web";
+          enabled = true;
+        }
+        {
+          name = "memory";
+          description = "Persistent key-value memory";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-memory" ];
+          category = "core";
+          enabled = true;
+        }
+        {
+          name = "puppeteer";
+          description = "Browser automation";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-puppeteer" ];
+          category = "browser";
+          enabled = false;
+        }
+        {
+          name = "brave-search";
+          description = "Web search via Brave API";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-brave-search" ];
+          env = { BRAVE_API_KEY = "\${BRAVE_API_KEY}"; };
+          category = "web";
+          enabled = false;
+        }
+        {
+          name = "sequential-thinking";
+          description = "Step-by-step reasoning tool";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-sequential-thinking" ];
+          category = "reasoning";
+          enabled = true;
+        }
+        {
+          name = "slack";
+          description = "Slack messaging integration";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-slack" ];
+          env = { SLACK_BOT_TOKEN = "\${SLACK_BOT_TOKEN}"; };
+          category = "integration";
+          enabled = false;
+        }
+        {
+          name = "linear";
+          description = "Linear issue tracking";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-linear" ];
+          env = { LINEAR_API_KEY = "\${LINEAR_API_KEY}"; };
+          category = "integration";
+          enabled = false;
+        }
+        {
+          name = "sentry";
+          description = "Sentry error tracking";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-sentry" ];
+          env = { SENTRY_AUTH_TOKEN = "\${SENTRY_TOKEN}"; };
+          category = "integration";
+          enabled = false;
+        }
+        {
+          name = "semgrep";
+          description = "Code security analysis";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-semgrep" ];
+          category = "security";
+          enabled = true;
+        }
+        {
+          name = "mermaid";
+          description = "Generate diagrams from text";
+          command = "npx";
+          args = [ "@modelcontextprotocol/server-mermaid" ];
+          category = "visualization";
+          enabled = true;
+        }
+      ];
+    };
+
+    # ─ MCP Registry Service ──────────────────────────────────────────
+    systemd.services.agentos-mcp-registry = {
+      description = "AgentOS MCP Tool Registry";
+      after = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
+
+      environment = {
+        AGENTOS_MCP_REGISTRY_PORT = toString cfg.registryPort;
+        AGENTOS_MCP_TOOLS_CONFIG = "/etc/agentos/mcp-tools.json";
+      };
+
+      serviceConfig = {
+        Type = "simple";
+        User = "agentos";
+        Group = "agentos";
+        ExecStart = "${pkgs.agentos.mcp-registry}/bin/agentos-mcp-registry";
+        Restart = "on-failure";
+        RestartSec = 3;
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ReadWritePaths = [ "/var/lib/agentos" ];
+      };
+    };
+
+    # ─ MCP tool management CLI ───────────────────────────────────────
+    environment.systemPackages = [
+      (pkgs.writeShellScriptBin "agentos-tools" ''
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        GREEN='\033[0;32m'
+        BLUE='\033[0;34m'
+        YELLOW='\033[1;33m'
+        NC='\033[0m'
+        info()  { echo -e "''${BLUE}[INFO]''${NC} $*"; }
+        ok()    { echo -e "''${GREEN}[OK]''${NC} $*"; }
+        warn()  { echo -e "''${YELLOW}[WARN]''${NC} $*"; }
+
+        CONFIG="/etc/agentos/mcp-tools.json"
+        REGISTRY="http://localhost:${toString cfg.registryPort}"
+
+        case "''${1:-list}" in
+          list)
+            info "Available MCP tools:"
+            echo ""
+            ${pkgs.jq}/bin/jq -r '.tools[] | select(.enabled) | "  \(.name)\t\(.description)"' "$CONFIG" 2>/dev/null | \
+              column -t -s $'\t'
+            echo ""
+            warn "Disabled tools:"
+            ${pkgs.jq}/bin/jq -r '.tools[] | select(.not.enabled) | "  \(.name)\t\(.description)"' "$CONFIG" 2>/dev/null | \
+              column -t -s $'\t' || true
+            ;;
+
+          enable)
+            TOOL="''${2:-}"
+            if [ -z "$TOOL" ]; then
+              echo "Usage: agentos-tools enable <tool-name>"
+              exit 1
+            fi
+            info "Enabling tool: $TOOL"
+            ${pkgs.jq}/bin/jq ".tools |= map(if .name == \"$TOOL\" then .enabled = true else .)" "$CONFIG" > /tmp/mcp-tools.json
+            ${pkgs.install}/bin/install -m 644 /tmp/mcp-tools.json "$CONFIG"
+            ok "Enabled: $TOOL"
+            systemctl restart agentos-mcp-registry
+            ;;
+
+          disable)
+            TOOL="''${2:-}"
+            if [ -z "$TOOL" ]; then
+              echo "Usage: agentos-tools disable <tool-name>"
+              exit 1
+            fi
+            info "Disabling tool: $TOOL"
+            ${pkgs.jq}/bin/jq ".tools |= map(if .name == \"$TOOL\" then .enabled = false else .)" "$CONFIG" > /tmp/mcp-tools.json
+            ${pkgs.install}/bin/install -m 644 /tmp/mcp-tools.json "$CONFIG"
+            ok "Disabled: $TOOL"
+            systemctl restart agentos-mcp-registry
+            ;;
+
+          status)
+            info "MCP Registry status:"
+            ${pkgs.curl}/bin/curl -s "$REGISTRY/health" 2>/dev/null && echo "" || warn "Registry not responding"
+            echo ""
+            echo "Registered tools:"
+            ${pkgs.curl}/bin/curl -s "$REGISTRY/tools" 2>/dev/null | \
+              ${pkgs.jq}/bin/jq -r '.[] | "  \(.name): \(.status)"' 2>/dev/null || echo "  (no response)"
+            ;;
+
+          add)
+            NAME="''${2:-}"
+            CMD="''${3:-}"
+            if [ -z "$NAME" ] || [ -z "$CMD" ]; then
+              echo "Usage: agentos-tools add <name> <command>"
+              exit 1
+            fi
+            info "Adding custom tool: $NAME"
+            ${pkgs.jq}/bin/jq ".tools += [{name: \"$NAME\", command: \"$CMD\", enabled: true, category: \"custom\"}]" "$CONFIG" > /tmp/mcp-tools.json
+            ${pkgs.install}/bin/install -m 644 /tmp/mcp-tools.json "$CONFIG"
+            ok "Added: $NAME"
+            systemctl restart agentos-mcp-registry
+            ;;
+
+          test)
+            TOOL="''${2:-}"
+            if [ -z "$TOOL" ]; then
+              echo "Usage: agentos-tools test <tool-name>"
+              exit 1
+            fi
+            info "Testing tool: $TOOL"
+            ${pkgs.curl}/bin/curl -s "$REGISTRY/tools/$TOOL/health" 2>/dev/null | ${pkgs.jq}/bin/jq . || warn "Test failed"
+            ;;
+
+          *)
+            echo "Usage: agentos-tools <list|enable|disable|status|add|test> [args]"
+            ;;
+        esac
+      '')
+    ];
+
+    networking.firewall.allowedTCPPorts = [ cfg.registryPort ];
+  };
+}
