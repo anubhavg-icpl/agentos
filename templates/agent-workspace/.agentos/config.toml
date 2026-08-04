@@ -1,0 +1,29 @@
+# AgentOS workspace configuration
+# This file tells AgentOS how to manage this workspace.
+
+[workspace]
+name = "my-project"
+persistent = false  # set true to survive GC
+
+[permissions]
+# What tools can agents use in this workspace?
+file_read = true
+file_write = true
+shell_exec = true
+network_egress = "limited"  # deny | limited | allow
+install_packages = true
+
+[budget]
+max_daily_usd = 20.0
+max_session_usd = 100.0
+
+[agents]
+# Which agents are allowed in this workspace?
+# Add agent names to enable them
+# allowed = ["claude-code", "aider", "swe-agent"]
+allowed = []
+
+[git]
+auto_commit = true
+auto_branch = true  # create a new branch per agent session
+branch_prefix = "agent/"
