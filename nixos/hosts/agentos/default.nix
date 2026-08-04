@@ -138,6 +138,37 @@
       enable = true;
       maxConcurrent = 4;
     };
+    # Pre-installed toolchains (20+ languages, databases, dev tools)
+    language-toolchains = {
+      enable = true;
+      enableAll = true;
+    };
+    databases = {
+      enable = true;
+      enablePostgres = true;
+      enableRedis = true;
+      enableDuckDB = true;
+    };
+    dev-tools.enable = true;
+    security-tools.enable = true;
+    browser-tools.enable = true;
+
+    # VIBE integration (853 modes, 5340 skills, 200 agents)
+    vibe-integration = {
+      enable = true;
+      autoInstallOnBoot = true;
+    };
+
+    # MCP server registry (50+ preconfigured servers)
+    mcp-servers = {
+      enable = true;
+      enableCore = true;
+      enableDatabases = true;
+      enableBrowser = true;
+      enableAI = true;
+      enableDevOps = true;
+      enableData = true;
+    };
   };
 
   # ════════════════════════════════════════════════════════════════════

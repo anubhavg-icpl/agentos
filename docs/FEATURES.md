@@ -283,3 +283,89 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 | Scheduler | scheduler | `agentos-schedule` | ✅ |
 | Notifications | notifications | `agentos-notify` | ✅ |
 | 22 Coding Agents | agents | `agentos agents` | ✅ |
+
+---
+
+## VIBE Integration (anubhavg-icpl/vibe)
+
+AgentOS ships with the entire VIBE library pre-installed into every agent CLI.
+
+| Asset Type | Count | Description |
+|-----------|-------|-------------|
+| Modes | 853 | Expert chat modes across 52 categories |
+| Skills | 5340 | Reusable skill bundles |
+| Subagents | 200 | Specialized workers in 10 categories |
+| Commands | 112 | Slash commands in 8 categories |
+| Plugins | 120 | Plugin trees with agents + commands |
+| Rules | 111 | Universal behavior policies |
+| Prompts | 106 | Domain prompt templates |
+| System Prompts | 759 | Reference system prompts |
+| Recipes | 18 | End-to-end workflows |
+
+**Auto-install:** On first boot, VIBE installs into Claude Code, Codex, Cursor, OpenCode, Gemini, Copilot, and Droid.
+
+**CLI:**
+```bash
+agentos-vibe install     # Install into all agents
+agentos-vibe status      # Check installation
+agentos-vibe categories  # List 52 categories
+agentos-vibe search rag  # Search library
+agentos-vibe add <name>  # Install specific asset
+
+# Direct VIBE CLI also available:
+vibe                     # Interactive picker
+vibe list                # List all assets
+vibe search "security"   # Search
+```
+
+---
+
+## MCP Server Registry (50+ servers)
+
+Preconfigured Model Context Protocol servers extending agent capabilities.
+
+### Core (10 servers)
+| Server | Description |
+|--------|-------------|
+| filesystem | Read, write, search files |
+| git | Git operations (commit, branch, diff) |
+| memory | Persistent key-value memory graph |
+| fetch | Fetch web pages, convert to markdown |
+| sequential-thinking | Step-by-step reasoning with branching |
+| time | Time and timezone tools |
+| everything | All-in-one server |
+| exec | Shell command execution |
+| filesystem-watch | Watch files for changes |
+| clipboard | System clipboard read/write |
+
+### Database (8 servers)
+postgres, sqlite, mysql, redis, mongo, duckdb, clickhouse, surrealdb
+
+### Cloud (8 servers)
+aws, gcp, azure, cloudflare, vercel, fly, railway, supabase
+
+### Integration (12 servers)
+github, gitlab, linear, jira, slack, discord, notion, sentry, datadog, pagerduty, asana, trello
+
+### Browser (4 servers)
+puppeteer, playwright, browserbase, selenium
+
+### AI/ML (4 servers)
+openai-tools, anthropic-tools, replicate, huggingface
+
+### DevOps (6 servers)
+docker, kubernetes, terraform, ansible, grafana, prometheus
+
+### Data/Search (4 servers)
+brave-search, tavily, exa, perplexity
+
+**CLI:**
+```bash
+agentos-mcp list                 # List all servers
+agentos-mcp list database        # Filter by category
+agentos-mcp enable puppeteer     # Enable a server
+agentos-mcp disable sqlite       # Disable a server
+agentos-mcp enable-all           # Enable everything
+agentos-mcp test github          # Health check
+agentos-mcp stats                # Registry statistics
+```
