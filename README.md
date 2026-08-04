@@ -1,181 +1,247 @@
 <div align="center">
 
-<img src="assets/hero.webp" alt="AgentOS" width="100%">
+<img src="assets/hero.webp" alt="AgentOS — An OS for AI Coding Agents" width="100%">
 
-<h1>🤖 AgentOS</h1>
+<br/>
 
-**An operating system designed for AI coding agents.**
+<h1>AgentOS</h1>
+
+<p><strong>The operating system built for AI coding agents.</strong></p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-  <a href="modules/"><img src="https://img.shields.io/badge/Modules-27-blue" alt="Modules"></a>
-  <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/Agents-22-green" alt="Agents"></a>
-  <a href="docs/FEATURES.md"><img src="https://img.shields.io/badge/MCP%20Servers-56-purple" alt="MCP"></a>
-  <a href="https://github.com/anubhavg-icpl/vibe"><img src="https://img.shields.io/badge/VIBE%20Skills-5340-orange" alt="VIBE"></a>
-  <a href="https://nixos.org"><img src="https://img.shields.io/badge/Built%20on-NixOS-7E2F8E" alt="NixOS"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License"></a>
+  <a href="modules/"><img src="https://img.shields.io/badge/Modules-27-blue?style=flat-square" alt="Modules"></a>
+  <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/Agents-22-green?style=flat-square" alt="Agents"></a>
+  <a href="docs/FEATURES.md"><img src="https://img.shields.io/badge/MCP%20Servers-56-purple?style=flat-square" alt="MCP"></a>
+  <a href="https://github.com/anubhavg-icpl/vibe"><img src="https://img.shields.io/badge/VIBE%20Skills-5340-orange?style=flat-square" alt="VIBE"></a>
+  <a href="https://nixos.org"><img src="https://img.shields.io/badge/Platform-NixOS-7E2F8E?style=flat-square" alt="NixOS"></a>
 </p>
 
-<h3>22 AI Agents · 5340 Skills · 56 MCP Servers · 27 Modules · 20+ Languages</h3>
+<p>
+  <a href="#getting-started"><b>Getting Started</b></a> ·
+  <a href="#agents"><b>Agents</b></a> ·
+  <a href="#features"><b>Features</b></a> ·
+  <a href="#architecture"><b>Architecture</b></a> ·
+  <a href="#documentation"><b>Docs</b></a> ·
+  <a href="#contributing"><b>Contributing</b></a>
+</p>
 
-[Quick Start](#quick-start) ·
-[Agents](#pre-installed-agents-22) ·
-[Features](#feature-modules-27) ·
-[VIBE](#vibe-integration) ·
-[Architecture](#architecture) ·
-[Docs](#documentation)
+---
 
+</div>
+
+## Overview
+
+AgentOS is a minimal, NixOS-based operating system where the primary users are **AI coding agents**, not humans. It ships with 22 agents pre-installed, 5,340 expert skills auto-loaded from the VIBE library, 56 MCP tool servers configured, and a complete infrastructure layer for safe, observable, cost-controlled agent execution.
+
+Every layer, from the kernel to the filesystem to the network stack, is optimized for programs that read, write, and execute code autonomously.
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><h3>22</h3><p>Coding Agents</p></td>
+<td align="center"><h3>5,340</h3><p>VIBE Skills</p></td>
+<td align="center"><h3>56</h3><p>MCP Servers</p></td>
+<td align="center"><h3>27</h3><p>NixOS Modules</p></td>
+<td align="center"><h3>20+</h3><p>Language Runtimes</p></td>
+</tr>
+</table>
 </div>
 
 ---
 
-## Why does this exist?
+## The Problem
 
-In 2026, AI coding agents write, test, and deploy most of our code. So why are we still running them on operating systems designed for humans clicking around a desktop?
+AI coding agents are powerful, but running them on a traditional OS is a struggle:
 
-**Agents need:**
-- Sandboxed execution environments (not a shared shell)
-- Budget caps (so they don't burn $1000 in an hour)
-- Git automation (every change tracked, committed, PR'd)
-- Tool access (GitHub, databases, browsers, search)
-- Observability (traces, metrics, cost dashboards)
-- Reproducible environments (bit-for-bit identical)
-
-AgentOS provides all of this, built-in, on a minimal NixOS base.
+| Without AgentOS | With AgentOS |
+|:---|:---|
+| Agents share your shell, filesystem, and network | Each agent runs in an isolated container |
+| No spending caps — a runaway agent burns $1,000 in an hour | Per-agent budget caps with automatic shutdown |
+| Changes are untracked, manual commits | Auto-branch, auto-commit, auto-PR per session |
+| No tool access without manual setup | 56 MCP servers pre-configured (GitHub, DBs, browsers) |
+| No observability into what the agent did | Full traces: OpenTelemetry + Prometheus + Grafana |
+| "Works on my machine" environments | Bit-for-bit reproducible NixOS environments |
 
 ---
 
-## Quick Start
+## Getting Started
+
+**Prerequisites:** [Nix](https://nixos.org) with flakes enabled.
 
 ```bash
-# Build the ISO (requires Nix with flakes)
+# 1. Build the bootable ISO
 nix build .#iso-image
 
-# Flash to USB
+# 2. Flash to USB (or skip to VM)
 dd if=result/iso/agentos-*.iso of=/dev/sdX bs=4M status=progress
 
-# Or run in a VM
+# 3. Boot from USB and install, or run in a VM:
 nix build .#vm-image
 qemu-system-x86_64 -m 4096 -enable-kvm -hda result/nixos.qcow2
 
-# SSH in and start coding
+# 4. SSH in
 ssh admin@agentos
-claude    # Anthropic Claude Code
-codex     # OpenAI Codex CLI
-droid     # Factory Droid
-aider     # AI pair programmer
+
+# 5. Start any agent — they're all pre-installed
+claude           # Anthropic Claude Code
+codex            # OpenAI Codex CLI
+droid            # Factory Droid
+aider            # AI pair programmer
+agentos agents   # See all 22 agents
 ```
 
 <div align="center">
+<img src="assets/boot-screen.webp" alt="AgentOS Boot Screen" width="88%">
 
-<img src="assets/boot-screen.webp" alt="AgentOS Boot Screen" width="90%">
-
-*AgentOS boots into a minimal terminal with all 27 modules loaded.*
-
+<sub><i>AgentOS boots into a minimal terminal. All 27 modules load automatically. SSH in and start coding.</i></sub>
 </div>
 
 ---
 
-## Pre-installed Agents (22)
+## Agents
 
 <div align="center">
-
-<img src="assets/agents-grid.webp" alt="22 Pre-installed AI Agents" width="95%">
-
+<img src="assets/agents-grid.webp" alt="22 Pre-installed AI Coding Agents" width="92%">
 </div>
 
-### Tier 1 — Primary (10)
+<br/>
+
+22 coding agents ship pre-installed. Each gets the same shared base tools (git, ripgrep, fd, gh) so they all work identically regardless of runtime.
+
+### Tier 1 — Primary Production Agents
+
+| Command | Agent | Provider | Focus |
+|:---|:---|:---|:---|
+| `claude` | Claude Code | Anthropic | Agentic coding CLI |
+| `codex` | Codex CLI | OpenAI | Terminal coding agent |
+| `droid` | Factory Droid | Factory AI | Software engineering agent |
+| `aider` | Aider | Open Source | AI pair programming |
+| `gemini` | Gemini CLI | Google | Gemini-powered coding |
+| `qwen-code` | Qwen Code | Alibaba | Qwen coding agent |
+| `amp` | Amp | Sourcegraph | Code intelligence agent |
+| `goose` | Goose | Block | Open-source AI agent |
+| `opencode` | OpenCode | SST | Open-source coding agent |
+| `crush` | Crush | Charm | Terminal AI agent |
+
+### Tier 2 — Extended Agents
 
 | Command | Agent | Provider |
-|---------|-------|----------|
-| `claude` | Claude Code | Anthropic |
-| `codex` | Codex CLI | OpenAI |
-| `droid` | Factory Droid | Factory AI |
-| `aider` | Aider | Open source |
-| `gemini` | Gemini CLI | Google |
-| `qwen-code` | Qwen Code | Alibaba |
-| `amp` | Amp | Sourcegraph |
-| `goose` | Goose | Block |
-| `opencode` | OpenCode | SST |
-| `crush` | Crush | Charm |
-
-### Tier 2 — Extended (6)
-
-| Command | Agent | Provider |
-|---------|-------|----------|
+|:---|:---|:---|
 | `cursor` | Cursor CLI | Cursor |
-| `cline` | Cline | Open source |
-| `continue` | Continue | Open source |
-| `copilot` | GitHub Copilot | GitHub |
-| `devin` | Devin | Cognition |
-| `roo` | Roo Code | Open source |
+| `cline` | Cline | Open Source |
+| `continue` | Continue Dev | Open Source |
+| `copilot` | GitHub Copilot CLI | GitHub |
+| `devin` | Devin CLI | Cognition |
+| `roo` | Roo Code | Open Source |
 
-### Tier 3 — Research (6)
+### Tier 3 — Research & Experimental
 
 | Command | Agent | Provider |
-|---------|-------|----------|
-| `interpreter` | Open Interpreter | Open source |
+|:---|:---|:---|
+| `interpreter` | Open Interpreter | Open Source |
 | `sweagent` | SWE-Agent | Princeton |
-| `gpt-engineer` | GPT-Engineer | Open source |
-| `devika` | Devika | Open source |
-| `autogpt` | AutoGPT | Open source |
-| `smol-developer` | smol-developer | Open source |
+| `gpt-engineer` | GPT-Engineer | Open Source |
+| `devika` | Devika | Open Source |
+| `autogpt` | AutoGPT | Open Source |
+| `smol-developer` | smol-developer | Open Source |
+
+<details>
+<summary><b>Run agents (click to expand)</b></summary>
 
 ```bash
-agentos agents      # List all 22 agents
-agentos spawn claude-code --workspace ./myproject   # Managed mode
+# Standalone (direct)
+claude
+aider --model claude-sonnet-4-20250514
+codex "fix the bug"
+
+# Managed (sandboxed, tracked, budget-capped)
+agentos spawn claude-code --workspace ./myproject
+agentos spawn aider --model claude-sonnet-4-20250514
+agentos list           # see running agents
+agentos logs <id>      # tail agent logs
+agentos kill <id>      # stop an agent
+agentos budget         # check spend
 ```
 
-See [docs/AGENTS.md](docs/AGENTS.md) for complete reference.
+</details>
+
+📄 **Full reference:** [docs/AGENTS.md](docs/AGENTS.md)
 
 ---
 
-## Feature Modules (27)
-
-| Module | Description | CLI Command |
-|--------|-------------|-------------|
-| 🏗️ **runtime** | Containerd isolation, agent daemon | `agentos spawn` |
-| 🔒 **security** | AppArmor, default-deny egress, audit | automatic |
-| 📊 **observability** | Prometheus + Tempo + Grafana | Grafana `:2342` |
-| 💾 **storage** | btrfs snapshots, dedup, workspace GC | `agentos snapshot` |
-| 🌐 **networking** | Model API gateway, egress firewall | automatic |
-| 🧠 **context** | Qdrant vector DB, persistent memory | `agentos-memory` |
-| 🤝 **orchestration** | Multi-agent coordination | `agentos-orchestrate` |
-| 🔌 **mcp-registry** | 15+ core MCP tools | `agentos-tools` |
-| 🔌 **mcp-servers** | 56 MCP servers (8 categories) | `agentos-mcp` |
-| 💰 **budget-controller** | Per-agent cost caps, auto-shutdown | `agentos-budget` |
-| ⚡ **circuit-breaker** | Rate limiting, runaway detection | `agentos-breaker` |
-| 🔑 **secrets-manager** | sops-nix encrypted API keys | `agentos-secrets` |
-| 📝 **git-automation** | Auto-branch, auto-commit, auto-PR | `agentos-git` |
-| 📦 **provisioning** | Env detection, Nix dev shells | `agentos-env` |
-| ⏰ **scheduler** | Cron-like task scheduling | `agentos-schedule` |
-| 🔔 **notifications** | Slack, Discord, email, webhook | `agentos-notify` |
-| 🐍 **language-toolchains** | 20+ runtimes pre-installed | `agentos-langs` |
-| 🗄️ **databases** | Postgres, Redis, SQLite, DuckDB | `agentos-db` |
-| 🛠️ **dev-tools** | 100+ developer utilities | automatic |
-| 🛡️ **security-tools** | Semgrep, trivy, nmap, ghidra | `agentos-scan` |
-| 🌍 **browser-tools** | Chromium, Playwright, Puppeteer | `agentos-web` |
-| 📡 **networking-tools** | nmap, tcpdump, wireshark | automatic |
-| ☁️ **cloud-tools** | AWS, GCP, Azure, CF, Vercel CLIs | automatic |
-| 📋 **package-managers** | pip, npm, cargo, bundler, maven | automatic |
-| ✏️ **editors** | Neovim (LSP configured), Helix | automatic |
-| 🤖 **ai-ml** | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
-| ✨ **vibe-integration** | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
-
-See [docs/FEATURES.md](docs/FEATURES.md) for detailed documentation.
-
----
-
-## Multi-Agent Orchestration
+## Features
 
 <div align="center">
+<table>
+<tr>
+<td valign="top" width="33%">
 
-<img src="assets/swarm.webp" alt="Multi-Agent Swarm Collaboration" width="95%">
+**Infrastructure**
+- 🏗️ Container runtime (containerd)
+- 💾 btrfs snapshots + dedup
+- 🌐 Model API gateway
+- 🔒 AppArmor + egress firewall
+- 📊 Prometheus + Grafana
 
-*Multiple agents collaborating: planner-worker, swarm, and pipeline modes.*
+</td>
+<td valign="top" width="33%">
 
+**Agent Intelligence**
+- 🧠 Vector memory (Qdrant)
+- 🤝 Multi-agent orchestration
+- 🔌 56 MCP tool servers
+- ✨ VIBE: 5,340 skills
+- ⏰ Cron task scheduler
+
+</td>
+<td valign="top" width="33%">
+
+**Safety & Control**
+- 💰 Budget controller
+- ⚡ Circuit breaker
+- 🔑 sops-nix secrets
+- 📝 Git automation
+- 🔔 Slack/Discord alerts
+
+</td>
+</tr>
+</table>
 </div>
 
-Agents can work together through the orchestration module:
+### Budget Control & Safety
+
+<div align="center">
+<img src="assets/security-shield.webp" alt="Budget Controller and Security Shield" width="92%">
+</div>
+
+<br/>
+
+| Safety Feature | What It Does |
+|:---|:---|
+| **Budget caps** | Per-agent daily/session spending limits (default: $50/day) |
+| **Auto-shutdown** | Agents that exceed budget are killed automatically |
+| **Rate limiting** | Max API calls, file writes, and shell commands per minute |
+| **Circuit breaker** | N consecutive failures pauses the agent for cooldown |
+| **Resource limits** | Kill agents exceeding CPU/memory thresholds |
+| **Loop detection** | Detect and break agents stuck repeating the same action |
+| **Egress firewall** | Default-deny network; only whitelisted domains allowed |
+
+```bash
+agentos-budget status       # Current spend per agent
+agentos-budget history      # 7-day cost breakdown
+agentos-breaker status      # Circuit breaker state
+```
+
+### Multi-Agent Orchestration
+
+<div align="center">
+<img src="assets/swarm.webp" alt="Multi-Agent Collaboration" width="92%">
+
+<sub><i>Agents collaborate through planner-worker, swarm, and pipeline modes.</i></sub>
+</div>
+
+<br/>
 
 ```bash
 agentos-orchestrate run "build a REST API" claude-code
@@ -183,108 +249,81 @@ agentos-orchestrate swarm "fix all failing tests" 3
 agentos-orchestrate status
 ```
 
+### Observability Dashboard
+
+<div align="center">
+<img src="assets/dashboard.webp" alt="AgentOS Monitoring Dashboard" width="92%">
+
+<sub><i>Grafana dashboard at port 2342: agent status, token usage, cost tracking, live logs.</i></sub>
+</div>
+
 ---
 
 ## VIBE Integration
 
 <div align="center">
-
-<img src="assets/vibe-integration.webp" alt="VIBE Library Integration" width="95%">
-
+<img src="assets/vibe-integration.webp" alt="VIBE Library Integration" width="92%">
 </div>
 
-On first boot, AgentOS auto-installs the [VIBE library](https://github.com/anubhavg-icpl/vibe) into all 7 agent CLIs:
+<br/>
 
-| Asset | Count |
-|-------|-------|
-| Expert modes | 853 (52 categories) |
-| Skills | 5,340 |
-| Subagents | 200 |
-| Slash commands | 112 |
-| Plugins | 120 |
-| Rules | 111 |
-| System prompts | 759 |
-| Recipes | 18 |
+On first boot, AgentOS auto-installs the [VIBE library](https://github.com/anubhavg-icpl/vibe) into all 7 supported agent CLIs:
+
+| VIBE Asset | Count |
+|:---|:---|
+| Expert modes | **853** (52 categories) |
+| Skills | **5,340** |
+| Subagents | **200** |
+| Slash commands | **112** |
+| Plugins | **120** |
+| Rules | **111** |
+| System prompts | **759** |
+| Recipes | **18** |
 
 ```bash
 agentos-vibe install       # Install into all agents
 agentos-vibe categories    # Browse 52 categories
 vibe search "rag"          # Search the library
-vibe list                  # List all assets
 ```
 
 ---
 
-## MCP Server Registry (56 servers)
+## MCP Server Registry
 
 <div align="center">
-
-<img src="assets/mcp-network.webp" alt="MCP Server Network" width="95%">
-
+<img src="assets/mcp-network.webp" alt="56 MCP Servers" width="92%">
 </div>
 
-| Category | Count | Servers |
-|----------|-------|---------|
-| Core | 10 | filesystem, git, memory, fetch, sequential-thinking, time, everything, exec, fs-watch, clipboard |
-| Database | 8 | postgres, sqlite, mysql, redis, mongo, duckdb, clickhouse, surrealdb |
-| Cloud | 8 | aws, gcp, azure, cloudflare, vercel, fly, railway, supabase |
-| Integration | 12 | github, gitlab, linear, jira, slack, discord, notion, sentry, datadog, pagerduty, asana, trello |
-| Browser | 4 | puppeteer, playwright, browserbase, selenium |
-| AI/ML | 4 | openai-tools, anthropic-tools, replicate, huggingface |
-| DevOps | 6 | docker, kubernetes, terraform, ansible, grafana, prometheus |
-| Data/Search | 4 | brave-search, tavily, exa, perplexity |
+<br/>
+
+56 Model Context Protocol servers, pre-configured across 8 categories:
+
+| Category | Count | Key Servers |
+|:---|:---:|:---|
+| **Core** | 10 | filesystem, git, memory, fetch, sequential-thinking, time, clipboard |
+| **Database** | 8 | postgres, sqlite, redis, mongo, duckdb, clickhouse, mysql, surrealdb |
+| **Cloud** | 8 | aws, gcp, azure, cloudflare, vercel, fly, railway, supabase |
+| **Integration** | 12 | github, gitlab, slack, discord, notion, linear, jira, sentry |
+| **Browser** | 4 | puppeteer, playwright, browserbase, selenium |
+| **AI/ML** | 4 | openai-tools, anthropic-tools, replicate, huggingface |
+| **DevOps** | 6 | docker, kubernetes, terraform, ansible, grafana, prometheus |
+| **Data/Search** | 4 | brave-search, tavily, exa, perplexity |
 
 ```bash
 agentos-mcp list            # List all 56 servers
 agentos-mcp enable puppeteer # Enable a server
-agentos-mcp stats           # Show statistics
+agentos-mcp stats           # Registry statistics
 ```
-
----
-
-## Budget & Safety
-
-<div align="center">
-
-<img src="assets/security-shield.webp" alt="Budget Controller and Security Shield" width="95%">
-
-*The budget controller prevents runaway spending. The circuit breaker kills runaway agents.*
-
-</div>
-
-| Feature | What It Does |
-|---------|-------------|
-| Budget caps | Per-agent daily/session spending limits (default: $50/day) |
-| Auto-shutdown | Kill agents that exceed their budget |
-| Rate limiting | Max API calls, file writes, shell commands per minute |
-| Circuit breaker | N consecutive failures pauses the agent for 5 minutes |
-| Resource limits | Kill agents exceeding CPU/memory thresholds |
-| Loop detection | Detect and break agents stuck repeating actions |
-| Egress firewall | Default-deny network access, only whitelisted domains |
-
----
-
-## Observability
-
-<div align="center">
-
-<img src="assets/dashboard.webp" alt="AgentOS Monitoring Dashboard" width="95%">
-
-*Grafana dashboard at port 2342: agent status, token usage, cost tracking, live logs.*
-
-</div>
-
-Full observability stack built-in: OpenTelemetry traces, Prometheus metrics, Tempo distributed tracing, Grafana dashboards.
 
 ---
 
 ## Architecture
 
 <div align="center">
-
 <img src="assets/architecture.webp" alt="AgentOS Architecture" width="95%">
-
 </div>
+
+<br/>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -312,35 +351,113 @@ Full observability stack built-in: OpenTelemetry traces, Prometheus metrics, Tem
 
 ---
 
+## Full Feature Matrix
+
+<details>
+<summary><b>All 27 modules (click to expand)</b></summary>
+
+| Module | Description | CLI Command |
+|:---|:---|:---|
+| 🏗️ runtime | Containerd isolation, agent daemon | `agentos spawn` |
+| 🔒 security | AppArmor, default-deny egress, audit | automatic |
+| 📊 observability | Prometheus + Tempo + Grafana | Grafana `:2342` |
+| 💾 storage | btrfs snapshots, dedup, workspace GC | `agentos snapshot` |
+| 🌐 networking | Model API gateway, egress firewall | automatic |
+| 🧠 context | Qdrant vector DB, persistent memory | `agentos-memory` |
+| 🤝 orchestration | Multi-agent coordination | `agentos-orchestrate` |
+| 🔌 mcp-registry | 15+ core MCP tools | `agentos-tools` |
+| 🔌 mcp-servers | 56 MCP servers (8 categories) | `agentos-mcp` |
+| 💰 budget-controller | Per-agent cost caps, auto-shutdown | `agentos-budget` |
+| ⚡ circuit-breaker | Rate limiting, runaway detection | `agentos-breaker` |
+| 🔑 secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
+| 📝 git-automation | Auto-branch, auto-commit, auto-PR | `agentos-git` |
+| 📦 provisioning | Env detection, Nix dev shells | `agentos-env` |
+| ⏰ scheduler | Cron-like task scheduling | `agentos-schedule` |
+| 🔔 notifications | Slack, Discord, email, webhook | `agentos-notify` |
+| 🐍 language-toolchains | 20+ runtimes pre-installed | `agentos-langs` |
+| 🗄️ databases | Postgres, Redis, SQLite, DuckDB | `agentos-db` |
+| 🛠️ dev-tools | 100+ developer utilities | automatic |
+| 🛡️ security-tools | Semgrep, trivy, nmap, ghidra | `agentos-scan` |
+| 🌍 browser-tools | Chromium, Playwright, Puppeteer | `agentos-web` |
+| 📡 networking-tools | nmap, tcpdump, wireshark | automatic |
+| ☁️ cloud-tools | AWS, GCP, Azure, CF, Vercel CLIs | automatic |
+| 📋 package-managers | pip, npm, cargo, bundler, maven | automatic |
+| ✏️ editors | Neovim (LSP configured), Helix | automatic |
+| 🤖 ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
+| ✨ vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
+
+</details>
+
+📄 **Detailed docs:** [docs/FEATURES.md](docs/FEATURES.md)
+
+---
+
 ## Configuration
 
+Every feature is a toggle:
+
 ```nix
-# Every feature is toggleable:
 agentos = {
   runtime = {
     enable = true;
     maxAgents = 8;
+    containerRuntime = "containerd";
   };
+
   budget-controller = {
     enable = true;
     defaultDailyBudgetUSD = 50.0;
+    globalDailyBudgetUSD = 500.0;
     autoShutdown = true;
   };
+
   circuit-breaker = {
     enable = true;
     maxConsecutiveFailures = 5;
+    cooldownPeriodSec = 300;
   };
+
   vibe-integration = {
     enable = true;
     autoInstallOnBoot = true;
   };
+
   mcp-servers = {
     enable = true;
     enableCore = true;
     enableDatabases = true;
+    enableBrowser = true;
+    enableAI = true;
+  };
+
+  git-automation = {
+    enable = true;
+    autoBranch = true;
+    autoCommit = true;
+    autoPR = true;
   };
 };
 ```
+
+---
+
+## Comparison
+
+| Capability | Plain Linux | Docker | **AgentOS** |
+|:---|:---:|:---:|:---:|
+| 22 agents pre-installed | — | — | ✅ |
+| Budget caps per agent | — | — | ✅ |
+| Circuit breakers | — | — | ✅ |
+| 56 MCP servers configured | — | — | ✅ |
+| 5,340 VIBE skills auto-loaded | — | — | ✅ |
+| Git auto-commit per session | — | — | ✅ |
+| btrfs snapshots per agent | — | — | ✅ |
+| Vector memory (Qdrant) | — | — | ✅ |
+| Multi-agent orchestration | — | — | ✅ |
+| Prometheus + Grafana | Manual | Manual | ✅ Built-in |
+| Encrypted secrets (sops) | Manual | Manual | ✅ Built-in |
+| 20+ language runtimes | Manual | Manual | ✅ Pre-installed |
+| Full reproducibility | — | Partial | ✅ NixOS |
 
 ---
 
@@ -348,64 +465,48 @@ agentos = {
 
 ```
 agentos/
-├── flake.nix                      # Top-level Nix flake
-├── modules/                       # 27 NixOS modules
-│   ├── runtime/                   #   Containerd isolation
-│   ├── budget-controller/         #   Cost caps, auto-shutdown
-│   ├── circuit-breaker/           #   Rate limiting, loop detection
-│   ├── mcp-servers/               #   56 preconfigured MCP servers
-│   ├── vibe-integration/          #   5340 skills auto-installer
-│   ├── context/                   #   Qdrant vector memory
-│   ├── orchestration/             #   Multi-agent coordination
-│   ├── git-automation/            #   Auto-branch/commit/PR
-│   └── ...                        #   19 more modules
-├── agents/                        # 22 coding agent packages
+├── flake.nix                       # Top-level Nix flake
+├── modules/                        # 27 NixOS modules
+│   ├── runtime/                    #   Containerd isolation + daemon
+│   ├── budget-controller/          #   Cost tracking + auto-shutdown
+│   ├── circuit-breaker/            #   Rate limiting + loop detection
+│   ├── mcp-servers/                #   56 preconfigured MCP servers
+│   ├── vibe-integration/           #   5340 skills auto-installer
+│   ├── context/                    #   Qdrant vector memory
+│   ├── orchestration/              #   Multi-agent coordination
+│   ├── git-automation/             #   Auto-branch/commit/PR
+│   ├── language-toolchains/        #   20+ language runtimes
+│   ├── databases/                  #   Postgres, Redis, SQLite, DuckDB
+│   └── ...                         #   17 more modules
+├── agents/                         # 22 coding agent packages
 ├── nixos/
-│   ├── hosts/                     # Host configs (metal + ISO)
-│   └── packages/                  # Internal binaries + CLI
-├── templates/                     # Agent workspace template
-├── assets/                        # WebP images for README
-└── docs/                          # Documentation
+│   ├── hosts/                      # Host configs (bare metal + ISO)
+│   └── packages/                   # Internal binaries + CLI tools
+├── templates/                      # Agent workspace template
+├── assets/                         # WebP images
+└── docs/                           # Documentation
 ```
-
----
-
-## Comparison
-
-| Feature | Plain Linux | Docker | AgentOS |
-|---------|-------------|--------|---------|
-| 22 agents pre-installed | ❌ | ❌ | ✅ |
-| Budget caps per agent | ❌ | ❌ | ✅ |
-| Circuit breakers | ❌ | ❌ | ✅ |
-| 56 MCP servers configured | ❌ | ❌ | ✅ |
-| 5340 VIBE skills auto-loaded | ❌ | ❌ | ✅ |
-| Git auto-commit per session | ❌ | ❌ | ✅ |
-| btrfs snapshots per agent | ❌ | ❌ | ✅ |
-| Vector memory (Qdrant) | ❌ | ❌ | ✅ |
-| Multi-agent orchestration | ❌ | ❌ | ✅ |
-| Prometheus + Grafana | Manual | Manual | ✅ Built-in |
-| Encrypted secrets (sops) | Manual | Manual | ✅ Built-in |
-| 20+ language runtimes | Manual | Manual | ✅ Pre-installed |
-| Full reproducibility | ❌ | Partial | ✅ NixOS |
 
 ---
 
 ## Documentation
 
-- 📖 [AGENTS.md](docs/AGENTS.md) — All 22 agents with usage examples
-- 📖 [FEATURES.md](docs/FEATURES.md) — All 27 modules documented
-- 📖 [ISO-SIZE.md](docs/ISO-SIZE.md) — ISO size analysis
-- 📝 [CHANGELOG.md](CHANGELOG.md) — Version history
-- 🤝 [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute
+| Document | Description |
+|:---|:---|
+| [docs/AGENTS.md](docs/AGENTS.md) | All 22 agents with usage examples and API key setup |
+| [docs/FEATURES.md](docs/FEATURES.md) | Detailed documentation of all 27 modules |
+| [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: add modules, agents, and more |
 
 ---
 
 ## Roadmap
 
 - [ ] GPU scheduling for local model inference
-- [ ] Remote agent fleets (multi-machine)
+- [ ] Remote agent fleets (multi-machine orchestration)
 - [ ] Agent marketplace (community-contributed agents)
-- [ ] Web UI dashboard (beyond Grafana)
+- [ ] Web dashboard (beyond Grafana)
 - [ ] ARM64 / Apple Silicon support
 - [ ] Deterministic replay of agent sessions
 - [ ] Inter-agent communication protocol
@@ -413,20 +514,43 @@ agentos/
 
 ---
 
-<div align="center">
+## Contributing
 
-<img src="assets/social-preview.webp" alt="AgentOS Social Preview" width="60%">
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
-## License
+- How to add a new module
+- How to add a new agent
+- Commit conventions
+- Testing guidelines
 
-MIT — See [LICENSE](LICENSE)
-
-## Author
-
-**Anubhav Gain** · [GitHub](https://github.com/anubhavg-icpl) · [VIBE](https://github.com/anubhavg-icpl/vibe)
+```bash
+git clone https://github.com/anubhavg-icpl/agentos.git
+cd agentos
+nix develop          # Enter dev shell
+nix build .#iso-image # Build ISO to test
+```
 
 ---
 
-⭐ Star this repo if you find it useful!
+<div align="center">
+
+<img src="assets/social-preview.webp" alt="AgentOS" width="50%">
+
+<br/>
+
+## License
+
+**MIT** — See [LICENSE](LICENSE)
+
+## Author
+
+**Anubhav Gain**
+[GitHub](https://github.com/anubhavg-icpl) · [VIBE Library](https://github.com/anubhavg-icpl/vibe)
+
+<br/>
+
+---
+
+If AgentOS is useful to you, consider ⭐ starring the repository.
 
 </div>
