@@ -169,6 +169,13 @@
       enableDevOps = true;
       enableData = true;
     };
+
+    # Remaining modules
+    networking-tools.enable = true;
+    cloud-tools.enable = true;
+    package-managers.enable = true;
+    editors.enable = true;
+    ai-ml.enable = true;
   };
 
   # ════════════════════════════════════════════════════════════════════
