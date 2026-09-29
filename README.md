@@ -52,16 +52,9 @@ Every layer, from the kernel to the filesystem to the network stack, is optimize
 
 ## The Problem
 
-AI coding agents are powerful, but running them on a traditional OS is a struggle:
+Run an AI coding agent on a normal machine and you're giving it your shell, your filesystem, and your network with no fence around any of it. There's no spending cap, so a runaway agent can burn real money before anyone notices. Commits happen by hand or not at all. Tool access means installing things yourself, one MCP server at a time. And when something goes wrong, there's no trace of what the agent actually did.
 
-| Without AgentOS | With AgentOS |
-|:---|:---|
-| Agents share your shell, filesystem, and network | Each agent runs in an isolated container |
-| No spending caps — a runaway agent burns $1,000 in an hour | Per-agent budget caps with automatic shutdown |
-| Changes are untracked, manual commits | Auto-branch, auto-commit, auto-PR per session |
-| No tool access without manual setup | 56 MCP servers pre-configured (GitHub, DBs, browsers) |
-| No observability into what the agent did | Full traces: OpenTelemetry + Prometheus + Grafana |
-| "Works on my machine" environments | Bit-for-bit reproducible NixOS environments |
+AgentOS puts a fence around each of those problems: per-agent containers, budget caps with automatic shutdown, auto-commit per session, 56 MCP servers pre-wired, and full traces through OpenTelemetry + Prometheus + Grafana — on a NixOS base that rebuilds identically every time.
 
 ---
 
@@ -166,7 +159,7 @@ agentos budget         # check spend
 
 </details>
 
-📄 **Full reference:** [docs/AGENTS.md](docs/AGENTS.md)
+Full reference: [docs/AGENTS.md](docs/AGENTS.md)
 
 ---
 
@@ -178,31 +171,31 @@ agentos budget         # check spend
 <td valign="top" width="33%">
 
 **Infrastructure**
-- 🏗️ Container runtime (containerd)
-- 💾 btrfs snapshots + dedup
-- 🌐 Model API gateway
-- 🔒 AppArmor + egress firewall
-- 📊 Prometheus + Grafana
+- Container runtime (containerd)
+- btrfs snapshots + dedup
+- Model API gateway
+- AppArmor + egress firewall
+- Prometheus + Grafana
 
 </td>
 <td valign="top" width="33%">
 
 **Agent Intelligence**
-- 🧠 Vector memory (Qdrant)
-- 🤝 Multi-agent orchestration
-- 🔌 56 MCP tool servers
-- ✨ VIBE: 5,340 skills
-- ⏰ Cron task scheduler
+- Vector memory (Qdrant)
+- Multi-agent orchestration
+- 56 MCP tool servers
+- VIBE: 5,340 skills
+- Cron task scheduler
 
 </td>
 <td valign="top" width="33%">
 
 **Safety & Control**
-- 💰 Budget controller
-- ⚡ Circuit breaker
-- 🔑 sops-nix secrets
-- 📝 Git automation
-- 🔔 Slack/Discord alerts
+- Budget controller
+- Circuit breaker
+- sops-nix secrets
+- Git automation
+- Slack/Discord alerts
 
 </td>
 </tr>
@@ -358,37 +351,37 @@ agentos-mcp stats           # Registry statistics
 
 | Module | Description | CLI Command |
 |:---|:---|:---|
-| 🏗️ runtime | Containerd isolation, agent daemon | `agentos spawn` |
-| 🔒 security | AppArmor, default-deny egress, audit | automatic |
-| 📊 observability | Prometheus + Tempo + Grafana | Grafana `:2342` |
-| 💾 storage | btrfs snapshots, dedup, workspace GC | `agentos snapshot` |
-| 🌐 networking | Model API gateway, egress firewall | automatic |
-| 🧠 context | Qdrant vector DB, persistent memory | `agentos-memory` |
-| 🤝 orchestration | Multi-agent coordination | `agentos-orchestrate` |
-| 🔌 mcp-registry | 15+ core MCP tools | `agentos-tools` |
-| 🔌 mcp-servers | 56 MCP servers (8 categories) | `agentos-mcp` |
-| 💰 budget-controller | Per-agent cost caps, auto-shutdown | `agentos-budget` |
-| ⚡ circuit-breaker | Rate limiting, runaway detection | `agentos-breaker` |
-| 🔑 secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
-| 📝 git-automation | Auto-branch, auto-commit, auto-PR | `agentos-git` |
-| 📦 provisioning | Env detection, Nix dev shells | `agentos-env` |
-| ⏰ scheduler | Cron-like task scheduling | `agentos-schedule` |
-| 🔔 notifications | Slack, Discord, email, webhook | `agentos-notify` |
-| 🐍 language-toolchains | 20+ runtimes pre-installed | `agentos-langs` |
-| 🗄️ databases | Postgres, Redis, SQLite, DuckDB | `agentos-db` |
-| 🛠️ dev-tools | 100+ developer utilities | automatic |
-| 🛡️ security-tools | Semgrep, trivy, nmap, ghidra | `agentos-scan` |
-| 🌍 browser-tools | Chromium, Playwright, Puppeteer | `agentos-web` |
-| 📡 networking-tools | nmap, tcpdump, wireshark | automatic |
-| ☁️ cloud-tools | AWS, GCP, Azure, CF, Vercel CLIs | automatic |
-| 📋 package-managers | pip, npm, cargo, bundler, maven | automatic |
-| ✏️ editors | Neovim (LSP configured), Helix | automatic |
-| 🤖 ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
-| ✨ vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
+| runtime | Containerd isolation, agent daemon | `agentos spawn` |
+| security | AppArmor, default-deny egress, audit | automatic |
+| observability | Prometheus + Tempo + Grafana | Grafana `:2342` |
+| storage | btrfs snapshots, dedup, workspace GC | `agentos snapshot` |
+| networking | Model API gateway, egress firewall | automatic |
+| context | Qdrant vector DB, persistent memory | `agentos-memory` |
+| orchestration | Multi-agent coordination | `agentos-orchestrate` |
+| mcp-registry | 15+ core MCP tools | `agentos-tools` |
+| mcp-servers | 56 MCP servers (8 categories) | `agentos-mcp` |
+| budget-controller | Per-agent cost caps, auto-shutdown | `agentos-budget` |
+| circuit-breaker | Rate limiting, runaway detection | `agentos-breaker` |
+| secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
+| git-automation | Auto-branch, auto-commit, auto-PR | `agentos-git` |
+| provisioning | Env detection, Nix dev shells | `agentos-env` |
+| scheduler | Cron-like task scheduling | `agentos-schedule` |
+| notifications | Slack, Discord, email, webhook | `agentos-notify` |
+| language-toolchains | 20+ runtimes pre-installed | `agentos-langs` |
+| databases | Postgres, Redis, SQLite, DuckDB | `agentos-db` |
+| dev-tools | 100+ developer utilities | automatic |
+| security-tools | Semgrep, trivy, nmap, ghidra | `agentos-scan` |
+| browser-tools | Chromium, Playwright, Puppeteer | `agentos-web` |
+| networking-tools | nmap, tcpdump, wireshark | automatic |
+| cloud-tools | AWS, GCP, Azure, CF, Vercel CLIs | automatic |
+| package-managers | pip, npm, cargo, bundler, maven | automatic |
+| editors | Neovim (LSP configured), Helix | automatic |
+| ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
+| vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
 
 </details>
 
-📄 **Detailed docs:** [docs/FEATURES.md](docs/FEATURES.md)
+Detailed docs: [docs/FEATURES.md](docs/FEATURES.md)
 
 ---
 
@@ -443,21 +436,7 @@ agentos = {
 
 ## Comparison
 
-| Capability | Plain Linux | Docker | **AgentOS** |
-|:---|:---:|:---:|:---:|
-| 22 agents pre-installed | — | — | ✅ |
-| Budget caps per agent | — | — | ✅ |
-| Circuit breakers | — | — | ✅ |
-| 56 MCP servers configured | — | — | ✅ |
-| 5,340 VIBE skills auto-loaded | — | — | ✅ |
-| Git auto-commit per session | — | — | ✅ |
-| btrfs snapshots per agent | — | — | ✅ |
-| Vector memory (Qdrant) | — | — | ✅ |
-| Multi-agent orchestration | — | — | ✅ |
-| Prometheus + Grafana | Manual | Manual | ✅ Built-in |
-| Encrypted secrets (sops) | Manual | Manual | ✅ Built-in |
-| 20+ language runtimes | Manual | Manual | ✅ Pre-installed |
-| Full reproducibility | — | Partial | ✅ NixOS |
+Most of what AgentOS ships — budget caps, circuit breakers, MCP servers, snapshots, vector memory, orchestration — doesn't exist on plain Linux at all; you'd build it yourself. Docker gets you isolation and not much else. The pieces that do exist elsewhere (Prometheus/Grafana, encrypted secrets, language runtimes) are manual setup on both; AgentOS ships them wired in. The one Docker gets partial credit for is reproducibility — a Dockerfile is repeatable, but not bit-for-bit the way a NixOS derivation is.
 
 ---
 
