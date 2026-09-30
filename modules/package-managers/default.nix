@@ -18,7 +18,6 @@ let cfg = config.agentos.package-managers; in
       conda
       rye
       # Node
-      nodePackages.npm
       pnpm
       yarn
       bun

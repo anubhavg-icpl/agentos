@@ -2,199 +2,126 @@
 # AgentOS Notifications Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Sends notifications when agent events happen:
-#   - Agent task completed
-#   - Agent needs human approval
-#   - Budget threshold reached
-#   - Agent error/crash
-#   - PR created
-#   - Tests passed/failed
+# The agent daemon forwards agent events to Slack, Discord or a generic
+# JSON webhook:
+#   agent-started     an agent was spawned
+#   task-completed    an agent exited on its own
+#   budget-threshold  an agent crossed a budget alert threshold, exceeded its
+#                     budget, or the global budget ran out
+#   agent-error       an agent was stopped (budget, manual) or its circuit
+#                     breaker opened
 #
-# Channels: Slack, Discord, Email, Webhook, Desktop (if available)
+# Webhook URLs are secrets, so they are read from files at send time (for
+# example sops secrets under /run/secrets) instead of being put in the
+# world-readable Nix store. The agentos user must be able to read them.
 #
 { config, pkgs, lib, ... }:
 
 let
   cfg = config.agentos.notifications;
+
+  eventMap = {
+    agent-started = [ "agent_started" ];
+    task-completed = [ "agent_exited" ];
+    budget-threshold = [ "budget_threshold" "budget_exceeded" "global_budget_exceeded" ];
+    agent-error = [ "agent_killed" "circuit_open" ];
+  };
+
+  targets =
+    lib.optional (cfg.slackWebhookFile != null) { kind = "slack"; url_file = cfg.slackWebhookFile; }
+    ++ lib.optional (cfg.discordWebhookFile != null) { kind = "discord"; url_file = cfg.discordWebhookFile; }
+    ++ lib.optional (cfg.webhookUrlFile != null) { kind = "webhook"; url_file = cfg.webhookUrlFile; }
+    ++ lib.optional (cfg.webhookUrl != null) { kind = "webhook"; url = cfg.webhookUrl; };
+
+  notifyCli = pkgs.writeShellApplication {
+    name = "agentos-notify";
+    runtimeInputs = [ pkgs.curl pkgs.jq ];
+    text = ''
+      targets='${builtins.toJSON targets}'
+
+      post() {
+        local kind="$1" url="$2" text="$3" body
+        case "$kind" in
+          slack)   body=$(jq -cn --arg t "AgentOS: $text" '{text: $t}') ;;
+          discord) body=$(jq -cn --arg t "AgentOS: $text" '{content: $t}') ;;
+          *)       body=$(jq -cn --arg t "$text" '{type: "test", text: $t, source: "agentos"}') ;;
+        esac
+        curl -fsS -m 10 -X POST -H 'Content-Type: application/json' --data "$body" "$url" >/dev/null
+      }
+
+      case "''${1:-status}" in
+        status)
+          echo "Events: ${lib.concatStringsSep ", " cfg.notifyOn}"
+          echo "Targets:"
+          echo "$targets" | jq -r 'if length == 0 then "  (none configured)" else .[] | "  \(.kind): \(.url_file // "inline URL")" end'
+          ;;
+        test)
+          msg="''${2:-Test notification}"
+          echo "$targets" | jq -c '.[]' | while read -r t; do
+            kind=$(echo "$t" | jq -r .kind)
+            url=$(echo "$t" | jq -r '.url // empty')
+            file=$(echo "$t" | jq -r '.url_file // empty')
+            if [ -n "$file" ]; then
+              url=$(cat "$file")
+            fi
+            if post "$kind" "$url" "$msg"; then
+              echo "$kind: sent"
+            else
+              echo "$kind: FAILED"
+            fi
+          done
+          ;;
+        *)
+          echo "Usage: agentos-notify <status|test [message]>" >&2
+          exit 1
+          ;;
+      esac
+    '';
+  };
 in
 {
   options.agentos.notifications = {
     enable = lib.mkEnableOption "AgentOS notifications";
 
-    enableSlack = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Enable Slack notifications";
+    slackWebhookFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "/run/secrets/SLACK_WEBHOOK";
+      description = "File containing a Slack incoming-webhook URL";
     };
 
-    slackWebhook = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = "Slack incoming webhook URL";
+    discordWebhookFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "File containing a Discord webhook URL";
     };
 
-    enableDiscord = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Enable Discord notifications";
-    };
-
-    discordWebhook = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = "Discord webhook URL";
-    };
-
-    enableEmail = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Enable email notifications";
-    };
-
-    emailRecipient = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = "Email address for notifications";
-    };
-
-    enableWebhook = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable generic webhook notifications";
+    webhookUrlFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "File containing a generic webhook URL (receives the event JSON)";
     };
 
     webhookUrl = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = "Generic webhook URL for notifications";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "http://127.0.0.1:9000/agentos";
+      description = "Generic webhook URL (stored in the Nix store; use webhookUrlFile for secret URLs)";
     };
 
     notifyOn = lib.mkOption {
-      type = lib.types.listOf (lib.types.enum [
-        "task-completed"
-        "approval-needed"
-        "budget-threshold"
-        "agent-error"
-        "pr-created"
-        "tests-failed"
-        "tests-passed"
-      ]);
-      default = [ "task-completed" "approval-needed" "budget-threshold" "agent-error" ];
+      type = lib.types.listOf (lib.types.enum (lib.attrNames eventMap));
+      default = [ "task-completed" "budget-threshold" "agent-error" ];
       description = "Which events trigger notifications";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    # ─ Notification dispatcher ───────────────────────────────────────
-    systemd.services.agentos-notifier = lib.mkIf config.agentos.daemons.enable {
-      description = "AgentOS Notification Dispatcher";
-      after = [ "network.target" "redis-agentos.service" ];
-      wants = [ "redis-agentos.service" ];
-      wantedBy = [ "multi-user.target" ];
-
-      environment = {
-        AGENTOS_NOTIFY_SLACK = lib.boolToString cfg.enableSlack;
-        AGENTOS_NOTIFY_DISCORD = lib.boolToString cfg.enableDiscord;
-        AGENTOS_NOTIFY_EMAIL = lib.boolToString cfg.enableEmail;
-        AGENTOS_NOTIFY_WEBHOOK = lib.boolToString cfg.enableWebhook;
-        AGENTOS_REDIS_URL = "redis://localhost:6379";
-        AGENTOS_NOTIFY_EVENTS = builtins.concatStringsSep "," cfg.notifyOn;
-      };
-
-      serviceConfig = {
-        Type = "simple";
-        User = "agentos";
-        Group = "agentos";
-        ExecStart = "${pkgs.agentos.notifier}/bin/agentos-notifier";
-        Restart = "on-failure";
-        RestartSec = 5;
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/agentos" ];
-      };
+    agentos.services.settings.notify = {
+      events = lib.unique (lib.concatMap (e: eventMap.${e}) cfg.notifyOn);
+      inherit targets;
     };
 
-    # ─ Secrets for webhooks (via environment file) ───────────────────
-    environment.etc."agentos/notifications.conf".text = lib.concatStringsSep "\n" (
-      lib.optional (cfg.slackWebhook != "") "SLACK_WEBHOOK=${cfg.slackWebhook}"
-      ++ lib.optional (cfg.discordWebhook != "") "DISCORD_WEBHOOK=${cfg.discordWebhook}"
-      ++ lib.optional (cfg.webhookUrl != "") "GENERIC_WEBHOOK=${cfg.webhookUrl}"
-      ++ lib.optional (cfg.emailRecipient != "") "EMAIL_RECIPIENT=${cfg.emailRecipient}"
-    );
-
-    # ─ Notification CLI ──────────────────────────────────────────────
-    environment.systemPackages = [
-      (pkgs.writeShellScriptBin "agentos-notify" ''
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        GREEN='\033[0;32m'
-        BLUE='\033[0;34m'
-        NC='\033[0m'
-        info() { echo -e "''${BLUE}[INFO]''${NC} $*"; }
-        ok()   { echo -e "''${GREEN}[OK]''${NC} $*"; }
-
-        # Source webhook config
-        [ -f /etc/agentos/notifications.conf ] && source /etc/agentos/notifications.conf
-
-        send_slack() {
-          local msg="$1"
-          [ -z "''${SLACK_WEBHOOK:-}" ] && return
-          ${pkgs.curl}/bin/curl -s -X POST "$SLACK_WEBHOOK" \
-            -H 'Content-Type: application/json' \
-            -d "{\"text\": \"AgentOS: $msg\"}" >/dev/null 2>&1 || true
-        }
-
-        send_discord() {
-          local msg="$1"
-          [ -z "''${DISCORD_WEBHOOK:-}" ] && return
-          ${pkgs.curl}/bin/curl -s -X POST "$DISCORD_WEBHOOK" \
-            -H 'Content-Type: application/json' \
-            -d "{\"content\": \"AgentOS: $msg\"}" >/dev/null 2>&1 || true
-        }
-
-        send_webhook() {
-          local event="$1"
-          local msg="$2"
-          [ -z "''${GENERIC_WEBHOOK:-}" ] && return
-          ${pkgs.curl}/bin/curl -s -X POST "$GENERIC_WEBHOOK" \
-            -H 'Content-Type: application/json' \
-            -d "{\"event\": \"$event\", \"message\": \"$msg\", \"source\": \"agentos\", \"timestamp\": \"$(date -Iseconds)\"}" >/dev/null 2>&1 || true
-        }
-
-        case "''${1:-status}" in
-          send)
-            EVENT="''${2:-info}"
-            MSG="''${3:-No message}"
-            info "Sending notification: $MSG"
-            send_slack "$MSG"
-            send_discord "$MSG"
-            send_webhook "$EVENT" "$MSG"
-            ok "Notifications sent"
-            ;;
-
-          test)
-            info "Sending test notification..."
-            send_slack "Test notification from AgentOS"
-            send_discord "Test notification from AgentOS"
-            send_webhook "test" "Test notification from AgentOS"
-            ok "Test sent. Check your channels."
-            ;;
-
-          status)
-            echo "Notification channels:"
-            [ -n "''${SLACK_WEBHOOK:-}" ] && ok "Slack: configured" || echo "  Slack: not configured"
-            [ -n "''${DISCORD_WEBHOOK:-}" ] && ok "Discord: configured" || echo "  Discord: not configured"
-            [ -n "''${GENERIC_WEBHOOK:-}" ] && ok "Webhook: configured" || echo "  Webhook: not configured"
-            echo ""
-            echo "Notify on: ${lib.concatStringsSep ", " cfg.notifyOn}"
-            ;;
-
-          *)
-            echo "Usage: agentos-notify <send|test|status>"
-            ;;
-        esac
-      '')
-    ];
+    environment.systemPackages = [ notifyCli ];
   };
 }

@@ -78,11 +78,6 @@ in
         commit = {
           gpgsign = false;
         };
-        # Agent workspaces are owned by the agentos user but used by admin;
-        # trust only those, not every repository on the machine.
-        safe = {
-          directory = "${toString config.agentos.runtime.workspaceRoot}/*";
-        };
       };
     };
 

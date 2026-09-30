@@ -1,16 +1,16 @@
 # AgentOS system modules — all submodules
 { lib, ... }:
 {
-  # The Rust service daemons (agent daemon, MCP gateway, model gateway,
-  # budget controller, circuit breaker, orchestrator, scheduler, notifier,
-  # provisioner, memory manager, MCP registry) have no source code yet;
-  # nixos/packages/*.nix only holds build stubs. Their systemd units are
-  # therefore gated behind this switch. Enabling it before the daemons
-  # exist makes the system fail to build.
-  options.agentos.daemons.enable = lib.mkOption {
+  # Services that are designed but not implemented yet: orchestrator,
+  # scheduler, MCP gateway, MCP registry service, provisioner and memory
+  # manager (nixos/packages/*.nix holds build stubs with no source). Their
+  # systemd units are gated behind this switch; enabling it before they
+  # exist makes the system fail to build. The model gateway and the agent
+  # daemon are implemented (services/) and are not affected by it.
+  options.agentos.plannedServices.enable = lib.mkOption {
     type = lib.types.bool;
     default = false;
-    description = "Run the AgentOS service daemons (not implemented yet).";
+    description = "Run the planned (not yet implemented) AgentOS services.";
   };
 
   imports = [

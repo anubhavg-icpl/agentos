@@ -32,8 +32,10 @@ in
       # PYTHON
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        python311 python311Packages.pip python311Packages.virtualenv python311Packages.setuptools python311Packages.wheel
-        python312 python312Packages.pip python312Packages.virtualenv
+        # Default python3 with packaging tools; 3.12 and 3.11 interpreters
+        # are available as python3.12 / python3.11
+        (lib.hiPrio (python3.withPackages (ps: with ps; [ pip virtualenv setuptools wheel ])))
+        python312 python311
         uv pipx poetry conda rye
         # Python linters/formatters
         ruff black mypy pyright isort pylint python3Packages.flake8
@@ -45,12 +47,11 @@ in
       # JAVASCRIPT / TYPESCRIPT
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        nodejs_22 nodejs_20
-        nodePackages.npm nodePackages.pnpm nodePackages.yarn bun
-        nodePackages.ts-node
+        nodejs_22 nodejs_24
+        pnpm yarn bun # npm ships with nodejs
         deno
         # JS/TS linters/formatters
-        nodePackages.prettier nodePackages.eslint nodePackages.eslint_d
+        prettier eslint eslint_d
         typescript typescript-language-server
         # Build tools
         turbo
@@ -61,7 +62,7 @@ in
       # GO
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        go_1_23 go_1_22
+        go
         gopls gotools go-tools golangci-lint
         delve # debugger
         air # live reload
@@ -121,8 +122,7 @@ in
       # PHP
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        php82 php82Packages.composer
-        php82Packages.phpstan php82Packages.php-cs-fixer
+        php84 php84Packages.composer php84Packages.php-cs-fixer
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -198,7 +198,7 @@ in
       # PERL
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        perl538
+        perl
       ]))
 
       # ════════════════════════════════════════════════════════════════

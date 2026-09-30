@@ -4,6 +4,11 @@
 
 let
   cfg = config.agentos.security;
+  deny = cfg.defaultEgress == "deny";
+  gatewayOnly = lib.unique cfg.gatewayOnlyDomains;
+  allowedDomains = lib.unique (cfg.allowedEgressDomains ++ gatewayOnly);
+  # The agent-user rules need the user to exist
+  sandbox = config.agentos.runtime.enable;
 in
 {
   options.agentos.security = {
@@ -49,6 +54,15 @@ in
       description = ''
         Domains (including their subdomains) that the host may reach when
         defaultEgress is "deny".
+      '';
+    };
+
+    gatewayOnlyDomains = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = ''
+        Hosts that sandboxed agents (the agentos-agent user) may only reach
+        through the model gateway. Set from agentos.networking.providers.
       '';
     };
 
@@ -121,13 +135,18 @@ in
         no-resolv = true;
         listen-address = [ "127.0.0.1" ];
         bind-interfaces = true;
+        # IPv4 only: the egress sets and rules are IPv4
+        filter-AAAA = true;
         server =
-          if cfg.defaultEgress == "deny"
-          then lib.concatMap (d: map (up: "/${d}/${up}") cfg.upstreamDNS) cfg.allowedEgressDomains
+          if deny
+          then lib.concatMap (d: map (up: "/${d}/${up}") cfg.upstreamDNS) allowedDomains
           else cfg.upstreamDNS;
-      } // lib.optionalAttrs (cfg.defaultEgress == "deny") {
+        ipset =
+          lib.optional deny "/${lib.concatStringsSep "/" allowedDomains}/agentos-egress"
+          ++ lib.optional (gatewayOnly != [ ])
+            "/${lib.concatStringsSep "/" gatewayOnly}/${lib.optionalString deny "agentos-egress,"}agentos-llm";
+      } // lib.optionalAttrs deny {
         address = "/#/";
-        ipset = "/${lib.concatStringsSep "/" cfg.allowedEgressDomains}/agentos-egress";
       };
     };
 
@@ -142,8 +161,9 @@ in
 
       extraPackages = [ pkgs.ipset ];
 
-      extraCommands = lib.optionalString (cfg.defaultEgress == "deny") ''
+      extraCommands = ''
         ipset create agentos-egress hash:ip family inet -exist
+        ipset create agentos-llm hash:ip family inet -exist
 
         for ipt in iptables ip6tables; do
           $ipt -D OUTPUT -j agentos-egress 2>/dev/null || true
@@ -151,6 +171,16 @@ in
           $ipt -A OUTPUT -j agentos-egress
           $ipt -A agentos-egress -o lo -j RETURN
           $ipt -A agentos-egress -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+        done
+      '' + lib.optionalString sandbox ''
+        # Sandboxed agents: provider APIs only through the model gateway,
+        # DNS only through the local resolver, no IPv6
+        iptables -A agentos-egress -m owner --uid-owner agentos-agent -m set --match-set agentos-llm dst -j REJECT
+        iptables -A agentos-egress -m owner --uid-owner agentos-agent -p udp --dport 53 -j REJECT
+        iptables -A agentos-egress -m owner --uid-owner agentos-agent -p tcp --dport 53 -j REJECT
+        ip6tables -A agentos-egress -m owner --uid-owner agentos-agent -j REJECT
+      '' + lib.optionalString deny ''
+        for ipt in iptables ip6tables; do
           # dnsmasq may talk to the upstream resolvers
           $ipt -A agentos-egress -p udp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
           $ipt -A agentos-egress -p tcp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
@@ -170,7 +200,7 @@ in
         done
       '';
 
-      extraStopCommands = lib.optionalString (cfg.defaultEgress == "deny") ''
+      extraStopCommands = ''
         for ipt in iptables ip6tables; do
           $ipt -D OUTPUT -j agentos-egress 2>/dev/null || true
           $ipt -F agentos-egress 2>/dev/null || true

@@ -141,6 +141,8 @@ in
         security = {
           admin_user = "admin";
           disable_gravatar = true;
+          # Generated per machine on first boot (agentos-grafana-secret)
+          secret_key = "$__file{/var/lib/agentos-grafana/secret_key}";
         } // lib.optionalAttrs (cfg.grafanaAdminPasswordFile != null) {
           admin_password = "$__file{${cfg.grafanaAdminPasswordFile}}";
         };
@@ -163,6 +165,26 @@ in
           }
         ];
       };
+    };
+
+    systemd.services.agentos-grafana-secret = {
+      description = "Generate the Grafana secret key";
+      wantedBy = [ "grafana.service" ];
+      before = [ "grafana.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        StateDirectory = "agentos-grafana";
+        StateDirectoryMode = "0750";
+      };
+      script = ''
+        f=/var/lib/agentos-grafana/secret_key
+        if [ ! -s "$f" ]; then
+          umask 077
+          ${pkgs.openssl}/bin/openssl rand -hex 32 > "$f"
+        fi
+        chown grafana:grafana "$f" /var/lib/agentos-grafana
+      '';
     };
 
     # Grafana is bound to localhost and not opened in the firewall:

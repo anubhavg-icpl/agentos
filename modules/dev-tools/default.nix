@@ -136,7 +136,7 @@ in
       hyperfine        # benchmarking
       gping            # ping with graph
       speedtest-cli    # bandwidth test
-      dogdns           # dig replacement
+      doggo            # dig replacement
       bandwhich        # network bandwidth monitor
 
       # ════════════════════════════════════════════════════════════════

@@ -124,8 +124,9 @@
     };
     notifications = {
       enable = true;
-      enableWebhook = true;
-      notifyOn = [ "task-completed" "approval-needed" "budget-threshold" "agent-error" "pr-created" ];
+      notifyOn = [ "task-completed" "budget-threshold" "agent-error" ];
+      # Point at a sops secret to receive them, e.g.:
+      # slackWebhookFile = "/run/secrets/SLACK_WEBHOOK";
     };
     circuit-breaker = {
       enable = true;
@@ -192,10 +193,9 @@
     agentos.cli
 
     # ── Language runtimes ────────────────────────────────────────────
-    python311
-    python311Packages.pip
+    python3
     nodejs_22
-    go_1_23
+    go
     rustc
     cargo
     gcc
@@ -256,35 +256,15 @@
     ║                                              ║
     ╚══════════════════════════════════════════════╝
 
-    Pre-installed agents:
-      claude         Anthropic Claude Code
-      codex          OpenAI Codex CLI
-      droid          Factory Droid
-      aider          AI pair programmer
-      gemini         Google Gemini CLI
-      qwen-code      Alibaba Qwen Code
-      amp            Sourcegraph Amp
-      goose          Block Goose
-      opencode       OpenCode (SST)
-      crush          Charm Crush
-      cursor         Cursor CLI
-      cline          Cline agent
-      continue       Continue Dev
-      copilot        GitHub Copilot CLI
-      devin          Devin CLI (Cognition)
-      roo            Roo Code
-      interpreter    Open Interpreter
-      sweagent       SWE-Agent (Princeton)
-      gpt-engineer   GPT-Engineer
-      devika         Devika
-      autogpt        AutoGPT
-      smol-developer smol-developer
+    Agents: claude codex aider gemini qwen amp goose opencode crush
+            cursor-agent copilot droid cline cn interpreter
 
     Quick start:
-      agentos list                 See running agents
-      agentos spawn claude-code    Start an agent
-      agentos budget               Check token spend
-      agentos install <pkg>        Install additional tools
+      agentos workspace create demo            Shared workspace
+      agentos spawn claude --workspace demo    Sandboxed, metered agent
+      agentos list                             Agents and spend today
+      agentos budget status                    Budgets
+      agentos help                             Everything else
 
     BANNER
     fi

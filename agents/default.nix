@@ -8,7 +8,7 @@
 #   nix profile install .#claude-code
 #   nix run .#codex
 #
-# Two kinds of packages live here:
+# Three kinds of packages live here:
 #
 #   1. Nix-built agents. These come from nixpkgs (unstable, since agent CLIs
 #      move fast) and are fully reproducible: pinned by flake.lock, built
@@ -21,6 +21,9 @@
 #      needs egress to the npm registry and the result is not
 #      content-addressed. Replace these with real derivations as they
 #      land in nixpkgs.
+#
+#   3. PyPI launchers. Same idea through `uvx`, for Python agents nixpkgs
+#      cannot build (fetched from pypi.org on first run).
 #
 # ┌──────────────────┬──────────────┬───────────────────────┬───────────┐
 # │ Agent            │ Command      │ Package               │ Source    │
@@ -36,10 +39,10 @@
 # │ Crush            │ crush        │ crush                 │ nixpkgs   │
 # │ Cursor CLI       │ cursor-agent │ cursor-cli            │ nixpkgs   │
 # │ Copilot CLI      │ copilot      │ github-copilot-cli    │ nixpkgs   │
-# │ Open Interpreter │ interpreter  │ open-interpreter      │ nixpkgs   │
 # │ Factory Droid    │ droid        │ factory-droid         │ npm       │
 # │ Cline            │ cline        │ cline                 │ npm       │
 # │ Continue         │ cn           │ continue-cli          │ npm       │
+# │ Open Interpreter │ interpreter  │ open-interpreter      │ PyPI      │
 # └──────────────────┴──────────────┴───────────────────────┴───────────┘
 #
 # ═══════════════════════════════════════════════════════════════════════
@@ -116,6 +119,32 @@ let
       };
     };
 
+  # ── Helper: pinned PyPI launcher (uvx) for Python agents ───────────
+  mkUvxLauncher = { name, pypiPackage, version, bin, python, description, extraPackages ? [ ] }:
+    pkgs.stdenvNoCC.mkDerivation {
+      pname = name;
+      inherit version;
+      dontUnpack = true;
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+
+      installPhase = ''
+        runHook preInstall
+        mkdir -p $out/bin
+        makeWrapper ${pkgs.uv}/bin/uvx $out/bin/${bin} \
+          --set UV_PYTHON_DOWNLOADS never \
+          --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.zlib ]} \
+          --add-flags "--python ${python}/bin/python3 --from ${pypiPackage}==${version} ${lib.concatMapStrings (w: "--with '${w}' ") extraPackages}${bin}" \
+          --prefix PATH : ${lib.makeBinPath baseTools}
+        runHook postInstall
+      '';
+
+      meta = {
+        inherit description;
+        mainProgram = bin;
+        platforms = lib.platforms.linux;
+      };
+    };
+
 in
 rec {
   # ════════════════════════════════════════════════════════════════════
@@ -134,9 +163,6 @@ rec {
   cursor-cli = withAliases { pkg = up.cursor-cli; aliases = { cursor = "cursor-agent"; }; };
   github-copilot-cli = up.github-copilot-cli;
 
-  # nixpkgs-unstable reuses this attribute name for an unrelated project,
-  # so take the classic Open Interpreter from the stable channel.
-  open-interpreter = pkgs.open-interpreter;
 
   # ════════════════════════════════════════════════════════════════════
   # NPM LAUNCHERS (fetched from registry.npmjs.org on first run)
@@ -171,6 +197,24 @@ rec {
   };
 
   # ════════════════════════════════════════════════════════════════════
+  # PYPI LAUNCHERS (fetched from pypi.org on first run)
+  # ════════════════════════════════════════════════════════════════════
+
+  # https://github.com/OpenInterpreter/open-interpreter
+  # (marked broken in nixpkgs; nixpkgs-unstable reuses the attribute name
+  # for an unrelated project)
+  open-interpreter = mkUvxLauncher {
+    name = "open-interpreter";
+    pypiPackage = "open-interpreter";
+    version = "0.4.3";
+    bin = "interpreter";
+    python = pkgs.python311;
+    # 0.4.3 still imports pkg_resources, which setuptools 81 removed
+    extraPackages = [ "setuptools<81" ];
+    description = "Open Interpreter — let LLMs run code";
+  };
+
+  # ════════════════════════════════════════════════════════════════════
   # META-PACKAGES
   # ════════════════════════════════════════════════════════════════════
 
@@ -179,8 +223,8 @@ rec {
     name = "agentos-all-agents";
     paths = [
       claude-code codex aider gemini-cli qwen-code amp goose opencode
-      crush cursor-cli github-copilot-cli open-interpreter
-      factory-droid cline continue-cli
+      crush cursor-cli github-copilot-cli
+      factory-droid cline continue-cli open-interpreter
     ];
     ignoreCollisions = true;
   };
@@ -190,7 +234,7 @@ rec {
     name = "agentos-nix-agents";
     paths = [
       claude-code codex aider gemini-cli qwen-code amp goose opencode
-      crush cursor-cli github-copilot-cli open-interpreter
+      crush cursor-cli github-copilot-cli
     ];
     ignoreCollisions = true;
   };
@@ -199,6 +243,7 @@ rec {
   # AGENTOS INTERNAL TOOLS
   # ════════════════════════════════════════════════════════════════════
   cli = pkgs.callPackage ../nixos/packages/cli.nix { };
+  services = pkgs.callPackage ../nixos/packages/services.nix { };
   installer = pkgs.callPackage ../nixos/packages/installer.nix { };
 
   # Service daemons. These are placeholders with no source code yet;

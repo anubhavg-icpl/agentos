@@ -75,7 +75,9 @@ in
     };
 
     # ─ Redis ─────────────────────────────────────────────────────────
-    services.redis.servers.agentos = lib.mkIf cfg.enableRedis {
+    # A Redis for agents' own projects on localhost:6379, separate from
+    # the AgentOS control-plane Redis (redis-agentos, unix socket only)
+    services.redis.servers.dev = lib.mkIf cfg.enableRedis {
       enable = true;
       port = 6379;
       settings = {

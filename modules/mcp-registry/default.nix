@@ -190,7 +190,7 @@ in
     };
 
     # ─ MCP Registry Service ──────────────────────────────────────────
-    systemd.services.agentos-mcp-registry = lib.mkIf config.agentos.daemons.enable {
+    systemd.services.agentos-mcp-registry = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS MCP Tool Registry";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];

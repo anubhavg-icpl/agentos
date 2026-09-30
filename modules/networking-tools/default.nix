@@ -23,7 +23,7 @@ let cfg = config.agentos.networking-tools; in
       iperf3
       bandwhich
       gping
-      dogdns
+      doggo
       httpie
       mitmproxy
       charles

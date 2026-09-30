@@ -78,7 +78,7 @@ in
     '';
 
     # ─ Scheduler service ─────────────────────────────────────────────
-    systemd.services.agentos-scheduler = lib.mkIf config.agentos.daemons.enable {
+    systemd.services.agentos-scheduler = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS Task Scheduler";
       after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
       wants = [ "redis-agentos.service" "agentos-daemon.service" ];
@@ -107,7 +107,8 @@ in
     };
 
     # ─ Scheduler CLI ─────────────────────────────────────────────────
-    environment.systemPackages = [
+    # The CLI only queues work for the planned service, so ship them together
+    environment.systemPackages = lib.optionals config.agentos.plannedServices.enable [
       (pkgs.writeShellScriptBin "agentos-schedule" ''
         #!/usr/bin/env bash
         set -euo pipefail

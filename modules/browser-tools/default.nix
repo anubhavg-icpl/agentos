@@ -49,7 +49,7 @@ in
       # Content extraction
       mermaid-cli      # diagram rendering
       pandoc           # document conversion
-      poppler_utils    # PDF tools (pdftotext, etc)
+      poppler-utils    # PDF tools (pdftotext, etc)
       imagemagick      # image manipulation
       ffmpeg           # video processing
       yt-dlp           # video downloader

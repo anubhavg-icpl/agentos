@@ -52,19 +52,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # ─ Redis for task queue and message bus ──────────────────────────
-    services.redis.servers.agentos = {
-      enable = true;
-      port = 6379;
-      settings = {
-        maxmemory = "256mb";
-        maxmemory-policy = "allkeys-lru";
-        appendonly = "yes";
-      };
-    };
-
     # ─ Orchestrator service ──────────────────────────────────────────
-    systemd.services.agentos-orchestrator = lib.mkIf config.agentos.daemons.enable {
+    systemd.services.agentos-orchestrator = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS Multi-Agent Orchestrator";
       after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
       wants = [ "redis-agentos.service" "agentos-daemon.service" ];
@@ -93,7 +82,8 @@ in
     };
 
     # ─ Orchestration CLI ─────────────────────────────────────────────
-    environment.systemPackages = [
+    # The CLI only queues work for the planned service, so ship them together
+    environment.systemPackages = lib.optionals config.agentos.plannedServices.enable [
       (pkgs.writeShellScriptBin "agentos-orchestrate" ''
         #!/usr/bin/env bash
         set -euo pipefail
@@ -219,7 +209,5 @@ in
       '')
     ];
 
-    # Redis has no auth: reachable from agent containers on the bridge only
-    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ 6379 ];
   };
 }

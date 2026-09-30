@@ -79,7 +79,7 @@ in
     };
 
     # ─ Memory management service ─────────────────────────────────────
-    systemd.services.agentos-memory-manager = lib.mkIf config.agentos.daemons.enable {
+    systemd.services.agentos-memory-manager = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS Memory Manager";
       after = [ "network.target" ] ++ lib.optional (cfg.vectorStore == "qdrant") "qdrant.service";
       wants = [ "qdrant.service" ];
