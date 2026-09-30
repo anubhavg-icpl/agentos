@@ -101,17 +101,25 @@
 
       # ── Checks (nix flake check) ──────────────────────────────────────
       checks = forEachSystem (system:
-        let pkgs = pkgsFor system; in
+        let
+          pkgs = pkgsFor system;
+          agentosModules = [ disko.nixosModules.disko sops-nix.nixosModules.sops ./modules ];
+        in
         {
           services = self.packages.${system}.services;
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           # Boots a VM with the AgentOS service stack and drives an agent
           # through spawn -> model gateway -> budget cap -> kill.
-          e2e = import ./tests/e2e.nix {
-            inherit pkgs;
-            agentosModules = [ disko.nixosModules.disko sops-nix.nixosModules.sops ./modules ];
-          };
+          e2e = import ./tests/e2e.nix { inherit pkgs agentosModules; };
+          # Loop detection, cost routing, record/replay and the message bus.
+          gateway-features = import ./tests/gateway-features.nix { inherit pkgs agentosModules; };
+          # Task queue, orchestrator plans and cron-style schedules.
+          orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
+          # Container-isolated agents in their own network namespace.
+          container = import ./tests/container.nix { inherit pkgs agentosModules; };
+          # Web dashboard, fleet registry and marketplace.
+          platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
         });
 
       # ── Dev shell for working on AgentOS itself ───────────────────────
