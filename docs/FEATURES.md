@@ -291,7 +291,7 @@ vibe search "security"   # Search
 
 ---
 
-## MCP Server Registry (35 servers)
+## MCP Server Registry (36 servers)
 
 Preconfigured Model Context Protocol servers, written to `/etc/agentos/mcp-servers.json`. Each entry runs a published npm package (`npx -y`) or PyPI package (`uvx`), fetched on first start. Runtime enable/disable changes are stored in `/var/lib/agentos/mcp-servers.json`.
 

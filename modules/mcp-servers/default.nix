@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS MCP Server Registry — 35 Preconfigured MCP Servers
+# AgentOS MCP Server Registry — 36 Preconfigured MCP Servers
 # ═══════════════════════════════════════════════════════════════════════
 #
 # The Model Context Protocol (MCP) is how agents access external tools.
@@ -31,7 +31,7 @@ let
 in
 {
   options.agentos.mcp-servers = {
-    enable = lib.mkEnableOption "AgentOS MCP server registry (35 servers)";
+    enable = lib.mkEnableOption "AgentOS MCP server registry (36 servers)";
 
     enableCore = lib.mkOption {
       type = lib.types.bool;
@@ -152,6 +152,18 @@ in
             command = "npx";
             args = [ "-y" "@modelcontextprotocol/server-everything" ];
             category = "core";
+            enabled = true;
+          }
+          {
+            # Ships with AgentOS (no download); reads AGENTOS_AGENT_ID and the
+            # gateway URL from the environment `agentos spawn` sets.
+            name = "agentos-bus";
+            description = "Message other agents through the AgentOS gateway: send_message, read_messages";
+            command = "${pkgs.agentos.services}/bin/agentos-mcp-bus";
+            args = [ ];
+            category = "core";
+            port = null;
+            env = { };
             enabled = true;
           }
         ])

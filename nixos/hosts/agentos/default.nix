@@ -21,7 +21,9 @@
   ];
 
   # ── Kernel modules ─────────────────────────────────────────────────
-  boot.kernelModules = [ "kvm-intel" "btrfs" "overlay" "bridge" "veth" ];
+  boot.kernelModules = [ "btrfs" "overlay" "bridge" "veth" ]
+    # KVM modules exist on x86 only (arm64 KVM is built in)
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [ "kvm-intel" "kvm-amd" ];
 
   # ── Hostname ───────────────────────────────────────────────────────
   networking.hostName = "agentos";
@@ -99,7 +101,6 @@
     };
     orchestration = {
       enable = true;
-      mode = "planner-worker";
       maxWorkers = 4;
     };
     mcp-registry = {
@@ -139,7 +140,6 @@
     };
     scheduler = {
       enable = true;
-      maxConcurrent = 4;
     };
     # Pre-installed toolchains (20+ languages, databases, dev tools)
     language-toolchains = {
@@ -235,9 +235,9 @@
   # ── Fonts (for agent-generated diagrams) ──────────────────────────
   fonts.fontconfig.enable = true;
 
-  # ── NO desktop environment (headless) ─────────────────────────────
-  services.xserver.enable = false;
-  services.displayManager.enable = false;
+  # ── Headless by default (agentos.desktop.enable turns this on) ───
+  services.xserver.enable = lib.mkDefault false;
+  services.displayManager.enable = lib.mkDefault false;
 
   # ── Console ───────────────────────────────────────────────────────
   console = {

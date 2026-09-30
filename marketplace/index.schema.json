@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/anubhavg-icpl/agentos/marketplace/index.schema.json",
+  "title": "AgentOS marketplace index",
+  "description": "Checked by `agentos-market validate` (services/agentos_services/market.py), which also enforces what JSON Schema cannot: unique names and commands, and no collision with the built-in agent names.",
+  "type": "object",
+  "required": ["agents"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1 },
+    "agents": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/agent" }
+    }
+  },
+  "definitions": {
+    "command": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "agent": {
+      "type": "object",
+      "required": ["name", "description", "homepage", "license", "kind", "package", "version", "bin", "maintainers"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Name used with `agentos-market install` and `agentos spawn`",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+        },
+        "description": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "homepage": { "type": "string", "pattern": "^https://" },
+        "license": { "type": "string", "minLength": 1, "description": "SPDX identifier, or Proprietary" },
+        "kind": { "enum": ["nixpkgs", "npm", "pypi"] },
+        "package": { "type": "string", "minLength": 1, "description": "nixpkgs attribute, npm package or PyPI project" },
+        "version": {
+          "description": "Pinned x.y.z version. Informational for nixpkgs, where the system's nixpkgs decides.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+([-+.][0-9A-Za-z][0-9A-Za-z.+-]*)?$"
+        },
+        "bin": { "$ref": "#/definitions/command", "description": "Main executable" },
+        "commands": {
+          "description": "Executables the package provides; each becomes a spawn name. Defaults to [bin]; must include bin.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/command" }
+        },
+        "maintainers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

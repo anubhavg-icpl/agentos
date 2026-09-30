@@ -1,41 +1,78 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Multi-Agent Orchestration Module
+# AgentOS Orchestration Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Coordinates multiple agents working together:
-#   - Planner/worker pattern: a planner agent breaks down tasks and
-#     assigns subtasks to worker agents
-#   - Task queue (Redis-backed) for distributing work
-#   - Inter-agent message bus for communication
-#   - Swarm mode: multiple agents on the same problem in parallel
-#   - Hierarchical mode: agents spawn sub-agents
-#   - Result aggregation and conflict resolution
+# Runs coding agents headless, as tasks (services/agentos_services/orchestrator.py):
+#   - single tasks, pipelines (--after <task>, prompt uses {prev_result})
+#     and swarms (--swarm N: N agents, same prompt, one worktree and
+#     branch each)
+#   - at most maxWorkers tasks at a time; task state lives in the
+#     control-plane Redis
+#   - `agentos-task` submits and follows them
+#
+# The orchestrator runs as `agentos` and cannot start agents itself. To run
+# task <id> it starts agentos-task-runner@<id>.service (allowed by a polkit
+# rule for exactly that unit pattern). That root helper re-validates the
+# task and launches the same sandbox as `agentos spawn`, so tasks are
+# metered by the gateway, budgeted, and visible in `agentos list`.
 #
 { config, pkgs, lib, ... }:
 
 let
   cfg = config.agentos.orchestration;
+  rt = config.agentos.runtime;
+  tasksDir = "/var/lib/agentos/tasks";
 in
 {
+  imports = [
+    (lib.mkRemovedOptionModule [ "agentos" "orchestration" "mode" ]
+      "Use `agentos-task submit` (single task), `--after` (pipeline) or `--swarm N`.")
+    (lib.mkRemovedOptionModule [ "agentos" "orchestration" "resultStrategy" ]
+      "Swarm results are per task; compare the agent/<task-id> branches.")
+  ];
+
   options.agentos.orchestration = {
     enable = lib.mkEnableOption "AgentOS multi-agent orchestration";
 
-    mode = lib.mkOption {
-      type = lib.types.enum [ "planner-worker" "swarm" "hierarchical" "pipeline" ];
-      default = "planner-worker";
-      description = "Default orchestration mode";
-    };
-
     maxWorkers = lib.mkOption {
-      type = lib.types.int;
+      type = lib.types.ints.positive;
       default = 4;
-      description = "Maximum concurrent worker agents per task";
+      description = ''
+        Maximum number of tasks running at the same time. Agents started by
+        hand count against `agentos.runtime.maxAgents` as well.
+      '';
     };
 
     taskTimeoutSec = lib.mkOption {
-      type = lib.types.int;
+      type = lib.types.ints.positive;
       default = 3600;
-      description = "Default task timeout (1 hour)";
+      description = "Default task timeout (1 hour); `agentos-task submit --timeout` overrides it";
+    };
+
+    resultTailKB = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 16;
+      description = ''
+        How much of a task's output (its tail) is kept in the task record.
+        This is what a later pipeline step sees as {prev_result}; the full
+        output is in /var/lib/agentos/tasks/<id>.log.
+      '';
+    };
+
+    taskCommands = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.listOf lib.types.str);
+      default = { };
+      example = { fake = [ "my-agent" "--headless" "{prompt}" ]; };
+      description = ''
+        How to run each agent non-interactively: agent name (or its
+        command) mapped to an argument vector. `{prompt}`, `{workspace}` and
+        `{task_id}` are replaced inside single arguments; the prompt is never
+        passed through a shell. Agents without an entry cannot run tasks.
+        Entries you add are merged with the defaults; use `lib.mkForce` to
+        replace one. The commands run inside the `agentos spawn` sandbox as
+        `agentos-agent`, so agents that ask for permissions need their
+        auto-approve mode here (the defaults use it where one exists).
+      '';
     };
 
     enableMessageBus = lib.mkOption {
@@ -43,171 +80,121 @@ in
       default = true;
       description = "Enable inter-agent message bus (Redis pub/sub)";
     };
-
-    resultStrategy = lib.mkOption {
-      type = lib.types.enum [ "first-success" "best-of-n" "consensus" "all" ];
-      default = "first-success";
-      description = "How to handle multiple agent results";
-    };
   };
 
   config = lib.mkIf cfg.enable {
-    # ─ Orchestrator service ──────────────────────────────────────────
-    systemd.services.agentos-orchestrator = lib.mkIf config.agentos.plannedServices.enable {
-      description = "AgentOS Multi-Agent Orchestrator";
-      after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
-      wants = [ "redis-agentos.service" "agentos-daemon.service" ];
-      wantedBy = [ "multi-user.target" ];
+    assertions = [{
+      assertion = rt.enable;
+      message = "agentos.orchestration needs agentos.runtime.enable (Redis, the agent user and the sandbox)";
+    }];
 
-      environment = {
-        AGENTOS_MODE = cfg.mode;
-        AGENTOS_MAX_WORKERS = toString cfg.maxWorkers;
-        AGENTOS_TASK_TIMEOUT = toString cfg.taskTimeoutSec;
-        AGENTOS_RESULT_STRATEGY = cfg.resultStrategy;
-        AGENTOS_REDIS_URL = "redis://localhost:6379";
-        AGENTOS_MESSAGE_BUS = lib.boolToString cfg.enableMessageBus;
-      };
+    # Headless invocations. Verify against the agent versions you install;
+    # they change between releases.
+    agentos.orchestration.taskCommands = lib.mapAttrs (_: lib.mkDefault) {
+      claude = [ "claude" "-p" "{prompt}" "--permission-mode" "acceptEdits" ];
+      codex = [ "codex" "exec" "{prompt}" ];
+      aider = [ "aider" "--yes-always" "--message" "{prompt}" ];
+      gemini = [ "gemini" "-p" "{prompt}" ];
+      qwen = [ "qwen" "-p" "{prompt}" ];
+      goose = [ "goose" "run" "-t" "{prompt}" ];
+      opencode = [ "opencode" "run" "{prompt}" ];
+      amp = [ "amp" "-x" "{prompt}" ];
+      cursor-agent = [ "cursor-agent" "-p" "{prompt}" ];
+      copilot = [ "copilot" "-p" "{prompt}" ];
+      droid = [ "droid" "exec" "{prompt}" ];
+    };
+
+    agentos.services.settings.orchestrator = {
+      max_workers = cfg.maxWorkers;
+      default_timeout_sec = cfg.taskTimeoutSec;
+      result_tail_kb = cfg.resultTailKB;
+      tasks_dir = tasksDir;
+      task_commands = cfg.taskCommands;
+    };
+
+    # Task logs: written by the root helper, readable by operators
+    systemd.tmpfiles.rules = [ "d ${tasksDir} 2750 agentos agentos" ];
+
+    # ─ Orchestrator service ──────────────────────────────────────────
+    systemd.services.agentos-orchestrator = {
+      description = "AgentOS orchestrator (task queue, pipelines, swarms)";
+      after = [ "redis-agentos.service" "agentos-daemon.service" ];
+      requires = [ "redis-agentos.service" ];
+      wants = [ "agentos-daemon.service" ];
+      wantedBy = [ "multi-user.target" ];
+      restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+      path = [ config.systemd.package ]; # systemctl
 
       serviceConfig = {
         Type = "simple";
         User = "agentos";
         Group = "agentos";
-        ExecStart = "${pkgs.agentos.orchestrator}/bin/agentos-orchestrator";
+        SupplementaryGroups = [ "redis-agentos" ];
+        ExecStart = "${pkgs.agentos.services}/bin/agentos-orchestrator";
         Restart = "on-failure";
-        RestartSec = 5;
+        RestartSec = 3;
+        # Control socket: reachable by the agentos group (operators), not agents
+        RuntimeDirectory = "agentos-orchestrator";
+        RuntimeDirectoryMode = "0750";
+        UMask = "0007";
+
         NoNewPrivileges = true;
+        PrivateTmp = true;
         ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/agentos" ];
+        ProtectHome = true;
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        LockPersonality = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
       };
     };
 
-    # ─ Orchestration CLI ─────────────────────────────────────────────
-    # The CLI only queues work for the planned service, so ship them together
-    environment.systemPackages = lib.optionals config.agentos.plannedServices.enable [
-      (pkgs.writeShellScriptBin "agentos-orchestrate" ''
-        #!/usr/bin/env bash
-        set -euo pipefail
+    # ─ Root helper: one instance per task ────────────────────────────
+    # Started by the orchestrator, never enabled. It validates the task
+    # again and runs the agent in the `agentos spawn` sandbox.
+    systemd.services."agentos-task-runner@" = {
+      description = "AgentOS task %i";
+      after = [ "redis-agentos.service" "agentos-daemon.service" ];
+      path = [ config.systemd.package pkgs.git ]; # systemd-run, systemctl, git
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.agentos.services}/bin/agentos-task-runner %i";
+        TimeoutStartSec = "infinity";
+        # `systemctl stop` (cancel) signals the helper only; it stops the
+        # agent's unit itself and records the result before it exits
+        KillMode = "mixed";
+        UMask = "0002";
 
-        BOLD='\033[1m'
-        GREEN='\033[0;32m'
-        BLUE='\033[0;34m'
-        NC='\033[0m'
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ReadWritePaths = [ "/var/lib/agentos/state" tasksDir rt.workspaceRoot rt.agentHome ];
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        LockPersonality = true;
+        RestrictRealtime = true;
+      };
+    };
 
-        info() { echo -e "''${BLUE}[INFO]''${NC} $*"; }
-        ok()   { echo -e "''${GREEN}[OK]''${NC} $*"; }
+    # The orchestrator may start and stop task runners, nothing else
+    security.polkit.enable = true;
+    security.polkit.extraConfig = ''
+      polkit.addRule(function(action, subject) {
+        if (action.id == "org.freedesktop.systemd1.manage-units" &&
+            subject.user == "agentos") {
+          var unit = action.lookup("unit") || "";
+          var verb = action.lookup("verb") || "";
+          if (/^agentos-task-runner@[A-Za-z0-9][A-Za-z0-9._-]*\.service$/.test(unit) &&
+              (verb == "start" || verb == "stop")) {
+            return polkit.Result.YES;
+          }
+        }
+      });
+    '';
 
-        case "''${1:-help}" in
-          status)
-            info "Orchestration status:"
-            echo "  Mode: ${cfg.mode}"
-            echo "  Max workers: ${toString cfg.maxWorkers}"
-            echo "  Task timeout: ${toString cfg.taskTimeoutSec}s"
-            echo "  Result strategy: ${cfg.resultStrategy}"
-            echo ""
-            echo "  Active tasks:"
-            ${pkgs.redis}/bin/redis-cli -n 1 KEYS "task:*" 2>/dev/null | while read -r key; do
-              status=$(${pkgs.redis}/bin/redis-cli -n 1 HGET "$key" status 2>/dev/null)
-              agent=$(${pkgs.redis}/bin/redis-cli -n 1 HGET "$key" agent 2>/dev/null)
-              echo "    $key: $status ($agent)"
-            done
-            ;;
-
-          run)
-            TASK="''${2:-}"
-            AGENT="''${3:-claude-code}"
-            if [ -z "$TASK" ]; then
-              echo "Usage: agentos-orchestrate run \"task description\" [agent]"
-              exit 1
-            fi
-            info "Submitting task to orchestrator..."
-            info "Task: $TASK"
-            info "Agent: $AGENT"
-            info "Mode: ${cfg.mode}"
-
-            # Push task to Redis queue
-            TASK_ID="task-$(date +%s)"
-            ${pkgs.redis}/bin/redis-cli -n 1 HSET "$TASK_ID" \
-              description "$TASK" \
-              agent "$AGENT" \
-              status "queued" \
-              created "$(date -Iseconds)" >/dev/null
-            ${pkgs.redis}/bin/redis-cli -n 1 LPUSH "task_queue" "$TASK_ID" >/dev/null
-            ok "Task queued: $TASK_ID"
-            echo ""
-            echo "Monitor with: agentos-orchestrate status"
-            echo "View results: agentos-orchestrate results $TASK_ID"
-            ;;
-
-          results)
-            TASK_ID="''${2:-}"
-            if [ -z "$TASK_ID" ]; then
-              echo "Usage: agentos-orchestrate results <task-id>"
-              exit 1
-            fi
-            info "Results for $TASK_ID:"
-            ${pkgs.redis}/bin/redis-cli -n 1 HGETALL "$TASK_ID" 2>/dev/null
-            ;;
-
-          swarm)
-            # Swarm mode: run N agents on the same task in parallel
-            TASK="''${2:-}"
-            N="''${3:-3}"
-            if [ -z "$TASK" ]; then
-              echo "Usage: agentos-orchestrate swarm \"task\" [count]"
-              exit 1
-            fi
-            info "Starting swarm of $N agents on task:"
-            info "  $TASK"
-
-            for i in $(seq 1 "$N"); do
-              AGENT_ID="swarm-$(date +%s)-$i"
-              info "  Spawning agent $i/$N..."
-              (
-                cd /var/lib/agentos/workspaces
-                mkdir -p "$AGENT_ID" && cd "$AGENT_ID"
-                git init --quiet
-                agentos spawn claude-code --workspace . &
-              ) &
-            done
-            wait
-            ok "Swarm complete. Results in /var/lib/agentos/workspaces/swarm-*"
-            ;;
-
-          cancel)
-            TASK_ID="''${2:-}"
-            if [ -z "$TASK_ID" ]; then
-              echo "Usage: agentos-orchestrate cancel <task-id>"
-              exit 1
-            fi
-            ${pkgs.redis}/bin/redis-cli -n 1 HSET "$TASK_ID" status "cancelled" >/dev/null
-            ok "Task cancelled: $TASK_ID"
-            ;;
-
-          help|*)
-            cat <<'HELP'
-        AgentOS Orchestration CLI
-
-        USAGE:
-            agentos-orchestrate <COMMAND> [ARGS]
-
-        COMMANDS:
-            status                 Show orchestration status and active tasks
-            run "task" [agent]     Submit a task to the orchestrator
-            results <task-id>      Get results for a completed task
-            swarm "task" [n]       Run N agents on the same task in parallel
-            cancel <task-id>       Cancel a running task
-
-        MODES:
-            planner-worker   One planner delegates to workers
-            swarm            N agents work independently, best result wins
-            hierarchical     Agents spawn sub-agents recursively
-            pipeline         Agents work in sequence (output feeds next)
-
-        HELP
-            ;;
-        esac
-      '')
-    ];
-
+    environment.systemPackages = [ pkgs.agentos.task-cli ];
   };
 }

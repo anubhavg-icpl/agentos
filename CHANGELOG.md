@@ -5,6 +5,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Per-agent gateway tokens.** `agentos spawn` generates a token and registers its hash through the admin socket; agents call `/agent/<id>:<token>/<provider>/`. An agent can no longer spend under another agent's id, get a fresh budget by inventing ids, or impersonate others on the message bus. Tokens are revoked when the agent is reaped.
+- **Container isolation** (`agentos spawn --isolation container`): own root filesystem, PID/IPC/UTS namespaces and a network namespace on the `agentos0` bridge that can only reach the gateway.
+- **GPU scheduling** (`agentos spawn --gpu N`, `agentos-gpu`) with exclusive per-device locks, released by the daemon when an agent dies.
+- **Orchestrator and scheduler** (`agentos-task`, `agentos-schedule`): queued tasks, pipelines, swarms in git worktrees, and `OnCalendar` schedules.
+- **Gateway features**: loop detection, cost routing to cheaper models, request recording and deterministic replay (`agentos-replay`), and an inter-agent message bus over HTTP and MCP (`agentos-msg`, `agentos-mcp-bus`).
+- **Web dashboard** (`agentos-dashboard`), **remote fleets over SSH** (`agentos-fleet`) and an **agent marketplace** (`agentos-market`, `marketplace/index.json`); marketplace agents can be spawned by name.
+- **Desktop edition** (`agentos.desktop.enable`): i3 with gaps by default, or sway/Hyprland; VS Code, Zed, Firefox; `agentos-desktop` host, desktop VM image and live ISO; `agentos-install --desktop`.
+- **ARM64**: `-aarch64` variants of the server, VM, ISO and desktop hosts, and `packages.aarch64-linux.{iso,vm}-image`.
+- VM tests `gateway-features`, `orchestration`, `container`, `platform` and `desktop`.
+
+### Changed
+- Unmanaged `/<provider>/` requests are only accepted on the gateway's admin socket.
+- The orchestration and scheduler modules were rewritten; `agentos.orchestration.mode`, `resultStrategy` and several `agentos.scheduler.*` options were removed (setting them fails with a pointer to the replacement).
+
 ## [0.3.0] - 2026-09-30
 
 The first release where the agent service layer works end to end: sandboxed

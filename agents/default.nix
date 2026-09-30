@@ -245,6 +245,9 @@ rec {
   cli = pkgs.callPackage ../nixos/packages/cli.nix { };
   services = pkgs.callPackage ../nixos/packages/services.nix { };
   installer = pkgs.callPackage ../nixos/packages/installer.nix { };
+  # Client CLIs of the orchestrator and scheduler services (in `services`)
+  task-cli = pkgs.callPackage ../nixos/packages/task-cli.nix { };
+  schedule-cli = pkgs.callPackage ../nixos/packages/schedule-cli.nix { };
 
   # Service daemons. These are placeholders with no source code yet;
   # they are only referenced when agentos.daemons.enable = true.
@@ -252,11 +255,9 @@ rec {
   mcp-gateway = pkgs.callPackage ../nixos/packages/mcp-gateway.nix { };
   model-gateway = pkgs.callPackage ../nixos/packages/model-gateway.nix { };
   memory-manager = pkgs.callPackage ../nixos/packages/memory-manager.nix { };
-  orchestrator = pkgs.callPackage ../nixos/packages/orchestrator.nix { };
   mcp-registry = pkgs.callPackage ../nixos/packages/mcp-registry.nix { };
   budget-controller = pkgs.callPackage ../nixos/packages/budget-controller.nix { };
   provisioner = pkgs.callPackage ../nixos/packages/provisioner.nix { };
   notifier = pkgs.callPackage ../nixos/packages/notifier.nix { };
   circuit-breaker = pkgs.callPackage ../nixos/packages/circuit-breaker.nix { };
-  scheduler = pkgs.callPackage ../nixos/packages/scheduler.nix { };
 }

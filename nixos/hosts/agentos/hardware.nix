@@ -2,6 +2,9 @@
 # This is a generic/VM-friendly config. Override for bare metal.
 { config, lib, pkgs, modulesPath, ... }:
 
+let
+  isX86 = pkgs.stdenv.hostPlatform.isx86_64;
+in
 {
   imports = [ ];
 
@@ -21,13 +24,14 @@
   };
 
   # ── CPU ───────────────────────────────────────────────────────────
-  hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
-  hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+  # Microcode updates exist for x86 CPUs only
+  hardware.cpu.intel.updateMicrocode = lib.mkIf isX86 (lib.mkDefault config.hardware.enableRedistributableFirmware);
+  hardware.cpu.amd.updateMicrocode = lib.mkIf isX86 (lib.mkDefault config.hardware.enableRedistributableFirmware);
 
   # ── Power management (minimal) ────────────────────────────────────
   powerManagement.enable = true;
   powerManagement.cpuFreqGovernor = "performance";
 
-  # ── Graphics (none, headless) ─────────────────────────────────────
-  hardware.graphics.enable = false;
+  # ── Graphics (none unless the desktop is enabled) ────────────────
+  hardware.graphics.enable = lib.mkDefault false;
 }

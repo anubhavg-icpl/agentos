@@ -23,6 +23,10 @@ DEFAULTS = {
         "pricing_file": "/etc/agentos/pricing.json",
         "upstream_timeout_sec": 600,
         "max_request_bytes": 64 * 1024 * 1024,
+        # Agents must present the token registered by `agentos spawn` in
+        # their URL (/agent/<id>:<token>/...); the unmanaged /<provider>/
+        # path is then only served on the admin socket.
+        "require_agent_tokens": True,
     },
     "budget": {
         "default_daily_usd": 50.0,
@@ -34,6 +38,35 @@ DEFAULTS = {
         "max_requests_per_minute": 60,
         "max_consecutive_failures": 5,
         "cooldown_sec": 300,
+        # Loop detection: the same request fingerprint K times in a row
+        "loop_detection": True,
+        "loop_repeat_threshold": 5,
+        "loop_window_sec": 600,
+        "loop_fingerprint_messages": 4,
+    },
+    "routing": {
+        # "static" applies rewrites only; "cheapest" also picks the cheapest
+        # model of an equivalence group
+        "strategy": "static",
+        # Global rewrites {"requested-model": "routed-model"}
+        "rewrites": {},
+        # Per agent-id-prefix rewrites {"prefix": {"requested": "routed"}}
+        "agents": {},
+        # Equivalence groups for strategy = "cheapest": [["model-a", "model-b"]]
+        "groups": [],
+        # Budget-aware downgrade: at >= threshold_pct of the agent's daily
+        # budget, rewrite to models[<provider>]. 0 disables.
+        "downgrade": {"threshold_pct": 0, "models": {}},
+    },
+    "recording": {
+        "enabled": False,
+        "dir": "/var/lib/agentos/recordings",
+        "max_body_bytes": 64 * 1024 * 1024,
+    },
+    "bus": {
+        "max_len": 1000,
+        "max_message_bytes": 64 * 1024,
+        "max_wait_sec": 30,
     },
     "providers": {
         "anthropic": {"base_url": "https://api.anthropic.com", "api": "anthropic"},
@@ -44,6 +77,12 @@ DEFAULTS = {
         "metrics_listen": "127.0.0.1",
         "metrics_port": 9950,
         "reap_interval_sec": 5,
+    },
+    "gpu": {
+        # One file per exclusively held GPU, containing the holder's agent id
+        "lock_dir": "/run/agentos/gpu",
+        # A lock younger than this is never treated as stale (spawn is starting)
+        "stale_grace_sec": 30,
     },
     "notify": {
         # Internal event types to forward (see daemon.EVENT_TEXT)
@@ -60,6 +99,12 @@ _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 def valid_agent_id(agent_id):
     return bool(_AGENT_ID.match(agent_id or ""))
+
+
+def valid_topic(topic):
+    """Bus topics look like agent ids; "@<agent-id>" is an agent's inbox."""
+    topic = topic or ""
+    return valid_agent_id(topic[1:] if topic.startswith("@") else topic)
 
 
 def _merge(base, override):

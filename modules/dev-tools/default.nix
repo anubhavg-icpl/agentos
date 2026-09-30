@@ -9,6 +9,7 @@
 { config, pkgs, lib, ... }:
 
 let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
   cfg = config.agentos.dev-tools;
 in
 {
@@ -17,7 +18,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = avail (with pkgs; [
       # ════════════════════════════════════════════════════════════════
       # MODERN UNIX REPLACEMENTS
       # ════════════════════════════════════════════════════════════════
@@ -170,7 +171,7 @@ in
       parallel         # GNU parallel
       expect           # automation
       dialog           # TUI dialogs
-    ];
+    ]);
 
     # ── Shell enhancements ───────────────────────────────────────────
     programs = {

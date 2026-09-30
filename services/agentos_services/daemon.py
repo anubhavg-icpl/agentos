@@ -25,6 +25,7 @@ import time
 import urllib.request
 
 from . import config as configmod
+from .gpu import Registry as GpuRegistry
 from .store import Store, connect
 
 log = logging.getLogger("agentos.daemon")
@@ -39,6 +40,7 @@ EVENT_TEXT = {
     "budget_exceeded": "Agent {agent} exceeded its daily budget (${usd:.2f} of ${limit_usd:.2f})",
     "global_budget_exceeded": "AgentOS global daily budget exhausted (${usd:.2f} of ${limit_usd:.2f})",
     "circuit_open": "Circuit breaker opened for agent {agent} after {failures} upstream failures",
+    "loop_detected": "Agent {agent} looks stuck: it sent the same request {count} times in a row",
 }
 
 
@@ -68,6 +70,7 @@ class Daemon:
         self.state_dir = cfg["daemon"]["state_dir"]
         self.history_dir = os.path.join(self.state_dir, "history")
         self._lock = threading.Lock()
+        self.gpus = GpuRegistry(cfg["gpu"]["lock_dir"], clock=clock)
 
     # ── registry ───────────────────────────────────────────────────────
     def _path(self, agent_id):
@@ -133,6 +136,25 @@ class Daemon:
                     os.unlink(self._path(state["id"]))
                 except OSError:
                     pass
+                # A finished agent's gateway credentials stop working
+                try:
+                    self.store.delete_agent_token(state["id"])
+                except Exception as exc:
+                    log.warning("could not revoke token of %s: %s", state["id"], exc)
+            self.release_stale_gpus()
+
+    def release_stale_gpus(self):
+        """Safety net for GPU locks the agent unit's ExecStopPost did not free."""
+        if not os.path.isdir(self.gpus.dir):
+            return  # GPU scheduling is not enabled
+        running = {s["id"] for s in self.agents() if s.get("status") == "running"}
+        try:
+            freed = self.gpus.release_stale(running.__contains__, float(self.cfg["gpu"]["stale_grace_sec"]))
+        except OSError as exc:
+            log.warning("could not release stale GPU locks: %s", exc)
+            return
+        if freed:
+            log.info("released stale GPU locks: %s", freed)
 
     # ── enforcement ────────────────────────────────────────────────────
     def kill(self, agent_id, reason):
@@ -185,7 +207,7 @@ class Daemon:
         try:
             text = EVENT_TEXT.get(event["type"], event["type"]).format(**{
                 "agent": "?", "reason": "", "threshold": "?", "usd": 0.0, "limit_usd": 0.0,
-                "failures": "?", "command": "", **event,
+                "failures": "?", "command": "", "count": "?", **event,
             })
         except (KeyError, ValueError):
             text = event["type"]

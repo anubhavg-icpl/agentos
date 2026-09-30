@@ -47,6 +47,26 @@ def register(daemon, agent_id, age=60, **fields):
     return state
 
 
+def test_reap_releases_stale_gpu_locks(make_daemon, tmp_path):
+    lock_dir = tmp_path / "gpu"
+    lock_dir.mkdir()
+    d = make_daemon(gpu={"lock_dir": str(lock_dir), "stale_grace_sec": 30})
+    register(d, "live", pid=os.getpid())
+    for index, holder in ((0, "live"), (1, "gone"), (2, "starting")):
+        (lock_dir / str(index)).write_text(holder + "\n")
+    old = time.time() - 300
+    for index in (0, 1):
+        os.utime(lock_dir / str(index), (old, old))
+    d.reap()
+    assert sorted(os.listdir(lock_dir)) == [".lock", "0", "2"]
+
+
+def test_reap_ignores_missing_gpu_dir(make_daemon, tmp_path):
+    d = make_daemon(gpu={"lock_dir": str(tmp_path / "absent")})
+    d.reap()
+    assert not (tmp_path / "absent").exists()
+
+
 def test_reap_archives_dead_agents(make_daemon, events):
     runner = FakeRunner(active={"agentos-agent-live.service"})
     d = make_daemon(runner)
@@ -115,6 +135,18 @@ def test_notifications(make_daemon, tmp_path):
     assert len(sent) == 2
 
 
+def test_loop_detected_notification(make_daemon):
+    sent = []
+    d = make_daemon(sent=sent, notify={
+        "events": ["loop_detected"], "targets": [{"kind": "slack", "url": "https://hooks.example/slack"}],
+    })
+    d.handle({"type": "loop_detected", "agent": "a1", "count": 5, "window_sec": 600})
+    deadline = time.time() + 5
+    while not sent and time.time() < deadline:
+        time.sleep(0.05)
+    assert sent[0][1]["text"] == "AgentOS: Agent a1 looks stuck: it sent the same request 5 times in a row"
+
+
 def test_metrics(make_daemon, store):
     d = make_daemon(FakeRunner(active={"agentos-agent-a1.service"}))
     register(d, "a1", unit="agentos-agent-a1.service")
@@ -126,3 +158,11 @@ def test_metrics(make_daemon, store):
     assert 'agentos_agent_tokens_today{agent="a1",kind="input_tokens"} 10' in text
     assert 'agentos_agent_requests_today{agent="a1",status="2xx"} 1' in text
     assert "agentos_spend_usd_today 1.5" in text
+
+
+def test_reap_revokes_gateway_token(make_daemon, store):
+    d = make_daemon(FakeRunner())
+    register(d, "gone", unit="agentos-agent-gone.service")
+    store.set_agent_token("gone", "a" * 64)
+    d.reap()
+    assert store.agent_token("gone") is None

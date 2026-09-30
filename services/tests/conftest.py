@@ -22,6 +22,11 @@ PRICING = {
         # $3 / $15 per million input / output tokens
         "claude-test": {"input_per_1m": 3.0, "output_per_1m": 15.0, "cache_read_per_1m": 0.3, "cache_write_per_1m": 3.75},
         "gpt-test": {"input_per_1m": 1.0, "output_per_1m": 2.0, "cache_read_per_1m": 0.5},
+        # models with a vendor, for routing tests
+        "claude-cheap": {"provider": "anthropic", "input_per_1m": 1.0, "output_per_1m": 5.0},
+        "claude-mid": {"provider": "anthropic", "input_per_1m": 2.0, "output_per_1m": 10.0},
+        "claude-pricey": {"provider": "anthropic", "input_per_1m": 20.0, "output_per_1m": 100.0},
+        "gpt-cheap": {"provider": "openai", "input_per_1m": 0.1, "output_per_1m": 0.2},
     },
     "default": {"input_per_1m": 10.0, "output_per_1m": 50.0},
 }
@@ -141,7 +146,8 @@ def make_gateway(tmp_path, short_dir, upstream, store):
             "anthropic": {"base_url": upstream.url, "api": "anthropic", "key_file": str(key_file)},
             "openai": {"base_url": upstream.url, "api": "openai"},
         }
-        cfg["gateway"].update(listen="127.0.0.1", port=0, log_dir=str(tmp_path / "logs"),
+        # Most tests address agents by bare id; test_auth.py covers tokens
+        cfg["gateway"].update(require_agent_tokens=False, listen="127.0.0.1", port=0, log_dir=str(tmp_path / "logs"),
                               admin_socket=os.path.join(short_dir, "admin.sock"))
         (tmp_path / "logs").mkdir(exist_ok=True)
         for section, values in overrides.items():
