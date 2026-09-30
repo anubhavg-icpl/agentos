@@ -3,30 +3,33 @@
 Complete documentation of every feature built into AgentOS.
 
 > [!NOTE]
-> Several features below describe the target design. The ones that need the
-> AgentOS service daemons (container isolation, budget enforcement, circuit
-> breaker, orchestration, scheduler, notifier, model/MCP gateways) are
-> configured but not implemented yet. [STATUS.md](STATUS.md) lists what works
-> today.
+> The orchestrator, scheduler, MCP gateway/registry service, provisioner and
+> memory manager are designed but not implemented yet; their modules install
+> configuration only. [STATUS.md](STATUS.md) lists exactly what works and how
+> it is tested.
 
 ---
 
 ## Core Infrastructure
 
-### 1. Container Runtime (`modules/runtime`)
-Planned: sandbox each agent in an isolated container (containerd/podman/docker). Today containerd is installed and `agentos spawn` runs the agent directly on a fresh git branch.
-- **Per-agent isolation (planned):** Each agent gets its own filesystem, network namespace, process tree.
-- **Resource quotas:** CPU, memory, disk, and PID limits per agent.
-- **Snapshotting:** Save and restore agent state mid-run.
-- **Config:** `agentos.runtime.enable = true;`
+### 1. Runtime (`modules/runtime`)
+Runs each agent in its own sandbox and keeps track of it.
+- **Sandboxed agents:** `agentos spawn` starts the agent as a transient systemd unit (`agentos-agent-<id>.service`) running as the unprivileged `agentos-agent` user: no sudo, read-only system, private /tmp, home directories hidden, write access only to its workspace and its own home.
+- **Resource limits:** memory, CPU quota and process count per agent (from `agentos.circuit-breaker`).
+- **Shared workspaces:** `/var/lib/agentos/workspaces/<name>`, shared between the operator and the agent user through group ACLs. Every run gets its own `agent/<id>` git branch.
+- **Agent daemon:** tracks running agents, stops agents that exceed their budget, sends notifications, and exports Prometheus metrics on `127.0.0.1:9950`.
+- **Control-plane Redis:** unix socket only; agents cannot read or change spend or budgets.
+- **Config:** `agentos.runtime.enable = true;` (`maxAgents`, `operators`, `agents`)
 
 **CLI:**
 ```bash
-agentos spawn claude-code --workspace ./myproject
-agentos list
+agentos workspace create api --from https://github.com/me/api.git
+agentos spawn claude --workspace api --budget 5
+agentos list                  # running + recent agents, spend today
+agentos logs <agent-id> [-f]  # every model API call: model, tokens, cost
 agentos kill <agent-id>
-agentos logs <agent-id>
-agentos shell <agent-id>
+agentos shell <agent-id>      # shell inside the agent's sandbox
+agentos status
 ```
 
 ### 2. Storage & Snapshots (`modules/storage`)
@@ -37,26 +40,26 @@ btrfs-based copy-on-write filesystem for instant branching and snapshots.
 - **Workspace GC:** Automatically cleans up abandoned workspaces.
 - **Config:** `agentos.storage.enable = true;`
 
-### 3. Networking (`modules/networking`)
-Internal bridge network for agent containers with NAT and firewalling.
-- **Agent subnet:** Containers live on `10.200.0.0/24`.
-- **Model API Gateway:** All LLM calls route through a proxy that enforces budget and rate limits.
-- **Provider support:** Anthropic, OpenAI, Google, Groq, OpenRouter, DeepSeek.
-- **Config:** `agentos.networking.enable = true;`
+### 3. Networking & Model Gateway (`modules/networking`)
+Every LLM call from a sandboxed agent goes through the model gateway on `127.0.0.1:8080`.
+- **Per-agent routing:** agents get `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` pointing at `/agent/<id>/<provider>`, so each request is attributed to the agent that made it.
+- **Metering:** token usage is read from JSON and streaming (SSE) responses of the Anthropic Messages API and the OpenAI Chat Completions and Responses APIs, then priced with `pricing.json`.
+- **Key injection:** with a provider `keyFile` (e.g. a sops secret), agents only see the placeholder key `agentos-managed`; the gateway adds the real key upstream.
+- **Enforcement:** budgets (402), per-agent rate limit (429), circuit breaker (503).
+- **Admin socket:** `/run/agentos-gateway/admin.sock` for budget changes, writable by operators only.
+- **Config:** `agentos.networking.providers.<name> = { baseUrl; api; keyFile; };`
 
 ### 4. Security (`modules/security`)
-Capability-based security model designed for agents.
-- **Default-deny egress:** Agents can only reach whitelisted domains.
-- **AppArmor:** Mandatory access control for all processes.
-- **Kernel hardening:** Sysctl tuning, BPF JIT hardening, ASLR enforcement.
-- **Audit logging:** Every execve syscall logged; workspace writes watched.
+- **Egress allowlist:** with `defaultEgress = "deny"`, dnsmasq only resolves allowlisted domains and records their addresses in an ipset; iptables rejects every other outbound connection (host-wide).
+- **Gateway-only provider APIs:** the `agentos-agent` user cannot connect to provider API hosts directly, use a DNS server other than the local one, or use IPv6. Budgets cannot be bypassed.
+- **AppArmor, auditd, kernel hardening** (sysctl, BPF JIT hardening, protected links/FIFOs).
 - **Config:** `agentos.security.defaultEgress = "deny";`
 
 ### 5. Observability (`modules/observability`)
 Full observability stack: Prometheus + Tempo + Grafana.
 - **Tracing:** OpenTelemetry collector → Tempo pipeline (agents don't emit traces yet).
-- **Metrics:** Per-agent CPU, memory, token usage, cost.
-- **Dashboards:** Grafana at `http://<host>:2342` (admin/agentos).
+- **Dashboards:** Grafana on `localhost:2342` (reach it with `ssh -L 2342:localhost:2342`); set `grafanaAdminPasswordFile`.
+- **Agent metrics:** the daemon exports spend, budgets, tokens and request counts per agent; Prometheus scrapes it.
 - **Retention:** 30 days by default.
 - **Config:** `agentos.observability.enable = true;`
 
@@ -80,23 +83,11 @@ agentos-memory search       # Browse collections
 agentos-memory forget       # Clear all memories
 ```
 
-### 7. Multi-Agent Orchestration (`modules/orchestration`)
-Coordinates multiple agents working on the same problem.
-- **Planner-worker:** A planner breaks down tasks; workers execute subtasks.
-- **Swarm:** N agents tackle the same problem; best result wins.
-- **Hierarchical:** Agents spawn sub-agents recursively.
-- **Pipeline:** Agents work in sequence (output feeds next).
-- **Task queue:** Redis-backed priority queue.
-- **Result strategies:** first-success, best-of-n, consensus, all.
-- **Config:** `agentos.orchestration.mode = "planner-worker";`
-
-**CLI:**
-```bash
-agentos-orchestrate run "build a REST API" claude-code
-agentos-orchestrate swarm "fix all failing tests" 3
-agentos-orchestrate status
-agentos-orchestrate results <task-id>
-```
+### 7. Multi-Agent Orchestration (`modules/orchestration`) — planned
+Design for coordinating multiple agents (planner-worker, swarm, pipeline). The
+orchestrator service is not implemented; its unit and CLI are only installed
+with `agentos.plannedServices.enable`. Today, run several agents side by side
+with `agentos spawn` in separate workspaces.
 
 ---
 
@@ -124,38 +115,33 @@ agentos-tools test github                    # Health check
 ## Safety & Control
 
 ### 9. Budget Controller (`modules/budget-controller`)
-Prevents runaway spending on LLM APIs.
-- **Per-agent budgets:** Daily and session caps in USD.
-- **Global budget:** System-wide daily cap.
-- **Threshold alerts:** Warn at 50%, 80%, 95%, 100%.
-- **Auto-shutdown:** Kill agents that exceed their budget.
-- **13 models priced:** Claude, GPT-4o, Gemini, DeepSeek, Qwen, Llama.
-- **Cost breakdowns:** By agent, model, project.
+Caps what agents can spend on LLM APIs. Enforced by the model gateway.
+- **Per-agent daily budget** (default $50, UTC day) and a **global daily budget** (default $500).
+- **Requests over budget** are refused with HTTP 402 before they reach the provider.
+- **Threshold alerts** at 50/80/95% and an event when the budget is exceeded.
+- **Auto-shutdown:** the agent daemon stops the agent's unit.
+- **Pricing** for current Claude, OpenAI, Gemini, DeepSeek, Qwen and Llama models (`pricing.json`, USD per million tokens, including cache reads and writes). Unknown models are priced conservatively.
 - **Config:** `agentos.budget-controller.defaultDailyBudgetUSD = 50.0;`
 
 **CLI:**
 ```bash
-agentos-budget status       # Current spend
-agentos-budget history      # 7-day cost history
-agentos-budget by-model     # Spend per model
-agentos-budget set <id> 25  # Set per-agent budget
-agentos-budget alerts       # Recent alerts
+agentos-budget status       # spend per agent today, limits, request counts
+agentos-budget set <id> 25  # daily budget for one agent
+agentos-budget reset <id>   # back to the default
+agentos-budget history      # 7-day global spend
+agentos-budget by-model
 ```
 
 ### 10. Circuit Breaker (`modules/circuit-breaker`)
-Protects against runaway and malfunctioning agents.
-- **Rate limiting:** Max API calls, file writes, shell commands per minute.
-- **Circuit breaker:** N consecutive failures pauses the agent.
-- **Resource limits:** Kill agents exceeding CPU/memory limits.
-- **Loop detection:** Detects agents stuck repeating the same action.
-- **Cooldown:** 5-minute pause after circuit trips.
+- **Rate limit:** max LLM requests per agent per minute (HTTP 429 with Retry-After).
+- **Circuit breaker:** after N consecutive upstream failures an agent's requests are refused for a cooldown (HTTP 503).
+- **Resource limits:** memory, CPU share and process count for each sandboxed agent.
 - **Config:** `agentos.circuit-breaker.maxConsecutiveFailures = 5;`
 
 **CLI:**
 ```bash
-agentos-breaker status      # Show limits and tripped circuits
-agentos-breaker trip <id>   # Manually trip a circuit
-agentos-breaker reset [id]  # Reset circuit(s)
+agentos-breaker status
+agentos-breaker reset <id>  # close an open circuit
 ```
 
 ### 11. Secrets Manager (`modules/secrets-manager`)
@@ -180,20 +166,15 @@ agentos-secrets check       # Show access mapping
 ## Developer Experience
 
 ### 12. Git Automation (`modules/git-automation`)
-Makes every agent change tracked and reviewable.
-- **Auto-branch:** New branch per agent session (`agent/claude-code-20260104-123456`).
-- **Auto-commit:** Commit after each meaningful change.
-- **Auto-PR:** Create PR when agent work completes.
-- **Quality gates:** Pre-commit hook requires tests to pass.
-- **Secret blocking:** Prevents API keys from being committed.
-- **Large file blocking:** Blocks files > 10MB.
-- **Config:** `agentos.git-automation.autoPR = true;`
+- **Branch per agent session:** `agentos spawn` creates `agent/<agent-id>` in the workspace.
+- **Hooks:** pre-commit checks for secrets, large files and failing tests (`agentos-git init`).
+- **Helpers** for commits, checkpoints and PRs via the GitHub CLI.
+- `autoCommit` / `autoPR` are not acted on yet.
 
 **CLI:**
 ```bash
 agentos-git init            # Set up hooks in workspace
-agentos-git branch          # Create agent branch
-agentos-git commit "msg"    # Auto-commit
+agentos-git commit "msg"
 agentos-git pr "title"      # Create PR via GitHub CLI
 agentos-git snapshot        # Checkpoint commit
 agentos-git undo            # Undo last commit, keep changes
@@ -222,38 +203,21 @@ agentos-env prebuild        # Pre-build environments
 
 ## Automation
 
-### 14. Scheduler (`modules/scheduler`)
-Cron-like scheduling for recurring agent tasks.
-- **Cron format:** Standard cron expressions (`0 2 * * *`, `@hourly`, etc.).
-- **Priority queues:** High, normal, low priority tasks.
-- **Deadlines:** Tasks can have a max duration.
-- **Dependency chains:** Task B starts when task A finishes.
-- **Off-hours mode:** Only run during specified hours (e.g., 22:00-06:00).
-- **Config:** `agentos.scheduler.maxConcurrent = 4;`
-
-**CLI:**
-```bash
-agentos-schedule list       # List scheduled tasks
-agentos-schedule add nightly-scan "0 2 * * *" claude-code "Run security audit"
-agentos-schedule remove nightly-scan
-agentos-schedule run-now nightly-scan  # Trigger immediately
-agentos-schedule status     # Queue status
-```
+### 14. Scheduler (`modules/scheduler`) — planned
+Cron-like scheduling for recurring agent tasks. The scheduler service is not
+implemented; its unit and CLI are only installed with
+`agentos.plannedServices.enable`.
 
 ### 15. Notifications (`modules/notifications`)
-Sends alerts when agent events happen.
-- **Slack:** Incoming webhook integration.
-- **Discord:** Webhook-based messages.
-- **Email:** SMTP delivery.
-- **Generic webhook:** POST JSON to any URL.
-- **Events:** task-completed, approval-needed, budget-threshold, agent-error, pr-created, tests-passed, tests-failed.
-- **Config:** `agentos.notifications.enableSlack = true;`
+The agent daemon forwards events to Slack, Discord or a generic JSON webhook.
+- **Events:** `agent-started`, `task-completed`, `budget-threshold` (thresholds, budget exceeded), `agent-error` (agent stopped, circuit opened).
+- **Secret URLs** are read from files (`slackWebhookFile`, `discordWebhookFile`, `webhookUrlFile`), e.g. sops secrets, never the Nix store.
+- **Config:** `agentos.notifications.slackWebhookFile = "/run/secrets/SLACK_WEBHOOK";`
 
 **CLI:**
 ```bash
-agentos-notify test         # Send test notification
-agentos-notify send "info" "Hello from AgentOS"
-agentos-notify status       # Show configured channels
+agentos-notify status
+agentos-notify test "hello"
 ```
 
 ---
@@ -264,8 +228,9 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 
 | Source | Agents |
 |------|--------|
-| nixpkgs (12) | Claude Code, Codex, Aider, Gemini, Qwen Code, Amp, Goose, OpenCode, Crush, Cursor CLI, GitHub Copilot CLI, Open Interpreter |
+| nixpkgs (11) | Claude Code, Codex, Aider, Gemini, Qwen Code, Amp, Goose, OpenCode, Crush, Cursor CLI, GitHub Copilot CLI |
 | npm launcher (3) | Factory Droid, Cline, Continue |
+| PyPI launcher (1) | Open Interpreter |
 
 ---
 
@@ -273,22 +238,22 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 
 | Feature | Module | CLI Command | Status |
 |---------|--------|-------------|---------|
-| Container Runtime | runtime | `agentos spawn` | Partial (no containers yet) |
-| Storage & Snapshots | storage | (automatic) | ✅ |
-| Networking | networking | (automatic) | ✅ (gateway planned) |
-| Security | security | (automatic) | ✅ |
-| Observability | observability | Grafana dashboard | ✅ |
-| Context & Memory | context | `agentos-memory` | Qdrant ✅, memory manager planned |
-| Orchestration | orchestration | `agentos-orchestrate` | Planned |
-| MCP Tool Registry | mcp-registry | `agentos-tools` | Config ✅, registry service planned |
-| Budget Controller | budget-controller | `agentos-budget` | Planned |
-| Circuit Breaker | circuit-breaker | `agentos-breaker` | Planned |
-| Secrets Manager | secrets-manager | `agentos-secrets` | ✅ (after sops setup) |
-| Git Automation | git-automation | `agentos-git` | Helpers ✅, auto-commit/PR planned |
+| Sandboxed agents, registry, daemon | runtime | `agentos spawn` | ✅ (VM-tested) |
+| Model gateway | networking | (automatic) | ✅ (VM-tested) |
+| Budget controller | budget-controller | `agentos-budget` | ✅ (VM-tested) |
+| Circuit breaker, rate limit, resource limits | circuit-breaker | `agentos-breaker` | ✅ |
+| Notifications | notifications | `agentos-notify` | ✅ (VM-tested) |
+| Egress allowlist, gateway-only provider access | security | (automatic) | ✅ (VM-tested) |
+| Storage & snapshots | storage | `agentos snapshot` | ✅ |
+| Observability | observability | Grafana | ✅ |
+| Secrets manager | secrets-manager | `agentos-secrets` | ✅ (after sops setup) |
+| Git automation | git-automation | `agentos-git` | Helpers ✅, auto-commit/PR planned |
+| Context & memory | context | `agentos-memory` | Qdrant ✅, memory manager planned |
+| MCP servers | mcp-servers | `agentos-mcp` | ✅ (config) |
 | Provisioning | provisioning | `agentos-env` | ✅ (provisioner service planned) |
-| Scheduler | scheduler | `agentos-schedule` | Planned |
-| Notifications | notifications | `agentos-notify` | Planned |
-| 15 Coding Agents | agents | `agentos agents` | ✅ |
+| Orchestration | orchestration | — | Planned |
+| Scheduler | scheduler | — | Planned |
+| 15 coding agents | agents | `agentos agents` | ✅ |
 
 ---
 

@@ -34,8 +34,15 @@
 
 AgentOS is a minimal, NixOS-based operating system where the primary users are **AI coding agents**, not humans. It ships with 15 coding agents pre-installed, 35 MCP tool servers configured, 20+ language toolchains, the VIBE skills library installed on first boot, and a hardened, observable base system.
 
-> [!IMPORTANT]
-> **Project status: early.** The OS, agents, toolchains, egress allowlist, snapshots and monitoring stack work today. The agent service layer is designed and configured but not implemented yet: the agent daemon, MCP and model gateways, budget enforcement, circuit breaker and orchestrator. Their units are off by default (`agentos.daemons.enable`). See [docs/STATUS.md](docs/STATUS.md) for exactly what works.
+> [!NOTE]
+> **Status (v0.3.0).** The core loop works and is covered by an end-to-end VM test (`nix build .#checks.x86_64-linux.e2e`):
+> 1. An agent runs sandboxed.
+> 2. Every LLM call goes through a metering gateway.
+> 3. The budget is enforced.
+> 4. The agent is stopped when it runs out.
+> 5. You get notified.
+>
+> Multi-agent orchestration, the scheduler and container isolation are still planned. [docs/STATUS.md](docs/STATUS.md) lists exactly what works and how it is tested.
 
 <div align="center">
 <table>
@@ -55,7 +62,14 @@ AgentOS is a minimal, NixOS-based operating system where the primary users are *
 
 Run an AI coding agent on a normal machine and you're giving it your shell, your filesystem, and your network with no fence around any of it. There's no spending cap, so a runaway agent can burn real money before anyone notices. Commits happen by hand or not at all. Tool access means installing things yourself, one MCP server at a time. And when something goes wrong, there's no trace of what the agent actually did.
 
-AgentOS aims to put a fence around each of those problems on a NixOS base that rebuilds identically every time. Today it provides a default-deny egress allowlist, btrfs snapshots of agent workspaces, a branch per agent session, 35 MCP servers pre-wired, and Prometheus + Tempo + Grafana. Per-agent containers, budget caps with automatic shutdown and auto-commit depend on the agent daemon, which is on the roadmap ([status](docs/STATUS.md)).
+AgentOS puts a fence around each of those problems, on a NixOS base that rebuilds identically every time:
+
+- **Sandbox.** Each agent runs as an unprivileged user in its own systemd sandbox, with memory, CPU and process limits. It can write only to its workspace, and it has no sudo.
+- **Metering gateway.** Every LLM call goes through a gateway that prices it, enforces per-agent and global daily budgets, rate-limits the agent, and stops it when it runs out.
+- **Credentials.** API keys stay in the gateway; agents only ever see a placeholder.
+- **Egress.** Outbound traffic is default-deny: only allowlisted domains resolve, and agents cannot reach model providers except through the gateway.
+- **Audit trail.** Every session gets its own git branch, and btrfs snapshots let you roll a workspace back.
+- **Tooling and monitoring.** 35 MCP servers come pre-wired, and per-agent spend flows into Prometheus and Grafana.
 
 ---
 
@@ -64,7 +78,7 @@ AgentOS aims to put a fence around each of those problems on a NixOS base that r
 **Prerequisites:** [Nix](https://nixos.org) with flakes enabled, on x86_64-linux.
 
 ```bash
-# 1a. Build the installer ISO and write it to a USB stick
+# 1a. Build the installer ISO (also attached to each GitHub release) and write it to a USB stick
 nix build .#iso-image
 sudo dd if=result/iso/agentos-*.iso of=/dev/sdX bs=4M status=progress
 
@@ -74,19 +88,19 @@ sudo agentos-install /dev/nvme0n1 --ssh-key "ssh-ed25519 AAAA... you@host"
 
 # 2. Or try it in a VM instead
 nix build .#vm-image
-cp result/nixos.qcow2 agentos.qcow2 && chmod u+w agentos.qcow2
-qemu-system-x86_64 -m 8192 -enable-kvm -drive file=agentos.qcow2,if=virtio
+cp result/*.qcow2 agentos.qcow2 && chmod u+w agentos.qcow2
+qemu-system-x86_64 -m 8192 -enable-kvm -bios OVMF.fd -drive file=agentos.qcow2,if=virtio
 #    (add your key to users.users.admin.openssh.authorizedKeys.keys first)
 
-# 3. SSH in
+# 3. SSH in and give the gateway your API key (sops, see docs/FEATURES.md)
 ssh admin@agentos
 
-# 4. Start any agent; they're all pre-installed
-claude           # Anthropic Claude Code
-codex            # OpenAI Codex CLI
-aider            # AI pair programmer
-droid            # Factory Droid (downloaded from npm on first run)
-agentos agents   # See all 15 agents
+# 4. Run an agent in a sandbox with a $5/day budget
+agentos workspace create api --from https://github.com/me/api.git
+agentos spawn claude --workspace api --budget 5
+agentos list            # agents, status, spend today
+agentos logs <id>       # every model call with tokens and cost
+agentos agents          # all 15 agents
 ```
 
 <div align="center">
@@ -105,7 +119,7 @@ agentos agents   # See all 15 agents
 
 <br/>
 
-15 coding agents ship pre-installed. Each gets the same shared base tools (git, ripgrep, fd, gh) so they all work identically regardless of runtime. Twelve are built from nixpkgs and pinned by `flake.lock`; three that nixpkgs doesn't package yet are pinned npm launchers that download the agent on first run.
+15 coding agents ship pre-installed, and each gets the same base tools (git, ripgrep, fd, gh). Eleven are built from nixpkgs and pinned by `flake.lock`. Four that nixpkgs doesn't package yet are pinned npm/PyPI launchers, which download the agent on first run.
 
 | Command | Agent | Provider | Source |
 |:---|:---|:---|:---|
@@ -120,23 +134,23 @@ agentos agents   # See all 15 agents
 | `crush` | Crush | Charm | nixpkgs |
 | `cursor-agent` | Cursor CLI | Cursor | nixpkgs |
 | `copilot` | GitHub Copilot CLI | GitHub | nixpkgs |
-| `interpreter` | Open Interpreter | Open Source | nixpkgs |
 | `droid` | Factory Droid | Factory AI | npm launcher |
 | `cline` | Cline | Open Source | npm launcher |
 | `cn` | Continue CLI | Open Source | npm launcher |
+| `interpreter` | Open Interpreter | Open Source | PyPI launcher |
 
 <details>
 <summary><b>Run agents (click to expand)</b></summary>
 
 ```bash
-# Direct
-claude
-aider --model sonnet
-codex "fix the bug"
+# Sandboxed and metered (as agentos-agent, through the gateway)
+agentos spawn claude --workspace api --budget 5
+agentos spawn aider --workspace api -- --model sonnet   # args after -- go to the agent
+agentos kill <id>
 
-# On a fresh agent/* branch of the workspace
-agentos spawn claude --workspace ./myproject
-agentos spawn aider -- --model sonnet   # args after -- go to the agent
+# Direct, as yourself (no sandbox, no metering)
+claude
+codex "fix the bug"
 ```
 
 </details>
@@ -155,7 +169,7 @@ Full reference: [docs/AGENTS.md](docs/AGENTS.md)
 **Infrastructure**
 - Container runtime (containerd)
 - btrfs snapshots + dedup
-- Model API gateway †
+- Metering model gateway
 - AppArmor + egress allowlist
 - Prometheus + Tempo + Grafana
 
@@ -173,17 +187,17 @@ Full reference: [docs/AGENTS.md](docs/AGENTS.md)
 <td valign="top" width="33%">
 
 **Safety & Control**
-- Budget controller †
-- Circuit breaker †
+- Budget caps + auto-shutdown
+- Rate limit + circuit breaker
 - sops-nix secrets
 - Git helpers
-- Slack/Discord alerts †
+- Slack/Discord/webhook alerts
 
 </td>
 </tr>
 </table>
 
-<sub>† Configured, but the daemon that implements it isn't built yet. See <a href="docs/STATUS.md">docs/STATUS.md</a>.</sub>
+<sub>† Planned: configured, but the service isn't built yet. See <a href="docs/STATUS.md">docs/STATUS.md</a>.</sub>
 </div>
 
 ### Budget Control & Safety
@@ -198,21 +212,21 @@ Full reference: [docs/AGENTS.md](docs/AGENTS.md)
 |:---|:---|
 | **Budget caps** | Per-agent daily/session spending limits (default: $50/day) |
 | **Auto-shutdown** | Agents that exceed budget are killed automatically |
-| **Rate limiting** | Max API calls, file writes, and shell commands per minute |
-| **Circuit breaker** | N consecutive failures pauses the agent for cooldown |
-| **Resource limits** | Kill agents exceeding CPU/memory thresholds |
-| **Loop detection** | Detect and break agents stuck repeating the same action |
+| **Rate limiting** | Max LLM calls per agent per minute |
+| **Circuit breaker** | N consecutive upstream failures pause the agent for a cooldown |
+| **Resource limits** | Memory, CPU and process limits per agent sandbox |
 | **Egress firewall** | Default-deny network; only whitelisted domains allowed |
 
-Budget caps, auto-shutdown, rate limiting, circuit breaking and loop detection are planned: they need the model gateway and agent daemon ([status](docs/STATUS.md)). The egress firewall works today. It is host-wide: dnsmasq only resolves allowlisted domains, and iptables rejects traffic to any address it didn't resolve.
+Budgets are enforced in the model gateway, and the gateway meters every sandboxed agent's calls. The firewall doesn't let the agent user reach model providers any other way. A request over budget gets HTTP 402 before it reaches the provider, and the agent daemon then stops the agent's unit. Loop detection is still planned.
 
 ```bash
-agentos-budget status       # Current spend per agent
+agentos-budget status       # spend per agent today, limits, requests
+agentos-budget set <id> 25  # daily budget for one agent
 agentos-budget history      # 7-day cost breakdown
-agentos-breaker status      # Circuit breaker state
+agentos-breaker reset <id>  # close an open circuit
 ```
 
-### Multi-Agent Orchestration
+### Multi-Agent Orchestration (planned)
 
 <div align="center">
 <img src="assets/swarm.webp" alt="Multi-Agent Collaboration" width="92%">
@@ -221,12 +235,6 @@ agentos-breaker status      # Circuit breaker state
 </div>
 
 <br/>
-
-```bash
-agentos-orchestrate run "build a REST API" claude-code
-agentos-orchestrate swarm "fix all failing tests" 3
-agentos-orchestrate status
-```
 
 ### Observability Dashboard
 
@@ -328,7 +336,7 @@ agentos-mcp stats           # Registry statistics
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-This is the target architecture. The daemon, orchestrator, model gateway and budget controller boxes are not implemented yet, and agents currently run directly on the host.
+The daemon, model gateway, budget and circuit-breaker boxes are implemented (`services/`). Agents run in systemd sandboxes rather than containers, and the orchestrator is still planned.
 
 ---
 
@@ -339,22 +347,22 @@ This is the target architecture. The daemon, orchestrator, model gateway and bud
 
 | Module | Description | CLI Command |
 |:---|:---|:---|
-| runtime | Containerd, agent daemon †, workspaces | `agentos spawn` |
+| runtime | Agent sandbox, daemon, workspaces, control-plane Redis | `agentos spawn` |
 | security | AppArmor, default-deny egress allowlist, auditd | automatic |
 | observability | Prometheus + Tempo + Grafana | Grafana `:2342` |
 | storage | btrfs snapshots, dedup, workspace GC | `agentos snapshot` |
-| networking | Agent bridge, NAT, model API gateway † | automatic |
+| networking | Metering model gateway, agent bridge, NAT | automatic |
 | context | Qdrant vector DB, persistent memory | `agentos-memory` |
 | orchestration | Multi-agent coordination † | `agentos-orchestrate` |
 | mcp-registry | 14 core MCP tools | `agentos-tools` |
 | mcp-servers | 35 MCP servers (8 categories) | `agentos-mcp` |
-| budget-controller | Per-agent cost caps, auto-shutdown † | `agentos-budget` |
-| circuit-breaker | Rate limiting, runaway detection † | `agentos-breaker` |
+| budget-controller | Per-agent and global daily caps, auto-shutdown | `agentos-budget` |
+| circuit-breaker | Rate limit, circuit breaker, resource limits | `agentos-breaker` |
 | secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
 | git-automation | Branch/commit/PR helpers, hooks (auto-commit †) | `agentos-git` |
 | provisioning | Env detection, Nix dev shells | `agentos-env` |
 | scheduler | Cron-like task scheduling † | `agentos-schedule` |
-| notifications | Slack, Discord, email, webhook † | `agentos-notify` |
+| notifications | Slack, Discord, webhook | `agentos-notify` |
 | language-toolchains | 20+ runtimes pre-installed | `agentos-langs` |
 | databases | Postgres, Redis, SQLite, DuckDB | `agentos-db` |
 | dev-tools | 100+ developer utilities | automatic |
@@ -367,7 +375,7 @@ This is the target architecture. The daemon, orchestrator, model gateway and bud
 | ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
 | vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
 
-† Needs a daemon that is not implemented yet ([status](docs/STATUS.md)).
+† Planned service, not implemented yet ([status](docs/STATUS.md)).
 
 </details>
 
@@ -473,9 +481,12 @@ agentos/
 
 ## Roadmap
 
-- [ ] Agent daemon: containers per agent, `agentos list/logs/kill`
-- [ ] Model gateway with budget caps and auto-shutdown
-- [ ] Circuit breaker, orchestrator, scheduler, notifier
+- [x] Agent sandbox, daemon, `agentos list/logs/kill` (v0.3.0)
+- [x] Metering model gateway with budget caps and auto-shutdown (v0.3.0)
+- [x] Rate limit, circuit breaker, notifications (v0.3.0)
+- [ ] Container isolation per agent
+- [ ] Orchestrator and scheduler
+- [ ] Loop detection in the gateway
 - [ ] GPU scheduling for local model inference
 - [ ] Remote agent fleets (multi-machine orchestration)
 - [ ] Agent marketplace (community-contributed agents)
@@ -499,8 +510,10 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 ```bash
 git clone https://github.com/anubhavg-icpl/agentos.git
 cd agentos
-nix develop          # Enter dev shell
-nix build .#iso-image # Build ISO to test
+nix develop                                   # Enter dev shell
+nix flake check --no-build --all-systems      # Evaluate everything
+nix build .#services                          # Service unit tests
+nix build .#checks.x86_64-linux.e2e           # End-to-end VM test (needs KVM for speed)
 ```
 
 ---

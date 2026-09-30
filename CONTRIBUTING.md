@@ -15,23 +15,24 @@ nix develop
 # Build the ISO
 nix build .#iso-image
 
-# Test in a VM
+# Test in a VM (EFI qcow2)
 nix build .#vm-image
-qemu-system-x86_64 -m 4096 -enable-kvm -hda result/nixos.qcow2
 ```
 
 ## Project Structure
 
 ```
 modules/          NixOS modules (27 modules)
-  runtime/        Container runtime, agent daemon
+  runtime/        Agent sandbox, agent daemon, control-plane Redis
   security/       AppArmor, firewall, audit
   context/        Qdrant vector memory
   ...
 agents/           15 coding agent packages
 nixos/
   hosts/          Host configurations (bare metal + ISO)
-  packages/       Internal Rust binaries
+  packages/       CLI, installer, services package, planned-service stubs
+services/         Model gateway + agent daemon (Python) and their tests
+tests/            End-to-end NixOS VM test
 docs/             Documentation
 templates/        Agent workspace template
 ```
@@ -51,7 +52,7 @@ templates/        Agent workspace template
 
 1. Add the agent package to `agents/default.nix`
 2. Add it to the `all-agents` meta-package
-3. Add a case in the `agentos spawn` CLI (nixos/packages/cli.nix)
+3. Map its name(s) to its command in `agentos.runtime.agents` (modules/runtime)
 4. Document in `docs/AGENTS.md`
 5. Commit with: `agents: add <agent-name>`
 
@@ -73,15 +74,22 @@ packages: <description>
 ## Testing
 
 ```bash
-# Check Nix evaluation
-nix flake check
+# Evaluate every output on both systems
+nix flake check --no-build --all-systems
 
-# Build a specific host
-nixos-rebuild build --flake .#agentos
+# Gateway and daemon unit tests (run during the package build)
+nix build .#services
+# ...or iterate quickly in the dev shell
+nix develop -c sh -c 'cd services && python -m pytest'
 
-# Build the ISO
-nix build .#iso-image
+# Shell scripts are shellchecked when built
+nix build .#cli .#installer
+
+# End-to-end VM test (uses KVM when available; very slow without it)
+nix build -L .#checks.x86_64-linux.e2e
 ```
+
+The CI workflow (`ci/github-workflows/ci.yml`) runs the same commands.
 
 ## License
 

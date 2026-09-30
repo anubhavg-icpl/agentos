@@ -1,79 +1,51 @@
 # Project Status
 
-AgentOS is an early-stage project. The NixOS base, the agent packages and
-most of the tooling modules work. The service layer the README describes
-(agent daemon, gateways, budget enforcement, orchestration) is designed and
-configured but **not implemented yet**. This page says which is which.
+What works in AgentOS today, how it is tested, and what is still planned.
 
-Last reviewed: 2026-09-30.
+Last reviewed: 2026-09-30 (v0.3.0).
 
-## What builds
+## How it is tested
 
-| Output | State |
-|:---|:---|
-| `nixosConfigurations.agentos` | Evaluates. Builds from cache.nixos.org plus a few local wrapper derivations. |
-| `nixosConfigurations.agentos-iso` / `packages.x86_64-linux.iso-image` | Evaluates. |
-| `packages.x86_64-linux.vm-image` | Evaluates (qcow2, ext4 root, GRUB). |
-| `packages.*.<agent>` | 12 agents from nixpkgs, 3 pinned npm launchers. |
-| `packages.*.cli`, `installer` | Build; installer passes shellcheck. |
-| `nix flake check --no-build` | Passes on x86_64-linux and aarch64-linux. |
+| Test | Command | Covers |
+|:---|:---|:---|
+| Evaluation of every output | `nix flake check --no-build --all-systems` | Host, VM image, ISO, packages, checks on x86_64 and aarch64 |
+| Service unit tests (36) | `nix build .#services` | Gateway proxying (JSON + SSE), key injection, pricing, budgets, alerts, rate limit, circuit breaker, admin socket; daemon reaping, auto-shutdown, notifications, metrics |
+| End-to-end VM test | `nix build .#checks.x86_64-linux.e2e` | Boots a VM and drives a real agent run: spawn → sandbox → gateway → priced spend → budget exceeded → daemon stops the agent → webhook; plus sandbox, control-plane isolation and egress checks |
+| Shell linting | `nix build .#cli .#installer` | `agentos` and `agentos-install` pass shellcheck |
 
-Full OS builds are x86_64-only because several pre-installed toolchains are
-x86_64-only. Agent packages are also exposed for aarch64-linux.
+The GitHub Actions workflow in `ci/github-workflows/ci.yml` runs all of these on every push and pull request once it is moved into `.github/workflows/` (see the README there).
 
 ## Feature status
 
-**Working** means the NixOS configuration sets it up and it runs.
-**Config only** means options, config files and CLIs exist, but the service
-that would act on them doesn't. **Not implemented** means nothing does it.
-
 | Feature | Status | Notes |
 |:---|:---|:---|
-| 15 pre-installed agents | Working | See [AGENTS.md](AGENTS.md). |
-| `agentos spawn` | Partial | Creates an `agent/*` branch and execs the agent. No container, no tracking. |
-| `agentos list` / `logs` / `kill` / `shell` | Not implemented | Read state files that only the daemon would write. |
-| Per-agent containers | Not implemented | containerd is installed and enabled, but nothing creates containers. |
-| Egress allowlist | Working, host-wide | dnsmasq only resolves allowed domains and adds their IPs to an ipset; iptables rejects other outbound traffic. Applies to the whole host, not per agent. |
+| 15 pre-installed agents | Working | 11 from nixpkgs, 3 pinned npm launchers, 1 pinned PyPI launcher. See [AGENTS.md](AGENTS.md). |
+| `agentos spawn` sandbox | Working | Transient systemd unit as `agentos-agent`: read-only system, private /tmp, hidden homes, memory/CPU/process limits, workspace-only writes. |
+| Agent registry: `list`, `logs`, `kill`, `shell`, `status` | Working | |
+| Model gateway | Working | Anthropic Messages, OpenAI Chat Completions and Responses; JSON and streaming. |
+| Budgets and auto-shutdown | Working | Per-agent and global daily caps; 402 before the provider is called; the daemon stops the agent. |
+| Rate limit, circuit breaker | Working | Per agent, in the gateway. |
+| Key injection | Working | Agents see `agentos-managed`; the real key stays in a file readable by the gateway. |
+| Notifications | Working | Slack, Discord, generic webhook; URLs read from secret files. |
+| Egress allowlist | Working | Host-wide; the agent user additionally cannot reach provider APIs except via the gateway. |
+| Metrics | Working | Daemon exports per-agent spend, tokens and requests; Prometheus scrapes it. |
 | AppArmor, auditd, kernel hardening | Working | |
-| btrfs layout, snapshots, dedup | Working | disko layout with a `@workspaces` subvolume; btrbk snapshots it hourly. |
-| `agentos snapshot` / `rollback` | Partial | Snapshot works as root; rollback is not implemented. |
-| OTel collector, Prometheus, Tempo, Grafana | Working | Grafana listens on localhost:2342 (SSH tunnel). Nothing emits agent traces yet. |
-| Qdrant, Postgres, Redis, DuckDB, SQLite | Working | Bound to localhost (Redis and Qdrant have no auth). |
-| Language toolchains, dev/security/browser/cloud tools, editors, AI/ML | Working | Plain nixpkgs packages. |
-| MCP server registry (`agentos-mcp`) | Working | 35 servers, each pointing at a real npm/PyPI package. They're fetched on first start, not pre-installed. |
-| MCP gateway / MCP registry service | Not implemented | Daemon. |
-| Model gateway (budget/rate-limit proxy) | Not implemented | Daemon. |
-| Budget caps and auto-shutdown | Not implemented | `agentos-budget` reads Redis keys that no component writes. |
-| Circuit breaker, resource monitor, loop detection | Not implemented | Needs the daemon and agent cgroups; gated with the daemons. |
-| Multi-agent orchestration | Not implemented | Daemon. |
-| Scheduler, notifications | Not implemented | Daemons. |
-| Git automation | Partial | `agentos-git` wraps git/`gh pr create` and installs hooks. `autoCommit` / `autoPR` are not acted on. |
+| btrfs layout, snapshots, rollback | Working | disko layout with a `@workspaces` subvolume; btrbk hourly snapshots; `agentos rollback <snapshot> <workspace>`. |
+| OTel collector, Prometheus, Tempo, Grafana | Working | Grafana on localhost:2342. Agents don't emit traces yet. |
+| Qdrant, Postgres, dev Redis, DuckDB, SQLite | Working | Bound to localhost. |
+| Toolchains, dev/security/browser/cloud tools, editors, AI/ML | Working | nixpkgs packages. |
+| MCP server registry (`agentos-mcp`) | Working | 35 servers pointing at real npm/PyPI packages, fetched on first start. |
 | Secrets (sops-nix) | Working after setup | Create the encrypted file, then set `agentos.secrets-manager.sopsInitialized = true`. |
-| VIBE integration | Working, network-dependent | First boot runs `npx -y github:anubhavg-icpl/vibe` for each agent. Pin `repoUrl` to a tag. |
-
-## The daemons
-
-These packages in `nixos/packages/` are build stubs with no source code:
-`daemon`, `mcp-gateway`, `model-gateway`, `budget-controller`,
-`circuit-breaker`, `orchestrator`, `scheduler`, `notifier`, `provisioner`,
-`memory-manager`, `mcp-registry`. Their systemd units are gated behind:
-
-```nix
-agentos.daemons.enable = false;  # default
-```
-
-Turning it on before the daemons exist makes the system fail to build.
-Implementing them is the main piece of work between this repository and the
-feature set in the README.
+| VIBE integration | Working, network-dependent | First boot runs `npx github:anubhavg-icpl/vibe`; pin `repoUrl` to a tag. |
+| Git automation | Partial | Branch per agent session and hooks work; `autoCommit` / `autoPR` are not acted on. |
+| Container isolation | Planned | Agents run in systemd sandboxes, not containers. containerd is installed for agents' own use. |
+| Orchestrator, scheduler, MCP gateway, MCP registry service, provisioner, memory manager | Planned | Units and CLIs are gated behind `agentos.plannedServices.enable` (off); enabling it fails the build until they exist. |
 
 ## Known limitations
 
-- The egress allowlist is host-wide. Agents run as `admin` in the same
-  network namespace as everything else. Per-agent policy needs the
-  container runtime.
-- The npm launchers, MCP servers and VIBE fetch code from npm / GitHub at
-  runtime, which is outside Nix's reproducibility guarantees.
-- Several `@modelcontextprotocol/*` servers in the registry are archived
-  upstream. They still install but no longer get fixes.
-- Notification webhook URLs set through module options end up in the
-  world-readable Nix store. Deliver them through sops instead.
+- **Unsandboxed runs are unmetered.** `agentos spawn --unsandboxed`, or running an agent binary directly, runs as the operator. Those runs have no resource limits and can reach providers without going through the gateway.
+- **Subscription logins.** An agent logged in with a subscription (e.g. Claude Code with a Claude account) still goes through the gateway when sandboxed. Its usage is priced at API rates for budgeting.
+- **Egress allowlist is host-wide** and IPv4 only (AAAA records are filtered).
+- **The npm/PyPI launchers, MCP servers and VIBE fetch code at runtime**, outside Nix's reproducibility guarantees.
+- **Several `@modelcontextprotocol/*` servers are archived upstream.** They still install but get no fixes.
+- **Kill latency.** The gateway refuses requests the moment the budget is exceeded. The daemon stops the agent's unit a few seconds later.
