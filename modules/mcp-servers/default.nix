@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS MCP Server Registry — 35 Preconfigured MCP Servers
+# AgentOS MCP Server Registry — 36 Preconfigured MCP Servers
 # ═══════════════════════════════════════════════════════════════════════
 #
 # The Model Context Protocol (MCP) is how agents access external tools.
@@ -31,7 +31,7 @@ let
 in
 {
   options.agentos.mcp-servers = {
-    enable = lib.mkEnableOption "AgentOS MCP server registry (35 servers)";
+    enable = lib.mkEnableOption "AgentOS MCP server registry (36 servers)";
 
     enableCore = lib.mkOption {
       type = lib.types.bool;

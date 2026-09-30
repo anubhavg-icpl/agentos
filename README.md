@@ -32,7 +32,7 @@
 
 ## Overview
 
-AgentOS is a minimal, NixOS-based operating system where the primary users are **AI coding agents**, not humans. It ships with 15 coding agents pre-installed, 35 MCP tool servers configured, 20+ language toolchains, the VIBE skills library installed on first boot, and a hardened, observable base system.
+AgentOS is a minimal, NixOS-based operating system where the primary users are **AI coding agents**, not humans. It ships with 15 coding agents pre-installed, 36 MCP tool servers configured, 20+ language toolchains, the VIBE skills library installed on first boot, and a hardened, observable base system.
 
 > [!NOTE]
 > **Status (v0.3.0).** The core loop works and is covered by an end-to-end VM test (`nix build .#checks.x86_64-linux.e2e`):
@@ -69,7 +69,7 @@ AgentOS puts a fence around each of those problems, on a NixOS base that rebuild
 - **Credentials.** API keys stay in the gateway; agents only ever see a placeholder.
 - **Egress.** Outbound traffic is default-deny: only allowlisted domains resolve, and agents cannot reach model providers except through the gateway.
 - **Audit trail.** Every session gets its own git branch, and btrfs snapshots let you roll a workspace back.
-- **Tooling and monitoring.** 35 MCP servers come pre-wired, and per-agent spend flows into Prometheus and Grafana.
+- **Tooling and monitoring.** 36 MCP servers come pre-wired, and per-agent spend flows into Prometheus and Grafana.
 
 ---
 
@@ -179,7 +179,7 @@ Full reference: [docs/AGENTS.md](docs/AGENTS.md)
 **Agent Intelligence**
 - Vector memory (Qdrant)
 - Multi-agent orchestration †
-- 35 MCP tool servers
+- 36 MCP tool servers
 - VIBE: 5,340 skills
 - Cron task scheduler †
 
@@ -226,12 +226,12 @@ agentos-budget history      # 7-day cost breakdown
 agentos-breaker reset <id>  # close an open circuit
 ```
 
-### Multi-Agent Orchestration (planned)
+### Multi-Agent Orchestration
 
 <div align="center">
 <img src="assets/swarm.webp" alt="Multi-Agent Collaboration" width="92%">
 
-<sub><i>Planned: agents collaborate through planner-worker, swarm, and pipeline modes (needs the orchestrator daemon).</i></sub>
+<sub><i>Agents run as queued tasks, pipelines and swarms through <code>agentos-task</code>, and on schedules through <code>agentos-schedule</code> (<a href="docs/orchestration.md">docs</a>).</i></sub>
 </div>
 
 <br/>
@@ -283,7 +283,7 @@ vibe search "rag"          # Search the library
 
 <br/>
 
-35 Model Context Protocol servers, pre-configured across 8 categories. Each one points at a real npm (`npx -y`) or PyPI (`uvx`) package and is downloaded the first time it starts.
+36 Model Context Protocol servers, pre-configured across 8 categories. Each one points at a real npm (`npx -y`) or PyPI (`uvx`) package and is downloaded the first time it starts.
 
 | Category | Count | Servers |
 |:---|:---:|:---|
@@ -328,7 +328,7 @@ agentos-mcp stats           # Registry statistics
 │       │          │          │          │                             │
 │  ┌────┴───┐ ┌────┴───┐ ┌────┴───┐ ┌────┴──────────┐                │
 │  │ Model  │ │  MCP   │ │ Budget │ │ Observability │                │
-│  │Gateway │ │ 35 srv │ │ Ctrl.  │ │ (OTel+P+Graf) │                │
+│  │Gateway │ │ 36 srv │ │ Ctrl.  │ │ (OTel+P+Graf) │                │
 │  └────────┘ └────────┘ └────────┘ └───────────────┘                │
 │                                                                      │
 │  VIBE: 5340 skills · 853 modes · 200 agents · 759 system prompts   │
@@ -355,7 +355,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | context | Qdrant vector DB, persistent memory | `agentos-memory` |
 | orchestration | Multi-agent coordination † | `agentos-orchestrate` |
 | mcp-registry | 14 core MCP tools | `agentos-tools` |
-| mcp-servers | 35 MCP servers (8 categories) | `agentos-mcp` |
+| mcp-servers | 36 MCP servers (8 categories) | `agentos-mcp` |
 | budget-controller | Per-agent and global daily caps, auto-shutdown | `agentos-budget` |
 | circuit-breaker | Rate limit, circuit breaker, resource limits | `agentos-breaker` |
 | secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
@@ -447,7 +447,7 @@ agentos/
 │   ├── runtime/                    #   Containerd isolation + daemon
 │   ├── budget-controller/          #   Cost tracking + auto-shutdown
 │   ├── circuit-breaker/            #   Rate limiting + loop detection
-│   ├── mcp-servers/                #   35 preconfigured MCP servers
+│   ├── mcp-servers/                #   36 preconfigured MCP servers
 │   ├── vibe-integration/           #   5340 skills auto-installer
 │   ├── context/                    #   Qdrant vector memory
 │   ├── orchestration/              #   Multi-agent coordination
@@ -474,6 +474,11 @@ agentos/
 | [docs/AGENTS.md](docs/AGENTS.md) | All 15 agents with usage examples and API key setup |
 | [docs/FEATURES.md](docs/FEATURES.md) | Detailed documentation of all 27 modules |
 | [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
+| [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
+| [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
+| [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
+| [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
+| [docs/desktop.md](docs/desktop.md) / [docs/aarch64.md](docs/aarch64.md) | Desktop edition and ARM64 |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: add modules, agents, and more |
 
@@ -484,17 +489,21 @@ agentos/
 - [x] Agent sandbox, daemon, `agentos list/logs/kill` (v0.3.0)
 - [x] Metering model gateway with budget caps and auto-shutdown (v0.3.0)
 - [x] Rate limit, circuit breaker, notifications (v0.3.0)
-- [ ] Container isolation per agent
-- [ ] Orchestrator and scheduler
-- [ ] Loop detection in the gateway
-- [ ] GPU scheduling for local model inference
-- [ ] Remote agent fleets (multi-machine orchestration)
-- [ ] Agent marketplace (community-contributed agents)
-- [ ] Web dashboard (beyond Grafana)
-- [ ] Full OS images for ARM64 (agent packages already build there)
-- [ ] Deterministic replay of agent sessions
-- [ ] Inter-agent communication protocol
-- [ ] Cost optimization (auto-route to cheapest model)
+- [x] Per-agent gateway tokens: agents cannot spend under another agent's id
+- [x] Container isolation per agent (`--isolation container`, own netns) ([docs](docs/containers.md))
+- [x] Orchestrator and scheduler: tasks, pipelines, swarms, calendar schedules ([docs](docs/orchestration.md))
+- [x] Loop detection in the gateway ([docs](docs/gateway-features.md))
+- [x] GPU scheduling for local model inference ([docs](docs/gpu.md))
+- [x] Remote agent fleets over SSH ([docs](docs/fleet.md))
+- [x] Agent marketplace with a reviewed index ([docs](docs/marketplace.md))
+- [x] Web dashboard ([docs](docs/dashboard.md))
+- [x] OS images for ARM64 ([docs](docs/aarch64.md))
+- [x] Deterministic replay of agent sessions ([docs](docs/gateway-features.md))
+- [x] Inter-agent message bus, HTTP and MCP ([docs](docs/gateway-features.md))
+- [x] Cost routing to cheaper models ([docs](docs/gateway-features.md))
+- [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
+- [ ] Container and GPU options for orchestrator tasks
+- [ ] Agents emitting OpenTelemetry traces
 
 ---
 

@@ -116,9 +116,13 @@ agentos-schedule remove nightly
 
 Removed options: `agentos.orchestration.mode` and `resultStrategy`, and `agentos.scheduler.maxConcurrent`, `enablePriorityQueues`, `offHours*` (setting them now fails with a message that says what to use instead). The old `agentos-orchestrate` shell script is gone.
 
+## Limitations
+
+- Tasks always run in the systemd sandbox. The `agentos spawn` options for container isolation (`--isolation container`) and GPUs (`--gpu`) are not available to tasks yet.
+
 ## Testing
 
 - `services/tests/test_orchestrator.py`: validation (injection attempts), dependency ordering, `{prev_result}`, swarm fan-out, concurrency limit, workspace serialization, cancel, dead-runner detection, the socket API.
 - `services/tests/test_taskrunner.py`: the root helper against real git repositories and worktrees with a stand-in for `systemd-run`: results, tail bounding, timeout, cancel, budget kill, tampered records, symlinked log, configuration-only commands.
 - `services/tests/test_scheduler.py`: next-run computation (parser, command line, and the real `systemd-analyze` when present), due detection with an injected clock and submitter, overlap, catch-up after downtime, declarative sync.
-- `tests/orchestration.nix`: a VM test with a fake headless agent that calls a mock model API through the gateway: single task, 2-step pipeline, swarm of 2, timeout/cancel/skipped, hostile input, polkit limits, a schedule firing. Run with `nix build .#checks.x86_64-linux.orchestration` once it is listed in `flake.nix`.
+- `tests/orchestration.nix`: a VM test with a fake headless agent that calls a mock model API through the gateway: single task, 2-step pipeline, swarm of 2, timeout/cancel/skipped, hostile input, polkit limits, a schedule firing. Run with `nix build .#checks.x86_64-linux.orchestration`.
