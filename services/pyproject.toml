@@ -13,6 +13,8 @@ dependencies = ["redis>=5"]
 [project.scripts]
 agentos-model-gateway = "agentos_services.gateway:main"
 agentos-daemon = "agentos_services.daemon:main"
+agentos-gpu = "agentos_services.gpu:main"
+agentos-netns = "agentos_services.netns:main"
 
 [tool.setuptools.packages.find]
 include = ["agentos_services*"]

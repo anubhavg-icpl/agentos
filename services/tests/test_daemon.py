@@ -47,6 +47,26 @@ def register(daemon, agent_id, age=60, **fields):
     return state
 
 
+def test_reap_releases_stale_gpu_locks(make_daemon, tmp_path):
+    lock_dir = tmp_path / "gpu"
+    lock_dir.mkdir()
+    d = make_daemon(gpu={"lock_dir": str(lock_dir), "stale_grace_sec": 30})
+    register(d, "live", pid=os.getpid())
+    for index, holder in ((0, "live"), (1, "gone"), (2, "starting")):
+        (lock_dir / str(index)).write_text(holder + "\n")
+    old = time.time() - 300
+    for index in (0, 1):
+        os.utime(lock_dir / str(index), (old, old))
+    d.reap()
+    assert sorted(os.listdir(lock_dir)) == [".lock", "0", "2"]
+
+
+def test_reap_ignores_missing_gpu_dir(make_daemon, tmp_path):
+    d = make_daemon(gpu={"lock_dir": str(tmp_path / "absent")})
+    d.reap()
+    assert not (tmp_path / "absent").exists()
+
+
 def test_reap_archives_dead_agents(make_daemon, events):
     runner = FakeRunner(active={"agentos-agent-live.service"})
     d = make_daemon(runner)

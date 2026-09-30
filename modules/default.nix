@@ -55,6 +55,7 @@
 
     # AI/ML
     ./ai-ml
+    ./gpu
 
     # VIBE integration (853 modes, 5340 skills)
     ./vibe-integration

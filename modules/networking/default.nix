@@ -33,7 +33,17 @@ in
     modelGatewayPort = lib.mkOption {
       type = lib.types.port;
       default = 8080;
-      description = "Port of the LLM model gateway (listens on 127.0.0.1)";
+      description = ''
+        Port of the LLM model gateway. It listens on 127.0.0.1 and on the
+        agent bridge address, so container-isolated agents can reach it.
+      '';
+    };
+
+    bridgeAddress = lib.mkOption {
+      type = lib.types.str;
+      default = hostAddress;
+      readOnly = true;
+      description = "Address of the host on the agent bridge (agentos0): the .1 of agentNetCIDR";
     };
 
     providers = lib.mkOption {
@@ -89,7 +99,7 @@ in
 
     agentos.services.settings = {
       gateway = {
-        listen = "127.0.0.1";
+        listen = [ "127.0.0.1" hostAddress ];
         port = cfg.modelGatewayPort;
         pricing_file = "/etc/agentos/pricing.json";
       };
@@ -104,7 +114,8 @@ in
     # ─ Model gateway ──────────────────────────────────────────────────
     systemd.services.agentos-model-gateway = {
       description = "AgentOS model gateway (LLM proxy with budgets and rate limits)";
-      after = [ "network.target" "redis-agentos.service" ];
+      # The bridge address must exist to bind to it (Restart retries otherwise)
+      after = [ "network.target" "redis-agentos.service" "network-addresses-agentos0.service" ];
       requires = [ "redis-agentos.service" ];
       wantedBy = [ "multi-user.target" ];
       restartTriggers = [
@@ -146,6 +157,41 @@ in
       address = hostAddress;
       inherit prefixLength;
     }];
+
+    # Container-isolated agents reach the host only through the gateway and
+    # the resolver. This chain comes before the global allowed ports (e.g.
+    # SSH), which would otherwise apply to the bridge as well.
+    networking.firewall.extraCommands = ''
+      iptables -D INPUT -i agentos0 -j agentos-in 2>/dev/null || true
+      iptables -F agentos-in 2>/dev/null || iptables -N agentos-in
+      iptables -I INPUT 1 -i agentos0 -j agentos-in
+      iptables -A agentos-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+      iptables -A agentos-in -d ${hostAddress} -p tcp --dport ${toString cfg.modelGatewayPort} -j ACCEPT
+      iptables -A agentos-in -d ${hostAddress} -p udp --dport 53 -j ACCEPT
+      iptables -A agentos-in -d ${hostAddress} -p tcp --dport 53 -j ACCEPT
+      iptables -A agentos-in -d ${hostAddress} -p icmp --icmp-type echo-request -j ACCEPT
+      iptables -A agentos-in -j REJECT
+      ip6tables -D INPUT -i agentos0 -j DROP 2>/dev/null || true
+      ip6tables -I INPUT 1 -i agentos0 -j DROP
+    '';
+    networking.firewall.extraStopCommands = ''
+      iptables -D INPUT -i agentos0 -j agentos-in 2>/dev/null || true
+      iptables -F agentos-in 2>/dev/null || true
+      iptables -X agentos-in 2>/dev/null || true
+      ip6tables -D INPUT -i agentos0 -j DROP 2>/dev/null || true
+    '';
+
+    # The resolver answers on the bridge for containers (and, with egress
+    # denied, only resolves allowed domains and fills the egress ipsets)
+    services.dnsmasq = lib.mkIf config.services.dnsmasq.enable {
+      settings.listen-address = [ hostAddress ];
+    };
+    systemd.services.dnsmasq = lib.mkIf config.services.dnsmasq.enable {
+      after = [ "network-addresses-agentos0.service" ];
+      wants = [ "network-addresses-agentos0.service" ];
+      serviceConfig.Restart = lib.mkDefault "on-failure";
+    };
+
     networking.nat = {
       enable = true;
       internalInterfaces = [ "agentos0" ];

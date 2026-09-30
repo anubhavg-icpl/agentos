@@ -9,6 +9,9 @@ let
   allowedDomains = lib.unique (cfg.allowedEgressDomains ++ gatewayOnly);
   # The agent-user rules need the user to exist
   sandbox = config.agentos.runtime.enable;
+  # Container-isolated agents have their own network namespace on the
+  # agentos0 bridge; their traffic is forwarded (and NATed), not local
+  containers = config.agentos.networking.enable;
 in
 {
   options.agentos.security = {
@@ -179,6 +182,29 @@ in
         iptables -A agentos-egress -m owner --uid-owner agentos-agent -p udp --dport 53 -j REJECT
         iptables -A agentos-egress -m owner --uid-owner agentos-agent -p tcp --dport 53 -j REJECT
         ip6tables -A agentos-egress -m owner --uid-owner agentos-agent -j REJECT
+      '' + lib.optionalString containers ''
+        # Container-isolated agents (agentos0 bridge): the same egress policy
+        # in the FORWARD path. They may not reach provider APIs directly,
+        # each other, or (with egress denied) anything outside the allowlist;
+        # the host itself is limited to the gateway and DNS (networking module).
+        iptables -D FORWARD -i agentos0 -j agentos-fwd 2>/dev/null || true
+        iptables -F agentos-fwd 2>/dev/null || iptables -N agentos-fwd
+        iptables -I FORWARD 1 -i agentos0 -j agentos-fwd
+        iptables -A agentos-fwd -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+        iptables -A agentos-fwd -m set --match-set agentos-llm dst -j REJECT
+        iptables -A agentos-fwd -d ${config.agentos.networking.agentNetCIDR} -j REJECT
+      '' + lib.optionalString (containers && deny) ''
+        iptables -A agentos-fwd -m set --match-set agentos-egress dst -j RETURN
+        iptables -A agentos-fwd -m limit --limit 5/min -j LOG --log-prefix "agentos-fwd-deny: "
+        iptables -A agentos-fwd -j REJECT
+      '' + lib.optionalString (containers && !deny) ''
+        for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+          iptables -A agentos-fwd -d $net -j REJECT
+        done
+        iptables -A agentos-fwd -j RETURN
+      '' + lib.optionalString containers ''
+        ip6tables -D FORWARD -i agentos0 -j REJECT 2>/dev/null || true
+        ip6tables -I FORWARD 1 -i agentos0 -j REJECT
       '' + lib.optionalString deny ''
         for ipt in iptables ip6tables; do
           # dnsmasq may talk to the upstream resolvers
@@ -201,6 +227,10 @@ in
       '';
 
       extraStopCommands = ''
+        iptables -D FORWARD -i agentos0 -j agentos-fwd 2>/dev/null || true
+        iptables -F agentos-fwd 2>/dev/null || true
+        iptables -X agentos-fwd 2>/dev/null || true
+        ip6tables -D FORWARD -i agentos0 -j REJECT 2>/dev/null || true
         for ipt in iptables ip6tables; do
           $ipt -D OUTPUT -j agentos-egress 2>/dev/null || true
           $ipt -F agentos-egress 2>/dev/null || true
