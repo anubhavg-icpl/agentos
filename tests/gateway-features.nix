@@ -131,17 +131,31 @@ pkgs.testers.runNixOSTest {
     def admin(cmd):
         return machine.succeed(f"su - admin -c {json.dumps(cmd)}")
 
+    TOKENS = {}
+
+    def seg(agent):
+        """The "<id>:<token>" URL segment, registering a token like agentos spawn does."""
+        if agent not in TOKENS:
+            token = machine.succeed("od -An -N16 -tx1 /dev/urandom | tr -d ' \\n'").strip()
+            digest = machine.succeed(f"printf %s {token} | sha256sum | cut -d' ' -f1").strip()
+            machine.succeed(
+                "curl -fsS --unix-socket /run/agentos-gateway/admin.sock -X PUT "
+                f"-d '{{\"token_sha256\": \"{digest}\"}}' http://localhost/_agentos/agents/{agent}"
+            )
+            TOKENS[agent] = token
+        return f"{agent}:{TOKENS[agent]}"
+
     def post(agent, path, body):
         """POST JSON as an agent; returns (status, parsed body)."""
         out = machine.succeed(
             f"curl -s -w '\\n%{{http_code}}' -H 'content-type: application/json' "
-            f"-H 'x-api-key: agentos-managed' -d {json.dumps(json.dumps(body))} {GW}/agent/{agent}/{path}"
+            f"-H 'x-api-key: agentos-managed' -d {json.dumps(json.dumps(body))} {GW}/agent/{seg(agent)}/{path}"
         )
         text, code = out.rsplit("\n", 1)
         return int(code), json.loads(text)
 
     def get(agent, path):
-        return json.loads(machine.succeed(f"curl -fsS '{GW}/agent/{agent}/{path}'"))
+        return json.loads(machine.succeed(f"curl -fsS '{GW}/agent/{seg(agent)}/{path}'"))
 
     def upstream_requests():
         raw = machine.succeed("cat /var/lib/mock-llm/requests.jsonl 2>/dev/null || true")
@@ -203,7 +217,10 @@ pkgs.testers.runNixOSTest {
         assert "/v1/messages" in admin("agentos-replay show rec1")
         out = admin("agentos-replay start rec1 play1")
         print(out)
-        assert "ANTHROPIC_BASE_URL=http://127.0.0.1:8080/agent/play1/anthropic" in out, out
+        # the CLI registers a token for the replay agent and prints its URL
+        base = next(l.split("=", 1)[1] for l in out.splitlines() if "ANTHROPIC_BASE_URL=" in l)
+        assert base.startswith("http://127.0.0.1:8080/agent/play1:") and base.endswith("/anthropic"), out
+        TOKENS["play1"] = base.split("/agent/play1:", 1)[1].split("/", 1)[0]
 
         upstream_before = len(upstream_requests())
         # a request that differs from the recording is reported, not forwarded
@@ -229,10 +246,12 @@ pkgs.testers.runNixOSTest {
         inbox = get("bob", "bus/@bob")
         assert [(m["from"], m["body"]) for m in inbox["messages"]] == [("alice", "please review PR 7")], inbox
         # inboxes are private to their owner
-        assert machine.succeed(f"curl -s -o /dev/null -w '%{{http_code}}' {GW}/agent/eve/bus/@bob") == "403"
+        assert machine.succeed(f"curl -s -o /dev/null -w '%{{http_code}}' {GW}/agent/{seg('eve')}/bus/@bob") == "403"
+        # and nobody can post as bob without bob's token
+        assert machine.succeed(f"curl -s -o /dev/null -w '%{{http_code}}' -d '{{}}' {GW}/agent/bob/bus/builds") == "401"
         # long poll: bob waits on a shared topic, alice publishes a second later
         cursor = get("bob", "bus/builds?after=$")["cursor"]
-        machine.execute(f"(curl -s '{GW}/agent/bob/bus/builds?wait=20&after={cursor}' > /tmp/poll.json &)")
+        machine.execute(f"(curl -s '{GW}/agent/{seg('bob')}/bus/builds?wait=20&after={cursor}' > /tmp/poll.json &)")
         machine.succeed("sleep 1")
         post("alice", "bus/builds", {"body": "build 42 is green"})
         machine.wait_until_succeeds("test -s /tmp/poll.json", timeout=30)
@@ -248,7 +267,7 @@ pkgs.testers.runNixOSTest {
                           "params": {"name": "read_messages", "arguments": {"topic": "builds"}}})
         out = machine.succeed(
             f"echo {json.dumps(rpc)} | AGENTOS_AGENT_ID=carol "
-            f"ANTHROPIC_BASE_URL={GW}/agent/carol/anthropic agentos-mcp-bus"
+            f"ANTHROPIC_BASE_URL={GW}/agent/{seg('carol')}/anthropic agentos-mcp-bus"
         )
         assert "freeze deploys" in out, out
 

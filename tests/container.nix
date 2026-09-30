@@ -277,7 +277,8 @@ pkgs.testers.runNixOSTest {
         assert addr.startswith("10.200.0.") and addr.endswith("/24") and addr != "10.200.0.1/24", addr
         assert ws_file("route.txt").startswith("default via 10.200.0.1"), ws_file("route.txt")
         assert ws_file("resolv.txt") == "nameserver 10.200.0.1"
-        assert ws_file("base-url.txt") == f"http://10.200.0.1:8080/agent/{agent}/anthropic"
+        base = ws_file("base-url.txt")
+        assert base.startswith(f"http://10.200.0.1:8080/agent/{agent}:") and base.endswith("/anthropic"), base
         assert f"agentos-{agent}" in machine.succeed("ip netns list")
         machine.succeed("ip -o link show type veth | grep -q agentos0")
         machine.succeed("bridge -d link | grep -q 'isolated on'")
@@ -331,7 +332,8 @@ pkgs.testers.runNixOSTest {
         plain = spawn()
         wait_probes()
         assert json.loads(machine.succeed(f"cat /var/lib/agentos/state/{plain}.json"))["isolation"] == "sandbox"
-        assert ws_file("base-url.txt") == f"http://127.0.0.1:8080/agent/{plain}/anthropic"
+        base = ws_file("base-url.txt")
+        assert base.startswith(f"http://127.0.0.1:8080/agent/{plain}:") and base.endswith("/anthropic"), base
         assert leftovers()["netns"] == ""
         admin(f"agentos kill {plain}")
   '';

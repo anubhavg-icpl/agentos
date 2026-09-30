@@ -23,6 +23,10 @@ DEFAULTS = {
         "pricing_file": "/etc/agentos/pricing.json",
         "upstream_timeout_sec": 600,
         "max_request_bytes": 64 * 1024 * 1024,
+        # Agents must present the token registered by `agentos spawn` in
+        # their URL (/agent/<id>:<token>/...); the unmanaged /<provider>/
+        # path is then only served on the admin socket.
+        "require_agent_tokens": True,
     },
     "budget": {
         "default_daily_usd": 50.0,

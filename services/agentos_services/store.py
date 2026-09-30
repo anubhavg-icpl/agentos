@@ -99,6 +99,16 @@ class Store:
         added, _ = p.execute()
         return bool(added)
 
+    # ── agent authentication ───────────────────────────────────────────
+    def set_agent_token(self, agent, token_sha256):
+        self.r.set(self._k("auth", "agent", agent), token_sha256.lower())
+
+    def agent_token(self, agent):
+        return self.r.get(self._k("auth", "agent", agent))
+
+    def delete_agent_token(self, agent):
+        self.r.delete(self._k("auth", "agent", agent))
+
     # ── rate limit & circuit breaker ───────────────────────────────────
     def rate_hit(self, agent):
         minute = int(self.clock() // 60)

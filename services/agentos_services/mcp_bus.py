@@ -61,7 +61,7 @@ def derive_base(env):
         for var in ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):
             m = re.match(r"^(https?://[^/]+/agent/([^/]+))/", env.get(var, "").rstrip("/") + "/")
             if m:
-                base, agent = m.group(1), agent or m.group(2)
+                base, agent = m.group(1), agent or m.group(2).partition(":")[0]
                 break
     if not base or not agent:
         raise ValueError("set AGENTOS_AGENT_ID and AGENTOS_GATEWAY_URL (or ANTHROPIC_BASE_URL)")

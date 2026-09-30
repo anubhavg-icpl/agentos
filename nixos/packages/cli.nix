@@ -121,10 +121,31 @@ writeShellApplication {
 
     cmd_version() { echo "AgentOS $VERSION"; }
 
+    # Agents installed from the marketplace (`agentos-market install`) are
+    # listed in $AGENTS_D/*.json as {"agents": {"<name>": "<store path>"}}.
+    # Only executables inside the Nix store or the system profile are used.
+    AGENTS_D=/var/lib/agentos/agents.d
+    extension_agent() {
+      local f path
+      for f in "$AGENTS_D"/*.json; do
+        [ -e "$f" ] || continue
+        path=$(jq -r --arg a "$1" '.agents[$a] // empty' "$f" 2>/dev/null) || continue
+        if [[ "$path" =~ ^(/nix/store|/run/current-system)/[^[:space:]]+$ && "$path" != *..* && -x "$path" ]]; then
+          echo "$path"
+          return
+        fi
+      done
+    }
+
     cmd_agents() {
       echo "Agents (agentos spawn <name>):"
       jq -r '.agents | to_entries | group_by(.value)[] | "  \(map(.key) | join(", "))\t-> \(.[0].value)"' "$RUNTIME" \
         | column -t -s $'\t'
+      local f
+      for f in "$AGENTS_D"/*.json; do
+        [ -e "$f" ] || continue
+        jq -r '.agents // {} | to_entries[] | "  \(.key)\t-> \(.value) (marketplace)"' "$f" 2>/dev/null
+      done | column -t -s $'\t'
     }
 
     # Properties that give a container-isolated agent its own root filesystem
@@ -203,8 +224,13 @@ writeShellApplication {
 
       local command cmd_path
       command=$(jq -r --arg a "$agent" '.agents[$a] // empty' "$RUNTIME")
-      [ -n "$command" ] || die "Unknown agent: $agent (see: agentos agents)"
-      cmd_path=$(command -v "$command") || die "$command is not installed"
+      if [ -n "$command" ]; then
+        cmd_path=$(command -v "$command") || die "$command is not installed"
+      else
+        cmd_path=$(extension_agent "$agent")
+        [ -n "$cmd_path" ] || die "Unknown agent: $agent (see: agentos agents)"
+        command="$cmd_path"
+      fi
 
       # A bare name refers to a workspace under the workspace root
       if [[ "$workspace" != */* ]] && [ -d "$WORKSPACE_ROOT/$workspace" ]; then
@@ -276,9 +302,17 @@ writeShellApplication {
         if [ "$isolation" = container ]; then
           agent_gateway="$CONTAINER_GATEWAY"
         fi
+        # The gateway only answers agents presenting the token registered
+        # here, so an agent cannot use another agent's id or budget
+        [ -w "$ADMIN_SOCKET" ] || die "spawning through the gateway needs membership in the agentos group"
+        local token
+        token=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+        admin_api PUT "agents/$id" \
+          "$(jq -cn --arg h "$(printf '%s' "$token" | sha256sum | cut -d' ' -f1)" '{token_sha256: $h}')" >/dev/null \
+          || die "could not register $id with the model gateway"
         env+=(
-          "ANTHROPIC_BASE_URL=$agent_gateway/agent/$id/anthropic"
-          "OPENAI_BASE_URL=$agent_gateway/agent/$id/openai/v1"
+          "ANTHROPIC_BASE_URL=$agent_gateway/agent/$id:$token/anthropic"
+          "OPENAI_BASE_URL=$agent_gateway/agent/$id:$token/openai/v1"
         )
         local provider keyvar
         for provider in anthropic openai; do

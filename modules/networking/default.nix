@@ -95,6 +95,9 @@ let
           id="''${3:-replay-''${rec:0:30}-$(printf '%04x' "$RANDOM")}"
           check_id "$id"
           res=$(api PUT "replay/$id" "$(jq -cn --arg r "$rec" '{recording: $r}')")
+          # The gateway only answers agents that present their registered token
+          token=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+          api PUT "agents/$id" "$(jq -cn --arg h "$(printf '%s' "$token" | sha256sum | cut -d' ' -f1)" '{token_sha256: $h}')" >/dev/null
           echo "Replaying $rec as agent $id ($(echo "$res" | jq -r '.replay.total') requests)."
           echo
           echo "Run the agent with these variables; its requests are answered from the recording,"
@@ -102,9 +105,9 @@ let
           echo "409 replay_diverged."
           echo
           echo "  export AGENTOS_AGENT_ID=$id"
-          echo "  export ANTHROPIC_BASE_URL=$GATEWAY/agent/$id/anthropic"
+          echo "  export ANTHROPIC_BASE_URL=$GATEWAY/agent/$id:$token/anthropic"
           echo "  export ANTHROPIC_API_KEY=agentos-managed"
-          echo "  export OPENAI_BASE_URL=$GATEWAY/agent/$id/openai/v1"
+          echo "  export OPENAI_BASE_URL=$GATEWAY/agent/$id:$token/openai/v1"
           echo "  export OPENAI_API_KEY=agentos-managed"
           echo
           echo "'agentos spawn' chooses its own agent id, so start the agent in your own shell with the"
@@ -144,7 +147,6 @@ let
     name = "agentos-msg";
     runtimeInputs = [ pkgs.curl pkgs.jq pkgs.coreutils ];
     text = ''
-      GATEWAY="${gatewayUrl}"
       ADMIN_SOCKET="${adminSocket}"
       ID_RE='^@?[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
 
@@ -157,8 +159,8 @@ let
                                                  Read a topic (any inbox needs the agentos group)
         topics                                   Topics with messages
 
-      Operators in the agentos group use the admin socket. Others can send, and
-      can read shared topics, over the gateway's TCP listener as agent "operator".
+      Needs membership in the agentos group (the command uses the gateway's
+      admin socket; agents talk on the bus with their own credentials).
       EOF
       }
 
@@ -166,16 +168,12 @@ let
       bus() {
         local method="$1" topic="$2" query="$3" data="''${4:-}" url out code
         local args=(-sS -X "$method" -H 'Content-Type: application/json' -w '\n%{http_code}' --max-time 90)
-        if [ -w "$ADMIN_SOCKET" ]; then
-          args+=(--unix-socket "$ADMIN_SOCKET")
-          url="http://localhost/_agentos/bus/$topic$query"
-        else
-          if [ "$method" = GET ] && [[ "$topic" == @* ]]; then
-            echo "reading an inbox needs membership in the agentos group" >&2
-            return 1
-          fi
-          url="$GATEWAY/agent/operator/bus/$topic$query"
+        if [ ! -w "$ADMIN_SOCKET" ]; then
+          echo "agentos-msg needs membership in the agentos group (admin socket $ADMIN_SOCKET)" >&2
+          return 1
         fi
+        args+=(--unix-socket "$ADMIN_SOCKET")
+        url="http://localhost/_agentos/bus/$topic$query"
         if [ -n "$data" ]; then
           args+=(--data "$data")
         fi

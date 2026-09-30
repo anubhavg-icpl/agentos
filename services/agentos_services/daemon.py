@@ -136,6 +136,11 @@ class Daemon:
                     os.unlink(self._path(state["id"]))
                 except OSError:
                     pass
+                # A finished agent's gateway credentials stop working
+                try:
+                    self.store.delete_agent_token(state["id"])
+                except Exception as exc:
+                    log.warning("could not revoke token of %s: %s", state["id"], exc)
             self.release_stale_gpus()
 
     def release_stale_gpus(self):

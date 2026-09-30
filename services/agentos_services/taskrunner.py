@@ -23,10 +23,12 @@ captures its output in tasks_dir/<id>.log, and records the result.
 
 import argparse
 import grp
+import hashlib
 import json
 import logging
 import os
 import pwd
+import secrets
 import shutil
 import signal
 import subprocess
@@ -152,8 +154,15 @@ class TaskRunner:
                 health = json.load(resp)
         except (OSError, ValueError) as exc:
             raise RunnerError("model gateway is not responding at %s: %s" % (base, exc))
-        env["ANTHROPIC_BASE_URL"] = "%s/agent/%s/anthropic" % (base, task["id"])
-        env["OPENAI_BASE_URL"] = "%s/agent/%s/openai/v1" % (base, task["id"])
+        # The gateway only answers agents presenting their registered token
+        token = secrets.token_hex(32)
+        status, body = call(self.runtime["admin_socket"], "PUT", "/_agentos/agents/" + task["id"],
+                            {"token_sha256": hashlib.sha256(token.encode()).hexdigest()})
+        if status != 200:
+            raise RunnerError("could not register the task with the gateway: %s" % body)
+        prefix = "%s/agent/%s:%s" % (base, task["id"], token)
+        env["ANTHROPIC_BASE_URL"] = prefix + "/anthropic"
+        env["OPENAI_BASE_URL"] = prefix + "/openai/v1"
         for provider in ("anthropic", "openai"):
             if health.get("providers", {}).get(provider, {}).get("managed_key"):
                 env[provider.upper() + "_API_KEY"] = configmod.MANAGED_KEY

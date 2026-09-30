@@ -158,3 +158,11 @@ def test_metrics(make_daemon, store):
     assert 'agentos_agent_tokens_today{agent="a1",kind="input_tokens"} 10' in text
     assert 'agentos_agent_requests_today{agent="a1",status="2xx"} 1' in text
     assert "agentos_spend_usd_today 1.5" in text
+
+
+def test_reap_revokes_gateway_token(make_daemon, store):
+    d = make_daemon(FakeRunner())
+    register(d, "gone", unit="agentos-agent-gone.service")
+    store.set_agent_token("gone", "a" * 64)
+    d.reap()
+    assert store.agent_token("gone") is None

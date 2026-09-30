@@ -43,11 +43,14 @@ Admin endpoints (served on both listeners unless noted):
 """
 
 import argparse
+import hashlib
+import hmac
 import http.client
 import http.server
 import json
 import logging
 import os
+import re
 import socketserver
 import sys
 import threading
@@ -212,25 +215,46 @@ class Gateway:
             self.store.publish({"type": "circuit_open", "agent": agent, "failures": failures, "until": until})
 
     # ── request handling ───────────────────────────────────────────────
+    def authenticate(self, segment, admin):
+        """Resolve an "/agent/<id>:<token>" path segment to an agent id.
+
+        Tokens are registered by `agentos spawn` through the admin socket,
+        so an agent cannot act as another agent or invent new ids to get a
+        fresh budget. Operators on the admin socket may omit the token.
+        """
+        agent, _, token = segment.partition(":")
+        if not configmod.valid_agent_id(agent):
+            raise HTTPError(400, "invalid_request_error", "invalid agent id")
+        if admin or not self.cfg["gateway"].get("require_agent_tokens", True):
+            return agent
+        expected = self.store.agent_token(agent)
+        given = hashlib.sha256(token.encode()).hexdigest()
+        if not token or not expected or not hmac.compare_digest(given, expected):
+            raise HTTPError(401, "authentication_error", "unknown agent or wrong agent token")
+        return agent
+
     def dispatch(self, req, admin):
         started = self.clock()
         path = urllib.parse.urlsplit(req.path)
         parts = [urllib.parse.unquote(p) for p in path.path.split("/") if p]
+        authed = None
         try:
             if parts[:1] == ["_agentos"]:
                 return self.api(req, parts[1:], urllib.parse.parse_qs(path.query), admin)
             if len(parts) >= 3 and parts[0] == "agent" and parts[2] == "bus":
-                if not configmod.valid_agent_id(parts[1]):
-                    raise HTTPError(400, "invalid_request_error", "invalid agent id")
-                return self.bus_request(req, parts[1], parts[3:], urllib.parse.parse_qs(path.query), False)
+                authed = self.authenticate(parts[1], admin)
+                return self.bus_request(req, authed, parts[3:], urllib.parse.parse_qs(path.query), False)
             if len(parts) >= 3 and parts[0] == "agent":
-                agent, provider, rest = parts[1], parts[2], parts[3:]
+                authed = self.authenticate(parts[1], admin)
+                agent, provider, rest = authed, parts[2], parts[3:]
             elif parts and parts[0] in self.cfg["providers"]:
-                agent, provider, rest = UNMANAGED, parts[0], parts[1:]
+                if not admin and self.cfg["gateway"].get("require_agent_tokens", True):
+                    raise HTTPError(403, "permission_error",
+                                    "unmanaged requests are only accepted on the admin socket")
+                authed = agent = UNMANAGED
+                provider, rest = parts[0], parts[1:]
             else:
                 raise HTTPError(404, "not_found", "unknown path; use /agent/<id>/<provider>/...")
-            if not configmod.valid_agent_id(agent):
-                raise HTTPError(400, "invalid_request_error", "invalid agent id")
             if provider not in self.cfg["providers"]:
                 raise HTTPError(404, "not_found", "unknown provider %r" % provider)
             self.proxy(req, agent, provider, rest, path.query, started)
@@ -239,11 +263,10 @@ class Gateway:
             if exc.details:
                 error["details"] = exc.details
             send_json(req, exc.status, {"type": "error", "error": error}, exc.headers)
-            if parts[:1] != ["_agentos"] and len(parts) >= 2:
-                agent = parts[1] if parts[0] == "agent" else UNMANAGED
-                if configmod.valid_agent_id(agent):
-                    self.store.count_request(agent, exc.status)
-                    self.write_log(agent, {"method": req.command, "path": path.path, "status": exc.status, "error": exc.error_type})
+            # Only account errors to agents that proved who they are
+            if authed:
+                self.store.count_request(authed, exc.status)
+                self.write_log(authed, {"method": req.command, "path": path.path, "status": exc.status, "error": exc.error_type})
 
     def api(self, req, parts, query, admin):
         if req.command == "GET" and parts == ["health"]:
@@ -265,7 +288,7 @@ class Gateway:
                 raise HTTPError(403, "permission_error", "use the admin socket to read or post as an operator")
             return self.bus_request(req, query.get("from", ["operator"])[0], parts[1:], query, True)
         if parts[:1] in (["routing"], ["record"], ["replay"], ["recordings"]) or (
-                len(parts) == 2 and parts[0] in ("budget", "circuit", "loop")):
+                len(parts) == 2 and parts[0] in ("budget", "circuit", "loop", "agents")):
             if not admin:
                 raise HTTPError(403, "permission_error", "use the admin socket for this endpoint")
         if parts[:1] == ["routing"] and req.command == "GET":
@@ -281,7 +304,7 @@ class Gateway:
             raise HTTPError(404, "not_found", "no such recording")
         if parts[:1] in (["record"], ["replay"]) and len(parts) == 2:
             return self.recording_api(req, parts[0], parts[1])
-        if len(parts) == 2 and parts[0] in ("budget", "circuit", "loop"):
+        if len(parts) == 2 and parts[0] in ("budget", "circuit", "loop", "agents"):
             agent = parts[1]
             if not configmod.valid_agent_id(agent):
                 raise HTTPError(400, "invalid_request_error", "invalid agent id")
@@ -291,6 +314,19 @@ class Gateway:
             if parts[0] == "circuit" and req.command == "DELETE":
                 self.store.reset_circuit(agent)
                 return send_json(req, 200, {"agent": agent, "circuit": "closed"})
+            if parts[0] == "agents" and req.command == "PUT":
+                try:
+                    body = json.loads(read_body(req, 65536) or b"{}")
+                    digest = str(body["token_sha256"]).lower()
+                except (ValueError, KeyError, TypeError):
+                    raise HTTPError(400, "invalid_request_error", 'expected {"token_sha256": "<hex>"}')
+                if not re.fullmatch(r"[0-9a-f]{64}", digest):
+                    raise HTTPError(400, "invalid_request_error", "token_sha256 must be 64 hex characters")
+                self.store.set_agent_token(agent, digest)
+                return send_json(req, 200, {"agent": agent, "registered": True})
+            if parts[0] == "agents" and req.command == "DELETE":
+                self.store.delete_agent_token(agent)
+                return send_json(req, 200, {"agent": agent, "registered": False})
             if parts[0] == "budget" and req.command == "DELETE":
                 self.store.clear_limit(agent)
                 return send_json(req, 200, {"agent": agent, "limit_usd": self.daily_limit(agent)})
