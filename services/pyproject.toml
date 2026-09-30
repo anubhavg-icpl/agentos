@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentos-services"
+version = "0.3.0"
+description = "AgentOS model gateway and agent daemon"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = ["redis>=5"]
+
+[project.scripts]
+agentos-model-gateway = "agentos_services.gateway:main"
+agentos-daemon = "agentos_services.daemon:main"
+
+[tool.setuptools.packages.find]
+include = ["agentos_services*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

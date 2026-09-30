@@ -1,0 +1,475 @@
+"""AgentOS model gateway.
+
+An HTTP proxy between coding agents and LLM provider APIs. Agents started by
+`agentos spawn` get base URLs of the form
+
+    http://127.0.0.1:8080/agent/<agent-id>/<provider>/...
+
+e.g. ANTHROPIC_BASE_URL=http://127.0.0.1:8080/agent/a1/anthropic. For every
+request the gateway:
+
+  1. rejects it if the agent's circuit is open (503), it exceeded its
+     per-minute request limit (429), or it or the whole machine is over the
+     daily budget (402);
+  2. forwards it upstream, injecting the provider API key when the agent
+     sent the placeholder key "agentos-managed";
+  3. streams the response back unchanged while extracting token usage;
+  4. prices the usage, records spend in Redis, publishes budget alerts, and
+     trips the circuit breaker after repeated upstream failures.
+
+Requests to /<provider>/... (no agent prefix) are accounted to "unmanaged".
+
+Admin endpoints (served on both listeners unless noted):
+  GET    /_agentos/health
+  GET    /_agentos/spend[?date=YYYY-MM-DD]
+  GET    /_agentos/history[?days=N]
+  PUT    /_agentos/budget/<agent>   {"daily_usd": 5.0}   admin socket only
+  DELETE /_agentos/budget/<agent>                        admin socket only
+  DELETE /_agentos/circuit/<agent>                       admin socket only
+"""
+
+import argparse
+import http.client
+import http.server
+import json
+import logging
+import os
+import socketserver
+import sys
+import threading
+import time
+import urllib.parse
+
+from . import config as configmod
+from .store import Store, connect
+from .usage import Pricing, UsageParser
+
+log = logging.getLogger("agentos.gateway")
+
+HOP_BY_HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailer", "trailers", "transfer-encoding", "upgrade",
+}
+UNMANAGED = "unmanaged"
+
+
+class HTTPError(Exception):
+    def __init__(self, status, error_type, message, headers=None):
+        super().__init__(message)
+        self.status = status
+        self.error_type = error_type
+        self.message = message
+        self.headers = headers or {}
+
+
+class Gateway:
+    def __init__(self, cfg, store, pricing, clock=time.time):
+        self.cfg = cfg
+        self.store = store
+        self.pricing = pricing
+        self.clock = clock
+        self.log_dir = cfg["gateway"]["log_dir"]
+        self._log_lock = threading.Lock()
+
+    # ── helpers ────────────────────────────────────────────────────────
+    def provider_key(self, provider):
+        prov = self.cfg["providers"][provider]
+        path = prov.get("key_file")
+        if not path:
+            return None
+        try:
+            with open(path) as f:
+                key = f.read().strip()
+            return key or None
+        except OSError:
+            return None
+
+    def daily_limit(self, agent):
+        return self.store.limit(agent, self.cfg["budget"]["default_daily_usd"])
+
+    def write_log(self, agent, entry):
+        if not self.log_dir:
+            return
+        entry = dict(entry, ts=round(self.clock(), 3), agent=agent)
+        line = json.dumps(entry, sort_keys=True) + "\n"
+        path = os.path.join(self.log_dir, agent + ".log")
+        with self._log_lock:
+            try:
+                with open(path, "a") as f:
+                    f.write(line)
+            except OSError as exc:
+                log.warning("cannot write %s: %s", path, exc)
+
+    # ── admission control ──────────────────────────────────────────────
+    def admit(self, agent):
+        now = self.clock()
+        until = self.store.circuit_open_until(agent)
+        if until:
+            raise HTTPError(
+                503, "circuit_open",
+                "AgentOS circuit breaker is open for agent %s after repeated upstream failures" % agent,
+                {"Retry-After": str(max(1, int(until - now)))},
+            )
+        rpm = int(self.cfg["limits"]["max_requests_per_minute"])
+        if rpm > 0 and self.store.rate_hit(agent) > rpm:
+            raise HTTPError(
+                429, "rate_limited",
+                "AgentOS rate limit: more than %d requests per minute for agent %s" % (rpm, agent),
+                {"Retry-After": str(max(1, 60 - int(now) % 60))},
+            )
+        limit = self.daily_limit(agent)
+        spent = self.store.spend(agent)
+        if spent >= limit:
+            self._budget_exceeded(agent, spent, limit)
+            raise HTTPError(
+                402, "budget_exceeded",
+                "AgentOS daily budget exhausted for agent %s: $%.4f of $%.2f" % (agent, spent, limit),
+            )
+        global_limit = float(self.cfg["budget"]["global_daily_usd"])
+        global_spent = self.store.global_spend()
+        if global_spent >= global_limit:
+            if self.store.mark_alert("_global", "exceeded"):
+                self.store.publish({"type": "global_budget_exceeded", "usd": global_spent, "limit_usd": global_limit})
+            raise HTTPError(
+                402, "budget_exceeded",
+                "AgentOS global daily budget exhausted: $%.4f of $%.2f" % (global_spent, global_limit),
+            )
+
+    def _budget_exceeded(self, agent, spent, limit):
+        if self.store.mark_alert(agent, "exceeded"):
+            self.store.publish({"type": "budget_exceeded", "agent": agent, "usd": spent, "limit_usd": limit})
+
+    def after_usage(self, agent, model, usage):
+        usd, priced = self.pricing.cost(model, usage)
+        agent_total, _ = self.store.record(agent, model, usd, usage)
+        limit = self.daily_limit(agent)
+        if limit > 0:
+            pct = agent_total / limit * 100.0
+            for threshold in self.cfg["budget"]["alert_thresholds"]:
+                if pct >= threshold and threshold < 100 and self.store.mark_alert(agent, threshold):
+                    self.store.publish({
+                        "type": "budget_threshold", "agent": agent, "threshold": threshold,
+                        "usd": agent_total, "limit_usd": limit,
+                    })
+        if agent_total >= limit:
+            self._budget_exceeded(agent, agent_total, limit)
+        return usd, priced
+
+    def upstream_failed(self, agent):
+        limits = self.cfg["limits"]
+        failures = self.store.record_failure(agent)
+        max_failures = int(limits["max_consecutive_failures"])
+        if max_failures > 0 and failures >= max_failures:
+            until = self.store.open_circuit(agent, float(limits["cooldown_sec"]))
+            self.store.publish({"type": "circuit_open", "agent": agent, "failures": failures, "until": until})
+
+    # ── request handling ───────────────────────────────────────────────
+    def dispatch(self, req, admin):
+        started = self.clock()
+        path = urllib.parse.urlsplit(req.path)
+        parts = [urllib.parse.unquote(p) for p in path.path.split("/") if p]
+        try:
+            if parts[:1] == ["_agentos"]:
+                return self.api(req, parts[1:], urllib.parse.parse_qs(path.query), admin)
+            if len(parts) >= 3 and parts[0] == "agent":
+                agent, provider, rest = parts[1], parts[2], parts[3:]
+            elif parts and parts[0] in self.cfg["providers"]:
+                agent, provider, rest = UNMANAGED, parts[0], parts[1:]
+            else:
+                raise HTTPError(404, "not_found", "unknown path; use /agent/<id>/<provider>/...")
+            if not configmod.valid_agent_id(agent):
+                raise HTTPError(400, "invalid_request_error", "invalid agent id")
+            if provider not in self.cfg["providers"]:
+                raise HTTPError(404, "not_found", "unknown provider %r" % provider)
+            self.proxy(req, agent, provider, rest, path.query, started)
+        except HTTPError as exc:
+            send_json(req, exc.status, {"type": "error", "error": {"type": exc.error_type, "message": exc.message}}, exc.headers)
+            if parts[:1] != ["_agentos"] and len(parts) >= 2:
+                agent = parts[1] if parts[0] == "agent" else UNMANAGED
+                if configmod.valid_agent_id(agent):
+                    self.store.count_request(agent, exc.status)
+                    self.write_log(agent, {"method": req.command, "path": path.path, "status": exc.status, "error": exc.error_type})
+
+    def api(self, req, parts, query, admin):
+        if req.command == "GET" and parts == ["health"]:
+            return send_json(req, 200, {
+                "status": "ok",
+                "providers": {n: {"managed_key": self.provider_key(n) is not None} for n in self.cfg["providers"]},
+            })
+        if req.command == "GET" and parts == ["spend"]:
+            date = (query.get("date") or [None])[0]
+            snap = self.store.snapshot(date, self.cfg["budget"]["default_daily_usd"])
+            snap["global_limit_usd"] = float(self.cfg["budget"]["global_daily_usd"])
+            snap["default_limit_usd"] = float(self.cfg["budget"]["default_daily_usd"])
+            return send_json(req, 200, snap)
+        if req.command == "GET" and parts == ["history"]:
+            days = int((query.get("days") or ["7"])[0])
+            return send_json(req, 200, self.store.history(max(1, min(days, 35))))
+        if len(parts) == 2 and parts[0] in ("budget", "circuit"):
+            if not admin:
+                raise HTTPError(403, "permission_error", "use the admin socket to change budgets")
+            agent = parts[1]
+            if not configmod.valid_agent_id(agent):
+                raise HTTPError(400, "invalid_request_error", "invalid agent id")
+            if parts[0] == "circuit" and req.command == "DELETE":
+                self.store.reset_circuit(agent)
+                return send_json(req, 200, {"agent": agent, "circuit": "closed"})
+            if parts[0] == "budget" and req.command == "DELETE":
+                self.store.clear_limit(agent)
+                return send_json(req, 200, {"agent": agent, "limit_usd": self.daily_limit(agent)})
+            if parts[0] == "budget" and req.command == "PUT":
+                try:
+                    body = json.loads(read_body(req, 65536) or b"{}")
+                    usd = float(body["daily_usd"])
+                except (ValueError, KeyError, TypeError):
+                    raise HTTPError(400, "invalid_request_error", 'expected {"daily_usd": <number>}')
+                if usd < 0:
+                    raise HTTPError(400, "invalid_request_error", "daily_usd must be >= 0")
+                self.store.set_limit(agent, usd)
+                return send_json(req, 200, {"agent": agent, "limit_usd": usd})
+        raise HTTPError(404, "not_found", "unknown admin endpoint")
+
+    def proxy(self, req, agent, provider, rest, query, started):
+        prov = self.cfg["providers"][provider]
+        api = prov.get("api", "openai")
+        self.admit(agent)
+
+        body = read_body(req, int(self.cfg["gateway"]["max_request_bytes"]))
+        request_model = None
+        rest_path = "/".join(urllib.parse.quote(p, safe="") for p in rest)
+        if body and "json" in (req.headers.get("Content-Type") or "json"):
+            try:
+                payload = json.loads(body)
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict):
+                request_model = payload.get("model")
+                # Ask for usage on streamed Chat Completions so it can be priced
+                if (api == "openai" and payload.get("stream") is True
+                        and rest_path.endswith("chat/completions")
+                        and "stream_options" not in payload):
+                    payload["stream_options"] = {"include_usage": True}
+                    body = json.dumps(payload).encode()
+
+        base = urllib.parse.urlsplit(prov["base_url"])
+        target = base.path.rstrip("/") + "/" + rest_path
+        if query:
+            target += "?" + query
+
+        headers = {}
+        for name, value in req.headers.items():
+            lname = name.lower()
+            if lname in HOP_BY_HOP or lname in ("host", "content-length", "accept-encoding"):
+                continue
+            headers[name] = value
+        headers["Host"] = base.netloc
+        headers["Accept-Encoding"] = "identity"
+        if body is not None:
+            headers["Content-Length"] = str(len(body))
+        self.inject_key(provider, api, headers)
+
+        conn_cls = http.client.HTTPSConnection if base.scheme == "https" else http.client.HTTPConnection
+        conn = conn_cls(base.hostname, base.port, timeout=float(self.cfg["gateway"]["upstream_timeout_sec"]))
+        try:
+            try:
+                conn.request(req.command, target, body=body, headers=headers)
+                resp = conn.getresponse()
+            except (OSError, http.client.HTTPException) as exc:
+                self.upstream_failed(agent)
+                raise HTTPError(502, "api_error", "AgentOS gateway could not reach %s: %s" % (provider, exc))
+
+            if resp.status >= 500:
+                self.upstream_failed(agent)
+            else:
+                self.store.record_success(agent)
+
+            parser = UsageParser(api, resp.getheader("Content-Type", ""), request_model)
+            req.send_response(resp.status)
+            for name, value in resp.getheaders():
+                lname = name.lower()
+                if lname in HOP_BY_HOP or lname == "content-length":
+                    continue
+                req.send_header(name, value)
+            length = resp.getheader("Content-Length")
+            if length is not None:
+                req.send_header("Content-Length", length)
+            req.send_header("Connection", "close")
+            req.end_headers()
+            # Hold back the last chunk until the request is accounted for, so
+            # a client never sees the end of a response before its cost is
+            # recorded (its next request must see the updated spend).
+            client_gone = False
+            pending = b""
+            while True:
+                chunk = resp.read1(65536)
+                if not chunk:
+                    break
+                parser.feed(chunk)
+                if pending and not client_gone:
+                    client_gone = not write_chunk(req, pending)
+                pending = chunk
+                if client_gone:
+                    # Stop reading: closing the upstream connection cancels
+                    # generation; usage seen so far is still recorded.
+                    break
+        finally:
+            conn.close()
+
+        try:
+            model, usage = parser.finish()
+            entry = {
+                "method": req.command, "path": "/" + rest_path, "provider": provider,
+                "status": resp.status, "model": model,
+                "duration_ms": int((self.clock() - started) * 1000),
+            }
+            if client_gone:
+                entry["client_disconnected"] = True
+            if usage:
+                usd, priced = self.after_usage(agent, model, usage)
+                entry.update(usage=usage, cost_usd=round(usd, 6), priced=priced)
+            self.store.count_request(agent, resp.status)
+            self.write_log(agent, entry)
+        except Exception:
+            log.exception("accounting failed for agent %s", agent)
+        finally:
+            if pending and not client_gone:
+                write_chunk(req, pending)
+
+    def inject_key(self, provider, api, headers):
+        key = self.provider_key(provider)
+        if not key:
+            return
+        lower = {k.lower(): k for k in headers}
+        if api == "anthropic":
+            current = headers.get(lower.get("x-api-key", ""), "")
+            has_bearer = "authorization" in lower
+            if current == configmod.MANAGED_KEY or (not current and not has_bearer):
+                headers[lower.get("x-api-key", "x-api-key")] = key
+        else:
+            auth_name = lower.get("authorization", "Authorization")
+            current = headers.get(auth_name, "")
+            if current in ("", "Bearer " + configmod.MANAGED_KEY):
+                headers[auth_name] = "Bearer " + key
+
+
+# ── HTTP plumbing ─────────────────────────────────────────────────────────
+def read_body(req, limit):
+    if req.headers.get("Transfer-Encoding", "").lower() == "chunked":
+        chunks, total = [], 0
+        while True:
+            line = req.rfile.readline(1024)
+            size = int(line.split(b";")[0].strip() or b"0", 16)
+            if size == 0:
+                # trailers until blank line
+                while req.rfile.readline(1024) not in (b"\r\n", b"\n", b""):
+                    pass
+                break
+            total += size
+            if total > limit:
+                raise HTTPError(413, "request_too_large", "request body too large")
+            chunks.append(req.rfile.read(size))
+            req.rfile.readline(1024)
+        return b"".join(chunks)
+    length = req.headers.get("Content-Length")
+    if length is None:
+        return None if req.command in ("GET", "HEAD", "DELETE", "OPTIONS") else b""
+    length = int(length)
+    if length > limit:
+        raise HTTPError(413, "request_too_large", "request body too large")
+    return req.rfile.read(length)
+
+
+def write_chunk(req, data):
+    try:
+        req.wfile.write(data)
+        req.wfile.flush()
+        return True
+    except OSError:
+        return False
+
+
+def send_json(req, status, obj, headers=None):
+    data = json.dumps(obj).encode()
+    req.send_response(status)
+    req.send_header("Content-Type", "application/json")
+    req.send_header("Content-Length", str(len(data)))
+    req.send_header("Connection", "close")
+    for name, value in (headers or {}).items():
+        req.send_header(name, value)
+    req.end_headers()
+    req.wfile.write(data)
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "agentos-gateway"
+
+    def _dispatch(self):
+        self.close_connection = True
+        try:
+            self.server.gateway.dispatch(self, self.server.admin)
+        except Exception:  # never let one request kill the server
+            log.exception("error handling %s %s", self.command, self.path)
+
+    do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _dispatch
+
+    def address_string(self):
+        return self.client_address[0] if isinstance(self.client_address, tuple) else "unix"
+
+    def log_message(self, fmt, *args):
+        log.debug("%s %s", self.address_string(), fmt % args)
+
+
+class TCPServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    admin = False
+
+
+class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+    admin = True
+
+
+def serve(cfg, store=None, pricing=None):
+    """Start the TCP listener and the admin socket; returns the servers."""
+    store = store or Store(connect(cfg["redis"]["url"]))
+    pricing = pricing or Pricing.from_file(cfg["gateway"]["pricing_file"])
+    gw = Gateway(cfg, store, pricing)
+    servers = []
+    tcp = TCPServer((cfg["gateway"]["listen"], int(cfg["gateway"]["port"])), Handler)
+    tcp.gateway = gw
+    servers.append(tcp)
+    sock_path = cfg["gateway"].get("admin_socket")
+    if sock_path:
+        if os.path.exists(sock_path):
+            os.unlink(sock_path)
+        unix = UnixServer(sock_path, Handler)
+        os.chmod(sock_path, 0o660)
+        unix.gateway = gw
+        servers.append(unix)
+    for srv in servers:
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return gw, servers
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="AgentOS model gateway")
+    parser.add_argument("--config", default=None, help="services.toml path")
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr)
+    cfg = configmod.load(args.config)
+    _, servers = serve(cfg)
+    log.info("listening on %s:%s", cfg["gateway"]["listen"], cfg["gateway"]["port"])
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for srv in servers:
+            srv.shutdown()
+
+
+if __name__ == "__main__":
+    main()
