@@ -4,8 +4,9 @@
 
 {
   # ── ISO identity ───────────────────────────────────────────────────
+  image.baseName = lib.mkForce "agentos-${config.system.nixos.version}";
+
   isoImage = {
-    isoName = lib.mkForce "agentos-${config.system.nixos.version}.iso";
     volumeID = lib.mkForce "AGENTOS";
     makeEfiBootable = true;
     makeUsbBootable = true;
