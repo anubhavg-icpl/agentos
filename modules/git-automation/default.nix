@@ -78,9 +78,6 @@ in
         commit = {
           gpgsign = false;
         };
-        safe = {
-          directory = "*";
-        };
       };
     };
 

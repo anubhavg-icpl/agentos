@@ -5,17 +5,13 @@
 {
   imports = [ ];
 
-  # ── Filesystems (generic; disko handles real partitioning) ─────────
-  fileSystems."/" = {
-    device = "/dev/disk/by-label/agentos-root";
-    fsType = "btrfs";
-    options = [ "compress=zstd" "noatime" "ssd" ];
-  };
+  # Filesystems come from disko.nix.
 
-  fileSystems."/boot" = {
-    device = "/dev/disk/by-label/BOOT";
-    fsType = "vfat";
-  };
+  # ── Common VM / bare-metal storage drivers for the initrd ──────────
+  boot.initrd.availableKernelModules = [
+    "ahci" "nvme" "sd_mod" "usb_storage" "xhci_pci"
+    "virtio_pci" "virtio_blk" "virtio_scsi"
+  ];
 
   # ── Swap (zram for minimal RAM usage) ──────────────────────────────
   zramSwap = {
@@ -33,5 +29,5 @@
   powerManagement.cpuFreqGovernor = "performance";
 
   # ── Graphics (none, headless) ─────────────────────────────────────
-  hardware.opengl.enable = false;
+  hardware.graphics.enable = false;
 }

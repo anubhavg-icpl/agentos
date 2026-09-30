@@ -32,28 +32,29 @@ in
       # PYTHON
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        python311 python311Packages.pip python311Packages.virtualenv python311Packages.setuptools python311Packages.wheel
-        python312 python312Packages.pip python312Packages.virtualenv
+        # Default python3 with packaging tools; 3.12 and 3.11 interpreters
+        # are available as python3.12 / python3.11
+        (lib.hiPrio (python3.withPackages (ps: with ps; [ pip virtualenv setuptools wheel ])))
+        python312 python311
         uv pipx poetry conda rye
         # Python linters/formatters
-        ruff black mypy pyright isort pylint flake8
+        ruff black mypy pyright isort pylint python3Packages.flake8
         # Python tools
-        ipython jupyter httpx
+        python3Packages.ipython jupyter httpx
       ]))
 
       # ════════════════════════════════════════════════════════════════
       # JAVASCRIPT / TYPESCRIPT
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        nodejs_22 nodejs_20
-        nodePackages.npm nodePackages.pnpm nodePackages.yarn nodePackages.bun
-        nodePackages.ts-node nodePackages.tsx
+        nodejs_22 nodejs_24
+        pnpm yarn bun # npm ships with nodejs
         deno
         # JS/TS linters/formatters
-        nodePackages.prettier nodePackages.eslint nodePackages.eslint_d
+        prettier eslint eslint_d
         typescript typescript-language-server
         # Build tools
-        nodePackages.turbo nodePackages.vite nodePackages.webpack
+        turbo
         tailwindcss
       ]))
 
@@ -61,11 +62,11 @@ in
       # GO
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        go_1_23 go_1_22
+        go
         gopls gotools go-tools golangci-lint
         delve # debugger
         air # live reload
-        mockery # mock generator
+        go-mockery # mock generator
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -90,7 +91,7 @@ in
         # Package managers
         conan vcpkg
         # Formatters
-        clang-format cppcheck
+        cppcheck # clang-format ships in clang-tools
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -104,7 +105,7 @@ in
         # JVM tools
         coursier mill
         # Formatters/Linters
-        google-java-format spotbugs
+        google-java-format
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -121,8 +122,7 @@ in
       # PHP
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        php82 composer
-        php82Packages.phpstan php82Packages.php-cs-fixer
+        php84 php84Packages.composer php84Packages.php-cs-fixer
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -137,8 +137,7 @@ in
       # ELIXIR / ERLANG
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        elixir erlang
-        mix # comes with elixir
+        elixir erlang # mix ships with elixir
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -199,7 +198,7 @@ in
       # PERL
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        perl538
+        perl
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -213,7 +212,7 @@ in
       # NIX (native, since we're NixOS)
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        nixfmt nixpkgs-fmt nil alejandra
+        nixfmt-rfc-style nixpkgs-fmt nil alejandra
         nixd
         statix manix
       ]))
@@ -225,10 +224,8 @@ in
         bashInteractive zsh fish nushell
         shellcheck shfmt bash-language-server
       ]))
-    ];
-
-    # ── Language versions command ────────────────────────────────────
-    environment.systemPackages = [
+    ] ++ [
+      # ── Language versions command ──────────────────────────────────
       (pkgs.writeShellScriptBin "agentos-langs" ''
         #!/usr/bin/env bash
         echo "╔══════════════════════════════════════════════╗"

@@ -4,14 +4,8 @@
   description = "AgentOS - a minimal NixOS for coding agents";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-    # Agent tooling sources
-    nixos-generators = {
-      url = "github:nix-community/nixos-generators";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
 
     # Declarative disk partitioning
     disko = {
@@ -26,7 +20,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-unstable, nixos-generators, disko, sops-nix, ... }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-unstable, disko, sops-nix, ... }@inputs:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
@@ -34,13 +28,15 @@
       forEachSystem = f: lib.genAttrs systems (sys: f sys);
 
       # Overlay that adds unstable packages and our agent tools
-      agentOverlay = final: prev: {
-        unstable = import nixpkgs-unstable {
-          system = prev.system;
-          config.allowUnfree = true;
+      agentOverlay = final: prev:
+        let system = prev.stdenv.hostPlatform.system; in
+        {
+          unstable = import nixpkgs-unstable {
+            inherit system;
+            config.allowUnfree = true;
+          };
+          agentos = self.packages.${system};
         };
-        agentos = self.packages.${prev.system};
-      };
 
       pkgsFor = system:
         import nixpkgs {
@@ -59,30 +55,34 @@
           nixpkgs.config.allowUnfree = true;
         }
       ];
+
+      mkHost = modules: nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = { inherit inputs; };
+        modules = sharedModules ++ modules;
+      };
     in
     {
       # ── NixOS configurations ──────────────────────────────────────────
       nixosConfigurations = {
+        # The default AgentOS host (bare metal, installed by agentos-install)
+        agentos = mkHost [
+          ./nixos/hosts/agentos
+          ./nixos/hosts/agentos/hardware.nix
+          ./nixos/hosts/agentos/disko.nix
+        ];
 
-        # The default AgentOS host (bare metal or VM)
-        agentos = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
-          modules = sharedModules ++ [
-            ./nixos/hosts/agentos
-            ./nixos/hosts/agentos/hardware.nix
-          ];
-        };
+        # The same host as a QEMU/KVM guest (see packages.vm-image)
+        agentos-vm = mkHost [
+          ./nixos/hosts/agentos
+          ./nixos/hosts/vm.nix
+        ];
 
         # Live ISO for installation
-        agentos-iso = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
-          modules = sharedModules ++ [
-            "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
-            ./nixos/hosts/iso.nix
-          ];
-        };
+        agentos-iso = mkHost [
+          "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+          ./nixos/hosts/iso.nix
+        ];
       };
 
       # ── Packages (each coding agent as an installable package) ─────────
@@ -90,16 +90,27 @@
         let pkgs = pkgsFor system; in
         (import ./agents/default.nix { inherit pkgs lib; })
         // {
-          default = self.packages.${system}.agentos-installer;
-
-          # Build the ISO image
+          default = self.packages.${system}.cli;
+        }
+        # The OS images target x86_64 (several pre-installed toolchains are
+        # x86_64-only); agent packages are available on both systems.
+        // lib.optionalAttrs (system == "x86_64-linux") {
           iso-image = self.nixosConfigurations.agentos-iso.config.system.build.isoImage;
+          vm-image = self.nixosConfigurations.agentos-vm.config.system.build.image;
+        });
 
-          # Build a QCOW2 VM image
-          vm-image = nixos-generators.nixosGenerate {
+      # ── Checks (nix flake check) ──────────────────────────────────────
+      checks = forEachSystem (system:
+        let pkgs = pkgsFor system; in
+        {
+          services = self.packages.${system}.services;
+        }
+        // lib.optionalAttrs (system == "x86_64-linux") {
+          # Boots a VM with the AgentOS service stack and drives an agent
+          # through spawn -> model gateway -> budget cap -> kill.
+          e2e = import ./tests/e2e.nix {
             inherit pkgs;
-            modules = sharedModules ++ [ ./nixos/hosts/agentos ];
-            format = "qcow";
+            agentosModules = [ disko.nixosModules.disko sops-nix.nixosModules.sops ./modules ];
           };
         });
 
@@ -110,7 +121,7 @@
             packages = with pkgs; [
               nixpkgs-fmt
               nil
-              nixos-generators.packages.${system}.nixos-generate
+              (python3.withPackages (ps: [ ps.pytest ps.redis ps.fakeredis ]))
             ];
           };
         });

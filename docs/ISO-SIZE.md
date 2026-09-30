@@ -1,11 +1,13 @@
 # AgentOS — ISO Size Analysis
 
+> Sizes on this page are estimates, not measurements of a built image.
+
 ## Estimated Sizes by Configuration
 
 | Configuration | ISO Size | Installed | RAM (idle) |
 |--------------|----------|-----------|------------|
 | **Minimal** (core only, no agents) | ~800 MB | ~2.5 GB | ~256 MB |
-| **Standard** (core + 22 agents) | ~2.5 GB | ~8 GB | ~512 MB |
+| **Standard** (core + 15 agents) | ~2.5 GB | ~8 GB | ~512 MB |
 | **Full** (all modules + toolchains) | ~5-7 GB | ~15-20 GB | ~1 GB |
 | **Everything** (VIBE + all MCP + all tools) | ~8-10 GB | ~25-30 GB | ~1.5 GB |
 
@@ -30,9 +32,10 @@ agentos = {
 
 ### Option 2: Build with compression
 ```bash
-# The flake.nix already uses zstd level 19
-# For even smaller: use xz
-nix build .#iso-image --override-config isoImage.squashfsCompression "xz -Xdict-size 100%"
+# nixos/hosts/iso.nix already uses zstd level 19.
+# For an even smaller image, set this in nixos/hosts/iso.nix and rebuild:
+#   isoImage.squashfsCompression = "xz -Xdict-size 100%";
+nix build .#iso-image
 ```
 
 ### Option 3: Netboot (no ISO needed)
@@ -45,7 +48,7 @@ nix build .#iso-image --override-config isoImage.squashfsCompression "xz -Xdict-
 
 | Component | Approx Size | Notes |
 |-----------|------------|-------|
-| 22 Agent CLIs (npm wrappers) | ~200 MB | npx downloads on demand |
+| 15 Agent CLIs | ~1 GB | 12 Nix-built, 3 npm launchers (download on first run) |
 | Language toolchains (all 20+) | ~3-4 GB | Python, Node, Go, Rust, Java... |
 | Databases (Postgres, Redis) | ~300 MB | |
 | Browser tools (Chromium) | ~400 MB | |
@@ -54,9 +57,13 @@ nix build .#iso-image --override-config isoImage.squashfsCompression "xz -Xdict-
 | NixOS base system | ~800 MB | Kernel, systemd, core utils |
 | Observability (Grafana) | ~200 MB | |
 
-## Recommended: Two ISOs
+## What the ISO contains
 
-AgentOS builds two ISO variants:
+The flake builds one ISO (`nix build .#iso-image`). It's a minimal installer:
+the live system has the installer and basic tools, not the agents or
+toolchains. `agentos-install` then installs the full `agentos` configuration
+to disk, downloading packages from cache.nixos.org.
 
-1. **agentos-iso-minimal** (~800 MB): Just the installer + agent runtime. Agents and tools are fetched on first boot.
-2. **agentos-iso-full** (~5-7 GB): Everything pre-baked. Works fully offline.
+A fully pre-baked offline ISO (roughly 5-7 GB) would need a second ISO
+configuration that includes the host's packages in the image; it doesn't
+exist yet.

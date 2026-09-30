@@ -1,6 +1,6 @@
 # AgentOS scheduler - internal service binary
 # (Placeholder: this will be a Rust binary in production)
-{ stdenv, rustPlatform, baseTools }:
+{ rustPlatform }:
 
 rustPlatform.buildRustPackage {
   pname = "agentos-scheduler";

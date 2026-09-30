@@ -1,21 +1,28 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS MCP Server Registry — 50+ Preconfigured MCP Servers
+# AgentOS MCP Server Registry — 35 Preconfigured MCP Servers
 # ═══════════════════════════════════════════════════════════════════════
 #
 # The Model Context Protocol (MCP) is how agents access external tools.
-# This module ships 50+ MCP servers preconfigured and ready to use.
-# Each server extends agents with new capabilities.
+# This module writes /etc/agentos/mcp-servers.json describing 35 MCP
+# servers. Every entry points at a package published on npm (run with
+# `npx -y`) or PyPI (run with `uvx`); nothing is pre-downloaded, so a
+# server is fetched the first time it starts.
 #
 # Categories:
-#   CORE (10): filesystem, git, memory, search, fetch, reasoning, time, exec
-#   DATABASE (8): postgres, sqlite, mysql, redis, mongo, duckdb, clickhouse, surreal
-#   CLOUD (8): aws, gcp, azure, cloudflare, vercel, fly, railway, render
-#   INTEGRATION (12): github, gitlab, linear, jira, slack, discord, notion,
-#                     sentry, datadog, pagerduty, asana, trello
-#   BROWSER (4): puppeteer, playwright, browserbase, selenium
-#   AI/ML (4): openai, anthropic, replicate, huggingface
-#   DEVOPS (6): docker, k8s, terraform, ansible, grafana, prometheus
+#   CORE (7): filesystem, git, memory, fetch, sequential-thinking, time,
+#             everything
+#   DATABASE (7): postgres, sqlite, mysql, redis, mongo, duckdb, clickhouse
+#   CLOUD (4, off by default): aws, azure, cloudflare, supabase
+#   INTEGRATION (7): github, gitlab, linear, slack, notion, sentry,
+#                    pagerduty
+#   BROWSER (3): puppeteer, playwright, browserbase
+#   AI/ML (1): huggingface
+#   DEVOPS (2): docker, kubernetes
 #   DATA (4): brave-search, tavily, exa, perplexity
+#
+# Several @modelcontextprotocol/* servers used here (github, gitlab, slack,
+# postgres, redis, puppeteer, brave-search) are archived upstream; they
+# still install but no longer receive fixes.
 #
 { config, pkgs, lib, ... }:
 
@@ -24,7 +31,7 @@ let
 in
 {
   options.agentos.mcp-servers = {
-    enable = lib.mkEnableOption "AgentOS MCP server registry (50+ servers)";
+    enable = lib.mkEnableOption "AgentOS MCP server registry (35 servers)";
 
     enableCore = lib.mkOption {
       type = lib.types.bool;
@@ -93,7 +100,7 @@ in
             name = "filesystem";
             description = "Read, write, search files in workspaces";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-filesystem" "/var/lib/agentos/workspaces" ];
+            args = [ "-y" "@modelcontextprotocol/server-filesystem" "/var/lib/agentos/workspaces" ];
             category = "core";
             port = null;
             env = { };
@@ -102,8 +109,8 @@ in
           {
             name = "git";
             description = "Git operations: commit, branch, diff, log, merge";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-git" "--repository" "/var/lib/agentos/workspaces" ];
+            command = "uvx";
+            args = [ "mcp-server-git" ];
             category = "core";
             enabled = true;
           }
@@ -111,15 +118,15 @@ in
             name = "memory";
             description = "Persistent key-value memory graph";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-memory" ];
+            args = [ "-y" "@modelcontextprotocol/server-memory" ];
             category = "core";
             enabled = true;
           }
           {
             name = "fetch";
             description = "Fetch web pages and APIs, convert to markdown";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-fetch" ];
+            command = "uvx";
+            args = [ "mcp-server-fetch" ];
             category = "core";
             enabled = true;
           }
@@ -127,47 +134,23 @@ in
             name = "sequential-thinking";
             description = "Step-by-step reasoning with revision and branching";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-sequential-thinking" ];
+            args = [ "-y" "@modelcontextprotocol/server-sequential-thinking" ];
             category = "core";
             enabled = true;
           }
           {
             name = "time";
             description = "Time and timezone tools";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-time" ];
+            command = "uvx";
+            args = [ "mcp-server-time" ];
             category = "core";
             enabled = true;
           }
           {
             name = "everything";
-            description = "All-in-one server: search, fetch, analyze";
+            description = "Reference server that exercises every MCP feature (for testing clients)";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-everything" ];
-            category = "core";
-            enabled = true;
-          }
-          {
-            name = "exec";
-            description = "Execute shell commands in sandboxed environment";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-exec" ];
-            category = "core";
-            enabled = false; # dangerous, enable per-agent
-          }
-          {
-            name = "filesystem-watch";
-            description = "Watch files for changes in real-time";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-filesystem-watch" ];
-            category = "core";
-            enabled = true;
-          }
-          {
-            name = "clipboard";
-            description = "Read/write system clipboard";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-clipboard" ];
+            args = [ "-y" "@modelcontextprotocol/server-everything" ];
             category = "core";
             enabled = true;
           }
@@ -181,15 +164,15 @@ in
             name = "postgres";
             description = "PostgreSQL: query, schema, migrations";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-postgres" "postgresql://agentos@localhost/agentos" ];
+            args = [ "-y" "@modelcontextprotocol/server-postgres" "postgresql://agentos@localhost/agentos" ];
             category = "database";
             enabled = true;
           }
           {
             name = "sqlite";
             description = "SQLite: query, create, manage databases";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-sqlite" "--db-path" "/var/lib/agentos/data/sqlite.db" ];
+            command = "uvx";
+            args = [ "mcp-server-sqlite" "--db-path" "/var/lib/agentos/data/sqlite.db" ];
             category = "database";
             enabled = true;
           }
@@ -197,7 +180,7 @@ in
             name = "mysql";
             description = "MySQL/MariaDB: query and manage";
             command = "npx";
-            args = [ "@benborla29/mcp-server-mysql" ];
+            args = [ "-y" "@benborla29/mcp-server-mysql" ];
             category = "database";
             env = { MYSQL_HOST = "localhost"; MYSQL_USER = "agentos"; };
             enabled = false;
@@ -206,7 +189,7 @@ in
             name = "redis";
             description = "Redis: key-value, pub/sub, streams";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-redis" "redis://localhost:6379" ];
+            args = [ "-y" "@modelcontextprotocol/server-redis" "redis://localhost:6379" ];
             category = "database";
             enabled = true;
           }
@@ -214,31 +197,23 @@ in
             name = "mongo";
             description = "MongoDB: CRUD, aggregation, indexes";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-mongo" "mongodb://localhost:27017" ];
+            args = [ "-y" "mongodb-mcp-server" ];
             category = "database";
             enabled = false;
           }
           {
             name = "duckdb";
             description = "DuckDB: in-process analytics SQL";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-duckdb" ];
+            command = "uvx";
+            args = [ "mcp-server-motherduck" "--db-path" ":memory:" ];
             category = "database";
             enabled = true;
           }
           {
             name = "clickhouse";
             description = "ClickHouse: columnar OLAP queries";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-clickhouse" ];
-            category = "database";
-            enabled = false;
-          }
-          {
-            name = "surrealdb";
-            description = "SurrealDB: multi-model database";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-surrealdb" ];
+            command = "uvx";
+            args = [ "mcp-clickhouse" ];
             category = "database";
             enabled = false;
           }
@@ -251,17 +226,9 @@ in
           {
             name = "aws";
             description = "AWS: S3, EC2, Lambda, DynamoDB, CloudFormation";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-aws" ];
+            command = "uvx";
+            args = [ "awslabs.aws-api-mcp-server" ];
             env = { AWS_REGION = "us-east-1"; };
-            category = "cloud";
-            enabled = false;
-          }
-          {
-            name = "gcp";
-            description = "Google Cloud: GCS, Cloud Run, Firestore, BigQuery";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-gcp" ];
             category = "cloud";
             enabled = false;
           }
@@ -269,7 +236,7 @@ in
             name = "azure";
             description = "Azure: Storage, Functions, CosmosDB";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-azure" ];
+            args = [ "-y" "@azure/mcp" "server" "start" ];
             category = "cloud";
             enabled = false;
           }
@@ -277,34 +244,8 @@ in
             name = "cloudflare";
             description = "Cloudflare: Workers, KV, R2, D1, Durable Objects";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-cloudflare" ];
+            args = [ "-y" "@cloudflare/mcp-server-cloudflare" ];
             env = { CLOUDFLARE_API_TOKEN = "\${CF_API_TOKEN}"; };
-            category = "cloud";
-            enabled = false;
-          }
-          {
-            name = "vercel";
-            description = "Vercel: deployments, projects, env vars";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-vercel" ];
-            env = { VERCEL_TOKEN = "\${VERCEL_TOKEN}"; };
-            category = "cloud";
-            enabled = false;
-          }
-          {
-            name = "fly";
-            description = "Fly.io: apps, machines, volumes";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-fly" ];
-            env = { FLY_API_TOKEN = "\${FLY_TOKEN}"; };
-            category = "cloud";
-            enabled = false;
-          }
-          {
-            name = "railway";
-            description = "Railway: deployments, databases";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-railway" ];
             category = "cloud";
             enabled = false;
           }
@@ -312,7 +253,7 @@ in
             name = "supabase";
             description = "Supabase: database, auth, storage, realtime";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-supabase" ];
+            args = [ "-y" "@supabase/mcp-server-supabase" ];
             env = { SUPABASE_URL = "\${SUPABASE_URL}"; SUPABASE_KEY = "\${SUPABASE_KEY}"; };
             category = "cloud";
             enabled = false;
@@ -327,7 +268,7 @@ in
             name = "github";
             description = "GitHub: repos, issues, PRs, actions, gists";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-github" ];
+            args = [ "-y" "@modelcontextprotocol/server-github" ];
             env = { GITHUB_PERSONAL_ACCESS_TOKEN = "\${GITHUB_TOKEN}"; };
             category = "integration";
             enabled = true;
@@ -336,7 +277,7 @@ in
             name = "gitlab";
             description = "GitLab: repos, MRs, pipelines";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-gitlab" ];
+            args = [ "-y" "@modelcontextprotocol/server-gitlab" ];
             env = { GITLAB_PERSONAL_ACCESS_TOKEN = "\${GITLAB_TOKEN}"; };
             category = "integration";
             enabled = false;
@@ -345,17 +286,7 @@ in
             name = "linear";
             description = "Linear: issues, projects, cycles, sprints";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-linear" ];
-            env = { LINEAR_API_KEY = "\${LINEAR_API_KEY}"; };
-            category = "integration";
-            enabled = false;
-          }
-          {
-            name = "jira";
-            description = "Jira: issues, sprints, boards, transitions";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-jira" ];
-            env = { JIRA_API_TOKEN = "\${JIRA_TOKEN}"; };
+            args = [ "-y" "mcp-remote" "https://mcp.linear.app/sse" ];
             category = "integration";
             enabled = false;
           }
@@ -363,17 +294,8 @@ in
             name = "slack";
             description = "Slack: channels, messages, threads, files";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-slack" ];
+            args = [ "-y" "@modelcontextprotocol/server-slack" ];
             env = { SLACK_BOT_TOKEN = "\${SLACK_BOT_TOKEN}"; };
-            category = "integration";
-            enabled = false;
-          }
-          {
-            name = "discord";
-            description = "Discord: channels, messages, roles";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-discord" ];
-            env = { DISCORD_TOKEN = "\${DISCORD_TOKEN}"; };
             category = "integration";
             enabled = false;
           }
@@ -381,7 +303,7 @@ in
             name = "notion";
             description = "Notion: pages, databases, blocks";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-notion" ];
+            args = [ "-y" "@notionhq/notion-mcp-server" ];
             env = { NOTION_API_KEY = "\${NOTION_KEY}"; };
             category = "integration";
             enabled = false;
@@ -390,44 +312,17 @@ in
             name = "sentry";
             description = "Sentry: errors, issues, releases, stack traces";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-sentry" ];
-            env = { SENTRY_AUTH_TOKEN = "\${SENTRY_TOKEN}"; };
-            category = "integration";
-            enabled = false;
-          }
-          {
-            name = "datadog";
-            description = "Datadog: metrics, logs, traces, monitors";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-datadog" ];
-            env = { DATADOG_API_KEY = "\${DD_API_KEY}"; };
+            args = [ "-y" "@sentry/mcp-server" ];
+            env = { SENTRY_ACCESS_TOKEN = "\${SENTRY_TOKEN}"; };
             category = "integration";
             enabled = false;
           }
           {
             name = "pagerduty";
             description = "PagerDuty: incidents, services, schedules";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-pagerduty" ];
-            env = { PAGERDUTY_API_KEY = "\${PD_API_KEY}"; };
-            category = "integration";
-            enabled = false;
-          }
-          {
-            name = "asana";
-            description = "Asana: tasks, projects, sections";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-asana" ];
-            env = { ASANA_TOKEN = "\${ASANA_TOKEN}"; };
-            category = "integration";
-            enabled = false;
-          }
-          {
-            name = "trello";
-            description = "Trello: boards, lists, cards";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-trello" ];
-            env = { TRELLO_API_KEY = "\${TRELLO_KEY}"; };
+            command = "uvx";
+            args = [ "pagerduty-mcp" ];
+            env = { PAGERDUTY_USER_API_KEY = "\${PD_API_KEY}"; };
             category = "integration";
             enabled = false;
           }
@@ -441,7 +336,7 @@ in
             name = "puppeteer";
             description = "Puppeteer: headless Chrome automation";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-puppeteer" ];
+            args = [ "-y" "@modelcontextprotocol/server-puppeteer" ];
             category = "browser";
             enabled = true;
           }
@@ -449,7 +344,7 @@ in
             name = "playwright";
             description = "Playwright: cross-browser automation, screenshots";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-playwright" ];
+            args = [ "-y" "@playwright/mcp" ];
             category = "browser";
             enabled = true;
           }
@@ -457,16 +352,8 @@ in
             name = "browserbase";
             description = "Browserbase: cloud browser sessions at scale";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-browserbase" ];
+            args = [ "-y" "@browserbasehq/mcp" ];
             env = { BROWSERBASE_API_KEY = "\${BB_API_KEY}"; };
-            category = "browser";
-            enabled = false;
-          }
-          {
-            name = "selenium";
-            description = "Selenium: WebDriver automation";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-selenium" ];
             category = "browser";
             enabled = false;
           }
@@ -477,37 +364,10 @@ in
         # ════════════════════════════════════════════════════════════
         (lib.optionals cfg.enableAI [
           {
-            name = "openai-tools";
-            description = "OpenAI: DALL-E, Whisper, embeddings, moderation";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-openai" ];
-            env = { OPENAI_API_KEY = "\${OPENAI_API_KEY}"; };
-            category = "ai";
-            enabled = true;
-          }
-          {
-            name = "anthropic-tools";
-            description = "Anthropic: Claude vision, analysis tools";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-anthropic" ];
-            env = { ANTHROPIC_API_KEY = "\${ANTHROPIC_API_KEY}"; };
-            category = "ai";
-            enabled = true;
-          }
-          {
-            name = "replicate";
-            description = "Replicate: run ML models (SD, LLaMA, Whisper)";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-replicate" ];
-            env = { REPLICATE_API_TOKEN = "\${REPLICATE_TOKEN}"; };
-            category = "ai";
-            enabled = false;
-          }
-          {
             name = "huggingface";
             description = "HuggingFace: models, datasets, spaces";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-huggingface" ];
+            args = [ "-y" "@llmindset/hf-mcp-server" ];
             env = { HF_API_TOKEN = "\${HF_TOKEN}"; };
             category = "ai";
             enabled = false;
@@ -521,8 +381,8 @@ in
           {
             name = "docker";
             description = "Docker: containers, images, volumes, compose";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-docker" ];
+            command = "uvx";
+            args = [ "mcp-server-docker" ];
             category = "devops";
             enabled = true;
           }
@@ -530,42 +390,9 @@ in
             name = "kubernetes";
             description = "Kubernetes: pods, deployments, services";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-kubernetes" ];
+            args = [ "-y" "mcp-server-kubernetes" ];
             category = "devops";
             enabled = false;
-          }
-          {
-            name = "terraform";
-            description = "Terraform: plan, apply, state, modules";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-terraform" ];
-            category = "devops";
-            enabled = false;
-          }
-          {
-            name = "ansible";
-            description = "Ansible: playbooks, inventory, modules";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-ansible" ];
-            category = "devops";
-            enabled = false;
-          }
-          {
-            name = "grafana";
-            description = "Grafana: dashboards, alerts, datasources";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-grafana" ];
-            env = { GRAFANA_API_KEY = "\${GRAFANA_KEY}"; };
-            category = "devops";
-            enabled = true;
-          }
-          {
-            name = "prometheus";
-            description = "Prometheus: metrics, queries, alerts";
-            command = "npx";
-            args = [ "@modelcontextprotocol/server-prometheus" ];
-            category = "devops";
-            enabled = true;
           }
         ])
 
@@ -577,7 +404,7 @@ in
             name = "brave-search";
             description = "Brave Search: web, news, images, videos";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-brave-search" ];
+            args = [ "-y" "@modelcontextprotocol/server-brave-search" ];
             env = { BRAVE_API_KEY = "\${BRAVE_API_KEY}"; };
             category = "data";
             enabled = false;
@@ -586,8 +413,8 @@ in
             name = "tavily";
             description = "Tavily: AI-optimized web search and extraction";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-tavily" ];
-            env = { TAVILY_API_KEY = "\${TAVILY_KEY}"; };
+            args = [ "-y" "tavily-mcp" ];
+            env = { TAVILY_API_KEY = "\${TAVILY_API_KEY}"; };
             category = "data";
             enabled = false;
           }
@@ -595,7 +422,7 @@ in
             name = "exa";
             description = "Exa: neural web search for AI agents";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-exa" ];
+            args = [ "-y" "exa-mcp-server" ];
             env = { EXA_API_KEY = "\${EXA_KEY}"; };
             category = "data";
             enabled = false;
@@ -604,7 +431,7 @@ in
             name = "perplexity";
             description = "Perplexity: AI-powered web search with citations";
             command = "npx";
-            args = [ "@modelcontextprotocol/server-perplexity" ];
+            args = [ "-y" "@perplexity-ai/mcp-server" ];
             env = { PERPLEXITY_API_KEY = "\${PERPLEXITY_KEY}"; };
             category = "data";
             enabled = false;
@@ -628,7 +455,18 @@ in
         ok()    { echo -e "''${GREEN}[OK]''${NC} $*"; }
         warn()  { echo -e "''${YELLOW}[WARN]''${NC} $*"; }
 
-        CONFIG="/etc/agentos/mcp-servers.json"
+        # /etc is read-only (generated by Nix); runtime changes go to STATE.
+        DEFAULTS="/etc/agentos/mcp-servers.json"
+        STATE="/var/lib/agentos/mcp-servers.json"
+        CONFIG="$DEFAULTS"
+        [ -f "$STATE" ] && CONFIG="$STATE"
+        save() {
+          local tmp
+          tmp=$(mktemp)
+          cat > "$tmp"
+          install -D -m 644 "$tmp" "$STATE"
+          rm -f "$tmp"
+        }
 
         case "''${1:-list}" in
           list)
@@ -639,9 +477,9 @@ in
             echo ""
 
             if [ -n "$CATEGORY" ]; then
-              echo -e "''${BOLD}Category: $Category''${NC}"
+              echo -e "''${BOLD}Category: $CATEGORY''${NC}"
               ${pkgs.jq}/bin/jq -r --arg cat "$CATEGORY" '.servers[] | select(.category == $cat) | select(.enabled) | "  ✓ \(.name)\t\(.description)"' "$CONFIG" 2>/dev/null | column -t -s $'\t'
-              return
+              exit 0
             fi
 
             for cat in core database cloud integration browser ai devops data; do
@@ -665,8 +503,7 @@ in
               echo "Usage: agentos-mcp enable <server-name>"
               exit 1
             fi
-            ${pkgs.jq}/bin/jq ".servers |= map(if .name == \"$SERVER\" then .enabled = true else .)" "$CONFIG" > /tmp/mcp.json
-            ${pkgs.install}/bin/install -m 644 /tmp/mcp.json "$CONFIG"
+            ${pkgs.jq}/bin/jq --arg n "$SERVER" '.servers |= map(if .name == $n then .enabled = true else . end)' "$CONFIG" | save
             ok "Enabled: $SERVER"
             ;;
 
@@ -676,8 +513,7 @@ in
               echo "Usage: agentos-mcp disable <server-name>"
               exit 1
             fi
-            ${pkgs.jq}/bin/jq ".servers |= map(if .name == \"$SERVER\" then .enabled = false else .)" "$CONFIG" > /tmp/mcp.json
-            ${pkgs.install}/bin/install -m 644 /tmp/mcp.json "$CONFIG"
+            ${pkgs.jq}/bin/jq --arg n "$SERVER" '.servers |= map(if .name == $n then .enabled = false else . end)' "$CONFIG" | save
             ok "Disabled: $SERVER"
             ;;
 
@@ -688,13 +524,13 @@ in
               exit 1
             fi
             info "Starting MCP server: $SERVER"
-            CMD=$(${pkgs.jq}/bin/jq -r --arg n "$SERVER" '.servers[] | select(.name == $n) | .command + " " + (.args | join(" "))' "$CONFIG" 2>/dev/null)
-            if [ -z "$CMD" ] || [ "$CMD" = "null" ]; then
+            mapfile -t ARGV < <(${pkgs.jq}/bin/jq -r --arg n "$SERVER" '.servers[] | select(.name == $n) | .command, .args[]' "$CONFIG" 2>/dev/null)
+            if [ "''${#ARGV[@]}" -eq 0 ]; then
               warn "Server not found: $SERVER"
               exit 1
             fi
-            echo "  Command: $CMD"
-            exec eval "$CMD"
+            echo "  Command: ''${ARGV[*]}"
+            exec "''${ARGV[@]}"
             ;;
 
           test)
@@ -704,8 +540,12 @@ in
               exit 1
             fi
             info "Testing MCP server: $SERVER"
-            CMD=$(${pkgs.jq}/bin/jq -r --arg n "$SERVER" '.servers[] | select(.name == $n) | .command + " " + (.args | join(" "))' "$CONFIG" 2>/dev/null)
-            timeout 5 eval "$CMD" --help 2>/dev/null && ok "Server $SERVER: healthy" || warn "Server $SERVER: may need dependencies"
+            mapfile -t ARGV < <(${pkgs.jq}/bin/jq -r --arg n "$SERVER" '.servers[] | select(.name == $n) | .command, .args[]' "$CONFIG" 2>/dev/null)
+            if [ "''${#ARGV[@]}" -eq 0 ]; then
+              warn "Server not found: $SERVER"
+              exit 1
+            fi
+            timeout 5 "''${ARGV[@]}" --help >/dev/null 2>&1 && ok "Server $SERVER: healthy" || warn "Server $SERVER: may need dependencies"
             ;;
 
           info)
@@ -727,8 +567,7 @@ in
 
           enable-all)
             info "Enabling all MCP servers..."
-            ${pkgs.jq}/bin/jq '.servers |= map(.enabled = true)' "$CONFIG" > /tmp/mcp.json
-            ${pkgs.install}/bin/install -m 644 /tmp/mcp.json "$CONFIG"
+            ${pkgs.jq}/bin/jq '.servers |= map(.enabled = true)' "$CONFIG" | save
             ok "All servers enabled (note: cloud/integration servers need API keys)"
             ;;
 
@@ -762,13 +601,13 @@ in
             stats                Show registry statistics
 
         CATEGORIES:
-            core         filesystem, git, memory, fetch, reasoning, time...
-            database     postgres, sqlite, redis, mongo, duckdb...
-            cloud        aws, gcp, azure, cloudflare, vercel, fly...
-            integration  github, gitlab, linear, jira, slack, notion...
-            browser      puppeteer, playwright, browserbase, selenium
-            ai           openai-tools, anthropic-tools, replicate, huggingface
-            devops       docker, kubernetes, terraform, grafana...
+            core         filesystem, git, memory, fetch, time, sequential-thinking
+            database     postgres, sqlite, mysql, redis, mongo, duckdb, clickhouse
+            cloud        aws, azure, cloudflare, supabase
+            integration  github, gitlab, linear, slack, notion, sentry, pagerduty
+            browser      puppeteer, playwright, browserbase
+            ai           huggingface
+            devops       docker, kubernetes
             data         brave-search, tavily, exa, perplexity
 
         HELP
@@ -777,6 +616,6 @@ in
       '')
     ];
 
-    networking.firewall.allowedTCPPorts = [ cfg.registryPort ];
+    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ cfg.registryPort ];
   };
 }

@@ -11,14 +11,13 @@ let cfg = config.agentos.package-managers; in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = with pkgs; [
       # Python
-      pip
+      python3Packages.pip
       pipx
       poetry
       uv
       conda
       rye
       # Node
-      npm
       pnpm
       yarn
       bun
@@ -30,7 +29,7 @@ let cfg = config.agentos.package-managers; in
       bundler
       gem
       # PHP
-      composer
+      phpPackages.composer
       # Java
       maven
       gradle

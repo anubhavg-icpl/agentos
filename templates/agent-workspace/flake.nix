@@ -1,11 +1,11 @@
 # Agent workspace template
 # Scaffold a new project with agent tools available.
-# Usage: nix flake init -t github:yourorg/agentos
+# Usage: nix flake init -t github:anubhavg-icpl/agentos
 {
   description = "AgentOS workspace - a project scaffolded for coding agents";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -33,8 +33,8 @@
             gh
 
             # Install specific agents as needed:
-            # nix profile install github:yourorg/agentos#claude-code
-            # nix profile install github:yourorg/agentos#aider
+            # nix profile install github:anubhavg-icpl/agentos#claude-code
+            # nix profile install github:anubhavg-icpl/agentos#aider
           ];
 
           shellHook = ''

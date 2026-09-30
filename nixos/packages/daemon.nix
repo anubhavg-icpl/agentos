@@ -5,7 +5,7 @@
 #   - Enforce maxAgents limit
 #   - Route tool calls via the MCP gateway
 #   - Report metrics on :9950/metrics (Prometheus)
-{ stdenv, rustPlatform, baseTools, lib }:
+{ rustPlatform }:
 
 rustPlatform.buildRustPackage {
   pname = "agentos-daemon";
@@ -13,8 +13,6 @@ rustPlatform.buildRustPackage {
   src = ./.;
 
   cargoHash = ""; # placeholder
-
-  buildInputs = baseTools;
 
   meta = {
     description = "AgentOS agent lifecycle daemon";

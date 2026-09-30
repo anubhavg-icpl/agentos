@@ -75,14 +75,15 @@ in
     };
 
     # ─ Redis ─────────────────────────────────────────────────────────
-    services.redis = lib.mkIf cfg.enableRedis {
+    # A Redis for agents' own projects on localhost:6379, separate from
+    # the AgentOS control-plane Redis (redis-agentos, unix socket only)
+    services.redis.servers.dev = lib.mkIf cfg.enableRedis {
       enable = true;
       port = 6379;
       settings = {
         maxmemory = "256mb";
         maxmemory-policy = "allkeys-lru";
         appendonly = "yes";
-        save = "60 1000";
       };
     };
 
@@ -106,7 +107,6 @@ in
     # ─ Database CLI tools ────────────────────────────────────────────
     environment.systemPackages = lib.flatten [
       (lib.optionals cfg.enablePostgres (with pkgs; [
-        postgresql_16.pgjwt      # pgjwt extension
         pgcli                    # nice CLI for postgres
         pgcenter                 # monitoring
       ]))

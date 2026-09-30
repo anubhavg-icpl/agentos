@@ -27,6 +27,12 @@ in
       description = "How many snapshots to keep";
     };
 
+    historyRetentionDays = lib.mkOption {
+      type = lib.types.int;
+      default = 90;
+      description = "Days to keep finished agents' records and gateway logs";
+    };
+
     enableDedup = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -36,41 +42,37 @@ in
 
   config = lib.mkIf cfg.enable {
     # ─ btrfs snapshot management ──────────────────────────────────────
-    services.btrbk = lib.mkIf (cfg.filesystem == "btrfs") {
-      enable = true;
-      instances."agentos-workspaces" = {
-        onCalendar = cfg.snapshotInterval;
-        settings = {
-          timestamp_format = "long";
-          snapshot_preserve = "${toString cfg.snapshotRetention}h 7d 4w";
-          snapshot_dir = "/var/lib/agentos/snapshots";
-          subvolume."/var/lib/agentos/workspaces" = { };
+    # The workspace root must be a btrfs subvolume (see disko.nix).
+    services.btrbk.instances."agentos-workspaces" = lib.mkIf (cfg.filesystem == "btrfs") {
+      onCalendar = cfg.snapshotInterval;
+      settings = {
+        timestamp_format = "long";
+        snapshot_preserve_min = "2h";
+        snapshot_preserve = "${toString cfg.snapshotRetention}h 7d 4w";
+        volume."/var/lib/agentos" = {
+          snapshot_dir = "snapshots";
+          subvolume = "workspaces";
         };
       };
     };
 
     # ─ Workspace GC (clean up old, abandoned workspaces) ──────────────
-    systemd.services.agentos-gc = {
-      description = "AgentOS workspace garbage collection";
+    # Workspaces are never deleted automatically (`agentos workspace rm`);
+    # this prunes the agent history and gateway logs, and btrbk handles
+    # snapshot retention.
+    systemd.services.agentos-gc = lib.mkIf config.agentos.runtime.enable {
+      description = "AgentOS agent history and log cleanup";
       startAt = "daily";
       serviceConfig = {
         Type = "oneshot";
         User = "agentos";
+        Group = "agentos";
         ExecStart = toString (pkgs.writeShellScript "agentos-gc" ''
           set -euo pipefail
-          WS_ROOT="${toString config.agentos.runtime.workspaceRoot}"
-          STATE_DIR="/var/lib/agentos/state"
-
-          # Remove workspaces not accessed in 7 days and not marked persistent
-          find "$WS_ROOT" -maxdepth 1 -type d -mtime +7 -name 'agent-*' | while read -r ws; do
-            if [ ! -f "$ws/.agentos-persistent" ]; then
-              echo "[gc] removing stale workspace: $ws"
-              rm -rf "$ws"
-            fi
-          done
-
-          # Remove snapshots older than retention period
-          ${pkgs.findutils}/bin/find /var/lib/agentos/snapshots -maxdepth 1 -type d -mtime +${toString cfg.snapshotRetention} -exec rm -rf {} \;
+          ${pkgs.findutils}/bin/find /var/lib/agentos/state/history -maxdepth 1 -name '*.json' \
+            -mtime +${toString cfg.historyRetentionDays} -print -delete
+          ${pkgs.findutils}/bin/find /var/lib/agentos/logs -maxdepth 1 -name '*.log' \
+            -mtime +${toString cfg.historyRetentionDays} -print -delete
         '');
       };
     };
@@ -80,7 +82,7 @@ in
       btrfs-progs  # or zfs depending on cfg.filesystem
       git
       rsync
-      du-dust  # disk usage
+      dust  # disk usage
     ];
 
     # ─ Deduplication cron (btrfs dedup) ──────────────────────────────
@@ -89,7 +91,8 @@ in
       startAt = "daily";
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.btrfs-dedupe}/bin/duperemove -drh /var/lib/agentos/workspaces || true";
+        ExecStart = "${pkgs.duperemove}/bin/duperemove -drh ${config.agentos.runtime.workspaceRoot}";
+        SuccessExitStatus = [ 0 1 ];
       };
     };
   };

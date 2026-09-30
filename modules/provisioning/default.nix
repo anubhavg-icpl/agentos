@@ -28,22 +28,15 @@ in
       type = lib.types.listOf (lib.types.enum [
         "python-3.11"
         "python-3.12"
-        "node-20"
         "node-22"
-        "go-1.22"
-        "go-1.23"
+        "node-24"
+        "go"
         "rust-stable"
-        "rust-nightly"
         "cpp-gcc"
         "java-21"
-        "ruby-3.3"
-        "haskell"
-        "elixir"
-        "ocaml"
-        "zig"
       ]);
       default = [
-        "python-3.11" "python-3.12" "node-22" "go-1.23" "rust-stable"
+        "python-3.11" "python-3.12" "node-22" "go" "rust-stable"
       ];
       description = "Which dev environment images to pre-build";
     };
@@ -87,41 +80,41 @@ in
     environment.etc."agentos/env-templates/python-3.11.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
-        packages = with pkgs; [ python311 python311Packages.pip python311Packages.virtualenv ];
-        shellHook = ''
+        packages = with pkgs; [ python311 ];
+        shellHook = '''
           if [ ! -d .venv ]; then
             python -m venv .venv
           fi
           source .venv/bin/activate
-        '';
+        ''';
       }
     '';
 
     environment.etc."agentos/env-templates/python-3.12.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
-        packages = with pkgs; [ python312 python312Packages.pip python312Packages.virtualenv ];
+        packages = with pkgs; [ python312 ];
       }
     '';
 
     environment.etc."agentos/env-templates/node-22.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
-        packages = with pkgs; [ nodejs_22 nodePackages.npm nodePackages.pnpm nodePackages.yarn ];
+        packages = with pkgs; [ nodejs_22 pnpm yarn ];
       }
     '';
 
-    environment.etc."agentos/env-templates/node-20.nix".text = ''
+    environment.etc."agentos/env-templates/node-24.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
-        packages = with pkgs; [ nodejs_20 nodePackages.npm ];
+        packages = with pkgs; [ nodejs_24 pnpm ];
       }
     '';
 
-    environment.etc."agentos/env-templates/go-1.23.nix".text = ''
+    environment.etc."agentos/env-templates/go.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
-        packages = with pkgs; [ go_1_23 gopls gotools go-tools ];
+        packages = with pkgs; [ go gopls gotools go-tools ];
       }
     '';
 
@@ -148,7 +141,7 @@ in
     '';
 
     # ─ Provisioning service ──────────────────────────────────────────
-    systemd.services.agentos-provisioner = {
+    systemd.services.agentos-provisioner = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS Environment Provisioner";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -191,8 +184,8 @@ in
         detect_project() {
           if [ -f "package.json" ]; then
             echo "node"
-            if ${pkgs.jq}/bin/jq -r '.engines.node' package.json 2>/dev/null | grep -q "20"; then
-              echo "node-20"
+            if ${pkgs.jq}/bin/jq -r '.engines.node' package.json 2>/dev/null | grep -q "24"; then
+              echo "node-24"
             else
               echo "node-22"
             fi
@@ -204,7 +197,7 @@ in
               echo "python-3.11"
             fi
           elif [ -f "go.mod" ]; then
-            echo "go-1.23"
+            echo "go"
           elif [ -f "Cargo.toml" ]; then
             echo "rust-stable"
           elif [ -f "CMakeLists.txt" ] || [ -f "Makefile" ]; then
@@ -284,6 +277,6 @@ in
       '')
     ];
 
-    networking.firewall.allowedTCPPorts = lib.optional cfg.enableCache 5000;
+    networking.firewall.interfaces.agentos0.allowedTCPPorts = lib.optional cfg.enableCache 5000;
   };
 }

@@ -74,15 +74,15 @@ in
           name = "filesystem";
           description = "Read, write, and search files";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-filesystem" "/var/lib/agentos/workspaces" ];
+          args = [ "-y" "@modelcontextprotocol/server-filesystem" "/var/lib/agentos/workspaces" ];
           category = "core";
           enabled = true;
         }
         {
           name = "git";
           description = "Git operations (commit, branch, diff, log)";
-          command = "npx";
-          args = [ "@modelcontextprotocol/server-git" ];
+          command = "uvx";
+          args = [ "mcp-server-git" ];
           category = "core";
           enabled = true;
         }
@@ -90,7 +90,7 @@ in
           name = "github";
           description = "GitHub API (issues, PRs, actions)";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-github" ];
+          args = [ "-y" "@modelcontextprotocol/server-github" ];
           env = { GITHUB_PERSONAL_ACCESS_TOKEN = "\${GITHUB_TOKEN}"; };
           category = "integration";
           enabled = true;
@@ -99,23 +99,23 @@ in
           name = "postgres";
           description = "PostgreSQL database access";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-postgres" ];
+          args = [ "-y" "@modelcontextprotocol/server-postgres" ];
           category = "database";
           enabled = false;
         }
         {
           name = "sqlite";
           description = "SQLite database access";
-          command = "npx";
-          args = [ "@modelcontextprotocol/server-sqlite" ];
+          command = "uvx";
+          args = [ "mcp-server-sqlite" "--db-path" "/var/lib/agentos/data/sqlite.db" ];
           category = "database";
           enabled = true;
         }
         {
           name = "fetch";
           description = "Fetch web pages and APIs";
-          command = "npx";
-          args = [ "@modelcontextprotocol/server-fetch" ];
+          command = "uvx";
+          args = [ "mcp-server-fetch" ];
           category = "web";
           enabled = true;
         }
@@ -123,7 +123,7 @@ in
           name = "memory";
           description = "Persistent key-value memory";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-memory" ];
+          args = [ "-y" "@modelcontextprotocol/server-memory" ];
           category = "core";
           enabled = true;
         }
@@ -131,7 +131,7 @@ in
           name = "puppeteer";
           description = "Browser automation";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-puppeteer" ];
+          args = [ "-y" "@modelcontextprotocol/server-puppeteer" ];
           category = "browser";
           enabled = false;
         }
@@ -139,7 +139,7 @@ in
           name = "brave-search";
           description = "Web search via Brave API";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-brave-search" ];
+          args = [ "-y" "@modelcontextprotocol/server-brave-search" ];
           env = { BRAVE_API_KEY = "\${BRAVE_API_KEY}"; };
           category = "web";
           enabled = false;
@@ -148,7 +148,7 @@ in
           name = "sequential-thinking";
           description = "Step-by-step reasoning tool";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-sequential-thinking" ];
+          args = [ "-y" "@modelcontextprotocol/server-sequential-thinking" ];
           category = "reasoning";
           enabled = true;
         }
@@ -156,7 +156,7 @@ in
           name = "slack";
           description = "Slack messaging integration";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-slack" ];
+          args = [ "-y" "@modelcontextprotocol/server-slack" ];
           env = { SLACK_BOT_TOKEN = "\${SLACK_BOT_TOKEN}"; };
           category = "integration";
           enabled = false;
@@ -165,8 +165,7 @@ in
           name = "linear";
           description = "Linear issue tracking";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-linear" ];
-          env = { LINEAR_API_KEY = "\${LINEAR_API_KEY}"; };
+          args = [ "-y" "mcp-remote" "https://mcp.linear.app/sse" ];
           category = "integration";
           enabled = false;
         }
@@ -174,32 +173,24 @@ in
           name = "sentry";
           description = "Sentry error tracking";
           command = "npx";
-          args = [ "@modelcontextprotocol/server-sentry" ];
-          env = { SENTRY_AUTH_TOKEN = "\${SENTRY_TOKEN}"; };
+          args = [ "-y" "@sentry/mcp-server" ];
+          env = { SENTRY_ACCESS_TOKEN = "\${SENTRY_TOKEN}"; };
           category = "integration";
           enabled = false;
         }
         {
           name = "semgrep";
           description = "Code security analysis";
-          command = "npx";
-          args = [ "@modelcontextprotocol/server-semgrep" ];
+          command = "uvx";
+          args = [ "semgrep-mcp" ];
           category = "security";
-          enabled = true;
-        }
-        {
-          name = "mermaid";
-          description = "Generate diagrams from text";
-          command = "npx";
-          args = [ "@modelcontextprotocol/server-mermaid" ];
-          category = "visualization";
           enabled = true;
         }
       ];
     };
 
     # ─ MCP Registry Service ──────────────────────────────────────────
-    systemd.services.agentos-mcp-registry = {
+    systemd.services.agentos-mcp-registry = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS MCP Tool Registry";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -236,7 +227,18 @@ in
         ok()    { echo -e "''${GREEN}[OK]''${NC} $*"; }
         warn()  { echo -e "''${YELLOW}[WARN]''${NC} $*"; }
 
-        CONFIG="/etc/agentos/mcp-tools.json"
+        # /etc is read-only (generated by Nix); runtime changes go to STATE.
+        DEFAULTS="/etc/agentos/mcp-tools.json"
+        STATE="/var/lib/agentos/mcp-tools.json"
+        CONFIG="$DEFAULTS"
+        [ -f "$STATE" ] && CONFIG="$STATE"
+        save() {
+          local tmp
+          tmp=$(mktemp)
+          cat > "$tmp"
+          install -D -m 644 "$tmp" "$STATE"
+          rm -f "$tmp"
+        }
         REGISTRY="http://localhost:${toString cfg.registryPort}"
 
         case "''${1:-list}" in
@@ -247,7 +249,7 @@ in
               column -t -s $'\t'
             echo ""
             warn "Disabled tools:"
-            ${pkgs.jq}/bin/jq -r '.tools[] | select(.not.enabled) | "  \(.name)\t\(.description)"' "$CONFIG" 2>/dev/null | \
+            ${pkgs.jq}/bin/jq -r '.tools[] | select(.enabled | not) | "  \(.name)\t\(.description)"' "$CONFIG" 2>/dev/null | \
               column -t -s $'\t' || true
             ;;
 
@@ -258,10 +260,9 @@ in
               exit 1
             fi
             info "Enabling tool: $TOOL"
-            ${pkgs.jq}/bin/jq ".tools |= map(if .name == \"$TOOL\" then .enabled = true else .)" "$CONFIG" > /tmp/mcp-tools.json
-            ${pkgs.install}/bin/install -m 644 /tmp/mcp-tools.json "$CONFIG"
+            ${pkgs.jq}/bin/jq --arg n "$TOOL" '.tools |= map(if .name == $n then .enabled = true else . end)' "$CONFIG" | save
             ok "Enabled: $TOOL"
-            systemctl restart agentos-mcp-registry
+            systemctl try-restart agentos-mcp-registry || true
             ;;
 
           disable)
@@ -271,10 +272,9 @@ in
               exit 1
             fi
             info "Disabling tool: $TOOL"
-            ${pkgs.jq}/bin/jq ".tools |= map(if .name == \"$TOOL\" then .enabled = false else .)" "$CONFIG" > /tmp/mcp-tools.json
-            ${pkgs.install}/bin/install -m 644 /tmp/mcp-tools.json "$CONFIG"
+            ${pkgs.jq}/bin/jq --arg n "$TOOL" '.tools |= map(if .name == $n then .enabled = false else . end)' "$CONFIG" | save
             ok "Disabled: $TOOL"
-            systemctl restart agentos-mcp-registry
+            systemctl try-restart agentos-mcp-registry || true
             ;;
 
           status)
@@ -294,10 +294,9 @@ in
               exit 1
             fi
             info "Adding custom tool: $NAME"
-            ${pkgs.jq}/bin/jq ".tools += [{name: \"$NAME\", command: \"$CMD\", enabled: true, category: \"custom\"}]" "$CONFIG" > /tmp/mcp-tools.json
-            ${pkgs.install}/bin/install -m 644 /tmp/mcp-tools.json "$CONFIG"
+            ${pkgs.jq}/bin/jq --arg n "$NAME" --arg c "$CMD" '.tools += [{name: $n, command: $c, enabled: true, category: "custom"}]' "$CONFIG" | save
             ok "Added: $NAME"
-            systemctl restart agentos-mcp-registry
+            systemctl try-restart agentos-mcp-registry || true
             ;;
 
           test)
@@ -317,6 +316,6 @@ in
       '')
     ];
 
-    networking.firewall.allowedTCPPorts = [ cfg.registryPort ];
+    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ cfg.registryPort ];
   };
 }

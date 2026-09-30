@@ -4,8 +4,9 @@
 
 {
   # ── ISO identity ───────────────────────────────────────────────────
+  image.baseName = lib.mkForce "agentos-${config.system.nixos.version}";
+
   isoImage = {
-    isoName = lib.mkForce "agentos-${config.system.nixos.version}.iso";
     volumeID = lib.mkForce "AGENTOS";
     makeEfiBootable = true;
     makeUsbBootable = true;
@@ -14,6 +15,8 @@
 
   # ── Kernel ────────────────────────────────────────────────────────
   boot.kernelPackages = pkgs.linuxPackages_latest;
+  # ZFS usually lags the latest kernel; AgentOS installs to btrfs anyway
+  boot.supportedFilesystems.zfs = lib.mkForce false;
   boot.kernelParams = [
     "quiet"
     "systemd.show_status=false"
@@ -23,20 +26,21 @@
   # ── Hostname ──────────────────────────────────────────────────────
   networking.hostName = "agentos-live";
   networking.networkmanager.enable = true;
-  networking.useDHCP = true;
+  networking.wireless.enable = lib.mkForce false;
 
   # ── SSH enabled on the ISO (for remote install) ───────────────────
-  services.openssh = {
-    enable = true;
-    settings.PasswordAuthentication = lib.mkForce true;
-  };
+  # There is no default password. To install over SSH, set one on the
+  # console first with `passwd`, or add a key to
+  # users.users.agentos-live.openssh.authorizedKeys.keys and rebuild.
+  services.openssh.enable = true;
 
-  # ── Live user (no password) ───────────────────────────────────────
+  # ── Live user ─────────────────────────────────────────────────────
   users.users.agentos-live = {
     isNormalUser = true;
-    extraGroups = [ "wheel" ];
-    initialPassword = "agentos";
+    extraGroups = [ "wheel" "networkmanager" ];
+    initialHashedPassword = "";
   };
+  services.getty.autologinUser = lib.mkForce "agentos-live";
   security.sudo.wheelNeedsPassword = false;
 
   # ── Minimal agent tools on the ISO ────────────────────────────────
@@ -77,11 +81,9 @@
     ║          An OS for coding agents          ║
     ╚══════════════════════════════════════════╝
 
-    To install:        agentos-install /dev/sda
-    To start agent:    agentos spawn claude-code
-    List agents:       agentos list
+    To install:        sudo agentos-install /dev/sda
 
-    SSH: ssh agentos-live@<ip>   (password: agentos)
+    For SSH access, set a password first:  passwd
     BANNER
   '';
 

@@ -53,13 +53,14 @@ in
     # ─ Qdrant vector database ────────────────────────────────────────
     services.qdrant = lib.mkIf (cfg.vectorStore == "qdrant") {
       enable = true;
-      port = cfg.qdrantPort;
       settings = {
         storage = {
           storage_path = "/var/lib/qdrant";
           snapshots_path = "/var/lib/qdrant/snapshots";
         };
         service = {
+          host = "127.0.0.1";
+          http_port = cfg.qdrantPort;
           enable_tls = false;
           max_request_size_mb = 256;
         };
@@ -78,7 +79,7 @@ in
     };
 
     # ─ Memory management service ─────────────────────────────────────
-    systemd.services.agentos-memory-manager = {
+    systemd.services.agentos-memory-manager = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS Memory Manager";
       after = [ "network.target" ] ++ lib.optional (cfg.vectorStore == "qdrant") "qdrant.service";
       wants = [ "qdrant.service" ];
@@ -168,6 +169,6 @@ in
     ];
 
     # ─ Networking ────────────────────────────────────────────────────
-    networking.firewall.allowedTCPPorts = [ cfg.qdrantPort ];
+    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ cfg.qdrantPort ];
   };
 }

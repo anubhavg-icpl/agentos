@@ -30,7 +30,12 @@ in
     repoUrl = lib.mkOption {
       type = lib.types.str;
       default = "github:anubhavg-icpl/vibe";
-      description = "VIBE repository URL for npx";
+      description = ''
+        VIBE package reference for npx. Pin it to a tag or commit
+        (e.g. "github:anubhavg-icpl/vibe#v1.0.0") so every machine installs
+        the same code; an unpinned ref pulls whatever is on the default
+        branch at install time.
+      '';
     };
 
     autoInstallOnBoot = lib.mkOption {
@@ -339,17 +344,19 @@ in
     # ── Auto-install VIBE on first boot ──────────────────────────────
     systemd.services.agentos-vibe-install = lib.mkIf cfg.autoInstallOnBoot {
       description = "AgentOS VIBE Library Auto-Installer";
-      after = [ "network.target" "agentos-daemon.service" ];
-      wants = [ "network.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
         User = "admin";
+        # /var/lib/agentos-vibe, owned by admin, so the marker can be written
+        StateDirectory = "agentos-vibe";
         ExecStart = toString (pkgs.writeShellScript "vibe-auto-install" ''
           set -euo pipefail
-          MARKER="/var/lib/agentos/.vibe-installed"
+          MARKER="/var/lib/agentos-vibe/installed"
 
           if [ -f "$MARKER" ]; then
             echo "[vibe] Already installed. Run 'agentos-vibe update' to refresh."

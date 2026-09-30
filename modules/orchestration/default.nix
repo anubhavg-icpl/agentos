@@ -52,23 +52,11 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # ─ Redis for task queue and message bus ──────────────────────────
-    services.redis = {
-      enable = true;
-      port = 6379;
-      settings = {
-        maxmemory = "256mb";
-        maxmemory-policy = "allkeys-lru";
-        appendonly = "yes";
-        save = "60 1000";
-      };
-    };
-
     # ─ Orchestrator service ──────────────────────────────────────────
-    systemd.services.agentos-orchestrator = {
+    systemd.services.agentos-orchestrator = lib.mkIf config.agentos.plannedServices.enable {
       description = "AgentOS Multi-Agent Orchestrator";
-      after = [ "network.target" "redis.service" "agentos-daemon.service" ];
-      wants = [ "redis.service" "agentos-daemon.service" ];
+      after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
+      wants = [ "redis-agentos.service" "agentos-daemon.service" ];
       wantedBy = [ "multi-user.target" ];
 
       environment = {
@@ -94,7 +82,8 @@ in
     };
 
     # ─ Orchestration CLI ─────────────────────────────────────────────
-    environment.systemPackages = [
+    # The CLI only queues work for the planned service, so ship them together
+    environment.systemPackages = lib.optionals config.agentos.plannedServices.enable [
       (pkgs.writeShellScriptBin "agentos-orchestrate" ''
         #!/usr/bin/env bash
         set -euo pipefail
@@ -111,8 +100,8 @@ in
           status)
             info "Orchestration status:"
             echo "  Mode: ${cfg.mode}"
-            echo "  Max workers: ${cfg.maxWorkers}"
-            echo "  Task timeout: ${cfg.taskTimeoutSec}s"
+            echo "  Max workers: ${toString cfg.maxWorkers}"
+            echo "  Task timeout: ${toString cfg.taskTimeoutSec}s"
             echo "  Result strategy: ${cfg.resultStrategy}"
             echo ""
             echo "  Active tasks:"
@@ -220,6 +209,5 @@ in
       '')
     ];
 
-    networking.firewall.allowedTCPPorts = [ 6379 ];
   };
 }

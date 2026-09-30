@@ -1,270 +1,127 @@
 # AgentOS — Pre-installed Coding Agents
 
-All agents below are **pre-installed** on every AgentOS system. No additional installation required. Each agent has the same shared base tools (git, ripgrep, fd, gh, jq, etc.) so they behave identically.
+The 15 agents below are pre-installed on every AgentOS system through the
+`all-agents` package (`agents/default.nix`). Each one has the same base tools
+(git, gh, ripgrep, fd, jq, …) on its `PATH`.
+
+Agents come in three flavours:
+
+- **Nix-packaged (11).** Built from nixpkgs-unstable and pinned by
+  `flake.lock`. Reproducible, available offline once installed.
+- **npm launchers (3).** Not in nixpkgs yet. The command runs
+  `npx -y <package>@<pinned version>`, so the first run downloads the agent
+  from registry.npmjs.org. They need egress to the npm registry and are not
+  content-addressed like the Nix-built agents.
+- **PyPI launcher (1).** Open Interpreter runs through
+  `uvx --from open-interpreter==<pinned version>` for the same reason.
 
 ## Quick Reference
 
-| Command           | Agent              | Provider     | Type            |
-|-------------------|--------------------|--------------|-----------------|
-| `claude`          | Claude Code        | Anthropic    | CLI agent       |
-| `codex`           | Codex CLI          | OpenAI       | CLI agent       |
-| `droid`           | Factory Droid      | Factory AI   | CLI agent       |
-| `aider`           | Aider              | Open source  | Pair programmer |
-| `gemini`          | Gemini CLI         | Google       | CLI agent       |
-| `qwen-code`       | Qwen Code          | Alibaba      | CLI agent       |
-| `amp`             | Amp                | Sourcegraph  | CLI agent       |
-| `goose`           | Goose              | Block        | CLI agent       |
-| `opencode`        | OpenCode           | SST          | CLI agent       |
-| `crush`           | Crush              | Charm        | CLI agent       |
-| `cursor`          | Cursor CLI         | Cursor       | Headless agent  |
-| `cline`           | Cline              | Open source  | Autonomous      |
-| `continue`        | Continue           | Open source  | Assistant       |
-| `copilot`         | GitHub Copilot     | GitHub       | CLI             |
-| `devin`           | Devin              | Cognition    | CLI agent       |
-| `roo`             | Roo Code           | Open source  | Autonomous      |
-| `interpreter`     | Open Interpreter   | Open source  | Code execution  |
-| `sweagent`        | SWE-Agent          | Princeton    | Research        |
-| `gpt-engineer`    | GPT-Engineer       | Open source  | Project builder |
-| `devika`          | Devika             | Open source  | Research        |
-| `autogpt`         | AutoGPT            | Open source  | Autonomous      |
-| `smol-developer`  | smol-developer     | Open source  | Minimal         |
+| Command | Agent | Provider | Package | Source |
+|:---|:---|:---|:---|:---|
+| `claude` | Claude Code | Anthropic | `claude-code` | nixpkgs |
+| `codex` | Codex CLI | OpenAI | `codex` | nixpkgs |
+| `aider` | Aider | Open source | `aider` | nixpkgs |
+| `gemini` | Gemini CLI | Google | `gemini-cli` | nixpkgs |
+| `qwen` / `qwen-code` | Qwen Code | Alibaba | `qwen-code` | nixpkgs |
+| `amp` | Amp | Sourcegraph | `amp` | nixpkgs |
+| `goose` | Goose | Block | `goose` | nixpkgs |
+| `opencode` | OpenCode | SST | `opencode` | nixpkgs |
+| `crush` | Crush | Charm | `crush` | nixpkgs |
+| `cursor-agent` / `cursor` | Cursor CLI | Cursor | `cursor-cli` | nixpkgs |
+| `copilot` | GitHub Copilot CLI | GitHub | `github-copilot-cli` | nixpkgs |
+| `droid` | Factory Droid | Factory AI | `factory-droid` | npm `@factory/cli` |
+| `cline` | Cline | Open source | `cline` | npm `cline` |
+| `cn` / `continue` | Continue CLI | Open source | `continue-cli` | npm `@continuedev/cli` |
+| `interpreter` | Open Interpreter | Open source | `open-interpreter` | PyPI `open-interpreter` |
+
+Claude Code, Amp, Cursor CLI and Copilot CLI are unfree; the flake sets
+`allowUnfree = true`.
+
+Upstream has deprecated Gemini CLI for unpaid and Google AI Pro/Ultra users
+in favour of Antigravity CLI (nixpkgs prints a warning when evaluating it).
+
+### Removed agents
+
+Earlier versions listed Devin CLI, Roo Code, SWE-Agent, GPT-Engineer, Devika,
+AutoGPT and smol-developer. None of them builds: Devin and Roo Code have no
+public CLI package, Devika and AutoGPT aren't distributed as CLIs, and the
+rest pointed at placeholder source hashes. They were removed rather than
+shipped broken.
 
 ---
 
-## Tier 1 — Primary Agents
+## Usage
 
-These are the main production-ready coding agents. Use these for real work.
+```bash
+claude                    # interactive
+claude -p "fix the bug"   # one-shot
+codex "implement auth"
+aider --model sonnet
+droid                     # first run downloads @factory/cli from npm
+```
 
-### Claude Code (`claude`)
-- **Provider:** Anthropic
-- **Install:** Pre-installed
-- **API Key:** `ANTHROPIC_API_KEY`
-- **Usage:**
-  ```bash
-  claude                    # interactive mode
-  claude "fix the bug"      # one-shot
-  agentos spawn claude-code # managed mode (sandboxed)
-  ```
-- **Docs:** https://docs.anthropic.com/en/docs/claude-code
+### Through `agentos spawn` (sandboxed, metered)
 
-### Codex CLI (`codex`)
-- **Provider:** OpenAI
-- **Install:** Pre-installed
-- **API Key:** `OPENAI_API_KEY`
-- **Usage:**
-  ```bash
-  codex                     # interactive
-  codex "implement auth"    # one-shot
-  agentos spawn codex
-  ```
-- **Docs:** https://github.com/openai/codex
+```bash
+agentos workspace create api --from https://github.com/me/api.git
+agentos spawn claude --workspace api --budget 5
+agentos spawn aider --workspace api -- --model sonnet   # args after -- go to the agent
+agentos list
+agentos logs <agent-id>
+```
 
-### Factory Droid (`droid`)
-- **Provider:** Factory AI
-- **Install:** Pre-installed
-- **Auth:** Factory account login
-- **Usage:**
-  ```bash
-  droid                     # interactive
-  droid "build a REST API"  # task mode
-  agentos spawn factory-droid
-  ```
-- **Docs:** https://docs.factory.ai
+`agentos spawn` does the following:
 
-### Aider (`aider`)
-- **Provider:** Open source (aider.chat)
-- **Install:** Pre-installed
-- **API Key:** `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
-- **Usage:**
-  ```bash
-  aider                      # interactive pair programming
-  aider --model claude-sonnet-4-20250514
-  agentos spawn aider
-  ```
-- **Docs:** https://aider.chat
+1. It creates an `agent/<agent-id>` branch in the workspace and registers the
+   agent with the daemon.
+2. It starts the agent as the `agentos-agent` user in a transient systemd unit
+   (`agentos-agent-<id>.service`). The agent can write only to its workspace
+   and its own home. It runs under memory, CPU and process limits, has no
+   sudo, and cannot reach the control plane.
+3. It points `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` at the model gateway,
+   which meters every call and enforces the agent's budget. The agent user
+   cannot reach those providers any other way.
+4. It passes the placeholder key `agentos-managed` when the gateway holds the
+   provider key. Otherwise it passes your `ANTHROPIC_API_KEY` /
+   `OPENAI_API_KEY` through.
 
-### Gemini CLI (`gemini`)
-- **Provider:** Google
-- **API Key:** `GOOGLE_API_KEY`
-- **Usage:**
-  ```bash
-  gemini
-  agentos spawn gemini-cli
-  ```
+Agents keep their logins and settings in `/var/lib/agentos/agent-home`, which
+is shared by every sandboxed run. The interactive `claude` login works there.
 
-### Qwen Code (`qwen-code`)
-- **Provider:** Alibaba
-- **Usage:**
-  ```bash
-  qwen-code
-  agentos spawn qwen-code
-  ```
-
-### Amp (`amp`)
-- **Provider:** Sourcegraph
-- **Usage:**
-  ```bash
-  amp
-  agentos spawn amp
-  ```
-
-### Goose (`goose`)
-- **Provider:** Block (Square)
-- **Usage:**
-  ```bash
-  goose
-  agentos spawn goose
-  ```
-
-### OpenCode (`opencode`)
-- **Provider:** SST
-- **Usage:**
-  ```bash
-  opencode
-  agentos spawn opencode
-  ```
-
-### Crush (`crush`)
-- **Provider:** Charm (makers of Bubble Tea)
-- **Usage:**
-  ```bash
-  crush
-  agentos spawn crush
-  ```
+`--unsandboxed` runs the agent as you, in any directory. That run has no
+limits and no metering guarantee.
 
 ---
 
-## Tier 2 — Extended Agents
+## API keys
 
-### Cursor CLI (`cursor`)
-Headless mode of the Cursor editor's agent.
-```bash
-cursor
-agentos spawn cursor-cli
-```
+Each agent reads its provider's usual environment variable or login flow:
 
-### Cline (`cline`)
-Autonomous coding agent (VS Code extension with CLI).
-```bash
-cline
-agentos spawn cline
-```
+| Variable | Used by |
+|:---|:---|
+| `ANTHROPIC_API_KEY` | Claude Code, Aider, Open Interpreter, others |
+| `OPENAI_API_KEY` | Codex, Aider, Open Interpreter, others |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Gemini CLI |
+| `GITHUB_TOKEN` | Copilot CLI |
+| `FACTORY_API_KEY` | Factory Droid |
 
-### Continue (`continue`)
-Open-source AI code assistant.
-```bash
-continue
-agentos spawn continue-cli
-```
-
-### GitHub Copilot CLI (`copilot`)
-```bash
-copilot
-gh copilot suggest "how to parse JSON in python"
-agentos spawn github-copilot-cli
-```
-
-### Devin CLI (`devin`)
-Cognition's Devin via CLI.
-```bash
-devin
-agentos spawn devin-cli
-```
-
-### Roo Code (`roo`)
-Cline fork with additional features.
-```bash
-roo
-agentos spawn roo-code
-```
+With `agentos.secrets-manager` set up (see [FEATURES.md](FEATURES.md)), keys
+are decrypted to `/run/secrets/<NAME>`, readable by the `agentos` group. The
+gateway reads `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` from there by default,
+so sandboxed agents never see them.
 
 ---
 
-## Tier 3 — Research / Experimental
-
-### Open Interpreter (`interpreter`)
-Let LLMs run code directly.
-```bash
-interpreter
-interpreter "plot a sine wave"
-```
-
-### SWE-Agent (`sweagent`)
-Princeton's software engineering agent, designed for issue resolution.
-```bash
-sweagent
-```
-
-### GPT-Engineer (`gpt-engineer`)
-Specify what you want, it builds the project.
-```bash
-gpt-engineer "a todo app in React"
-```
-
-### Devika (`devika`)
-Open-source Devin alternative.
-```bash
-devika
-```
-
-### AutoGPT (`autogpt`)
-Autonomous AI agents that chain tasks.
-```bash
-autogpt
-```
-
-### smol-developer (`smol-developer`)
-Minimal AI developer (1000 lines).
-```bash
-smol-developer "create a CLI tool"
-```
-
----
-
-## Installing Additional Agents
+## Installing agents elsewhere
 
 ```bash
-# Install a specific agent package
-nix profile install .#claude-code
-nix profile install .#aider
+nix profile install github:anubhavg-icpl/agentos#claude-code
+nix run github:anubhavg-icpl/agentos#codex
 
-# Install ALL agents (meta-package)
-nix profile install .#all-agents
+# Every agent
+nix profile install github:anubhavg-icpl/agentos#all-agents
 
-# Install Tier 1 only
-nix profile install .#tier1-agents
-
-# Search for any nix package
-agentos search python311
-agentos search rustc
-
-# Install any nix package
-agentos install go_1_23
-agentos install cargo
+# Only the 11 reproducible, Nix-built agents
+nix profile install github:anubhavg-icpl/agentos#nix-agents
 ```
-
-## Running Agents
-
-### Direct (standalone)
-```bash
-claude
-aider --model claude-sonnet-4-20250514
-codex "refactor this function"
-```
-
-### Managed (sandboxed, tracked)
-```bash
-agentos spawn claude-code --workspace ./myproject
-agentos spawn aider --model claude-sonnet-4-20250514
-agentos list          # see running agents
-agentos logs agent-1234
-agentos kill agent-1234
-```
-
-### Environment Variables
-All agents respect these:
-- `ANTHROPIC_API_KEY` — for Claude, Aider, others
-- `OPENAI_API_KEY` — for Codex, GPT-Engineer, others
-- `GOOGLE_API_KEY` — for Gemini
-- `AGENTOS_MODEL` — default model override
-- `AGENTOS_BUDGET_USD` — per-session budget cap
