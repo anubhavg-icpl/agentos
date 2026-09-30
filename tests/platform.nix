@@ -17,7 +17,7 @@
 { pkgs, agentosModules }:
 
 let
-  inherit (import "${pkgs.path}/nixos/tests/ssh-keys.nix" pkgs) snakeOilPrivateKey snakeOilPublicKey;
+  inherit (import (pkgs.path + "/nixos/tests/ssh-keys.nix") pkgs) snakeOilPrivateKey snakeOilPublicKey;
 
   dashboardToken = "test-dashboard-token-0123456789";
 
