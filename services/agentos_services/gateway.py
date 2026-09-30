@@ -650,15 +650,22 @@ class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     admin = True
 
 
+def listen_addresses(cfg):
+    """`gateway.listen` is one address or a list (e.g. loopback + the agent bridge)."""
+    listen = cfg["gateway"]["listen"]
+    return [listen] if isinstance(listen, str) else list(listen)
+
+
 def serve(cfg, store=None, pricing=None):
-    """Start the TCP listener and the admin socket; returns the servers."""
+    """Start the TCP listeners and the admin socket; returns the servers."""
     store = store or Store(connect(cfg["redis"]["url"]))
     pricing = pricing or Pricing.from_file(cfg["gateway"]["pricing_file"])
     gw = Gateway(cfg, store, pricing)
     servers = []
-    tcp = TCPServer((cfg["gateway"]["listen"], int(cfg["gateway"]["port"])), Handler)
-    tcp.gateway = gw
-    servers.append(tcp)
+    for addr in listen_addresses(cfg):
+        tcp = TCPServer((addr, int(cfg["gateway"]["port"])), Handler)
+        tcp.gateway = gw
+        servers.append(tcp)
     sock_path = cfg["gateway"].get("admin_socket")
     if sock_path:
         if os.path.exists(sock_path):
@@ -681,7 +688,7 @@ def main(argv=None):
                         format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr)
     cfg = configmod.load(args.config)
     _, servers = serve(cfg)
-    log.info("listening on %s:%s", cfg["gateway"]["listen"], cfg["gateway"]["port"])
+    log.info("listening on %s port %s", ", ".join(listen_addresses(cfg)), cfg["gateway"]["port"])
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

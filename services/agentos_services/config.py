@@ -74,6 +74,12 @@ DEFAULTS = {
         "metrics_port": 9950,
         "reap_interval_sec": 5,
     },
+    "gpu": {
+        # One file per exclusively held GPU, containing the holder's agent id
+        "lock_dir": "/run/agentos/gpu",
+        # A lock younger than this is never treated as stale (spawn is starting)
+        "stale_grace_sec": 30,
+    },
     "notify": {
         # Internal event types to forward (see daemon.EVENT_TEXT)
         "events": [],

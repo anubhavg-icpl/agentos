@@ -45,6 +45,12 @@ writeShellApplication {
     ADMIN_SOCKET=$(conf .admin_socket)
     GATEWAY_ENABLED=$(conf .gateway_enabled)
     SNAPSHOT_DIR=/var/lib/agentos/snapshots
+    DEFAULT_ISOLATION=$(conf '.default_isolation // "sandbox"')
+    CONTAINER_ENABLED=$(conf '.container.enabled // false')
+    NETNS_HELPER=$(conf '.container.netns_helper // empty')
+    CONTAINER_GATEWAY=$(conf '.container.gateway_url // empty')
+    GPU_ENABLED=$(conf '.gpu.enabled // false')
+    GPU_HELPER=$(conf '.gpu.helper // empty')
 
     valid_name() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; }
     state_file() { echo "$STATE_DIR/$1.json"; }
@@ -84,11 +90,17 @@ writeShellApplication {
             --workspace <name|path>  Workspace (default: current directory)
             --budget <usd>           Daily budget for this agent
             --model <name>           Exported as AGENTOS_MODEL
+            --isolation <mode>       sandbox (default) or container: own root
+                                     filesystem, PID/IPC/hostname and network
+                                     namespaces (bridge agentos0)
+            --gpu [N|any]            Reserve GPU N (or a comma list, or any
+                                     free one) exclusively for this agent
             --unsandboxed            Run as yourself instead of agentos-agent
         list                       Running and recent agents with today's spend
         logs <id> [-f]             Model API calls made by an agent
         kill <id>                  Stop an agent
         shell <id>                 Shell inside a running agent's sandbox
+        gpu                        GPUs and which agent holds each
         status                     Service health and totals
 
     WORKSPACES:
@@ -115,18 +127,74 @@ writeShellApplication {
         | column -t -s $'\t'
     }
 
+    # Properties that give a container-isolated agent its own root filesystem
+    # (an empty read-only tmpfs; only the Nix store, the system profile, the
+    # TLS roots, a minimal passwd/group and the workspace/home are mounted), its
+    # own PID, IPC and hostname namespaces, and its own network namespace on
+    # the agent bridge. The namespace and its /etc files are made by
+    # `agentos-netns setup` from the unit's ExecStartPre and removed again by
+    # ExecStopPost. Reads $gpu_devices from cmd_spawn; fills CONTAINER_PROPS.
+    CONTAINER_PROPS=()
+    container_props() {
+      local id="$1" workspace="$2" gpu="$3"
+      local netdir="/run/agentos/net/$id" ro=() rw=() p src d
+      ro+=(/nix/store
+        "$netdir/resolv.conf:/etc/resolv.conf" "$netdir/hosts:/etc/hosts"
+        "$netdir/nsswitch.conf:/etc/nsswitch.conf"
+        "$netdir/passwd:/etc/passwd" "$netdir/group:/etc/group")
+      # NixOS paths are symlink chains into the store: mount what they resolve
+      # to, and only the /etc files a tool needs (not the whole of /etc/static)
+      local links=(/run/current-system/sw /etc/gitconfig /bin/sh /usr/bin/env
+        /etc/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt)
+      if [ -n "$gpu" ]; then
+        links+=(/run/opengl-driver)
+      fi
+      for p in "''${links[@]}"; do
+        if src=$(readlink -f "$p") && [ -e "$src" ]; then
+          ro+=("$src:$p")
+        fi
+      done
+      rw+=("$workspace" "$AGENT_HOME")
+      for d in "''${gpu_devices[@]}"; do
+        rw+=("$d")
+      done
+      CONTAINER_PROPS=(
+        -p RootDirectory=/var/empty
+        -p TemporaryFileSystem=/:ro
+        -p MountAPIVFS=yes
+        -p PrivateDevices=yes
+        -p PrivatePIDs=yes
+        -p PrivateIPC=yes
+        -p ProtectHostname=yes
+        -p "NetworkNamespacePath=/run/netns/agentos-$id"
+        -p "BindReadOnlyPaths=''${ro[*]}"
+        -p "BindPaths=''${rw[*]}"
+        -p "ExecStartPre=+$NETNS_HELPER setup $id"
+        -p "ExecStopPost=+$NETNS_HELPER teardown $id"
+        --setenv=SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
+        --setenv=NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
+      )
+    }
+
     # ── spawn ─────────────────────────────────────────────────────────
     cmd_spawn() {
       local agent="''${1:-}"
-      [ -n "$agent" ] || die "Usage: agentos spawn <agent> [--workspace <name|path>] [--budget <usd>] [--model <m>] [--unsandboxed] [-- args]"
+      [ -n "$agent" ] || die "Usage: agentos spawn <agent> [--workspace <name|path>] [--budget <usd>] [--model <m>] [--isolation <sandbox|container>] [--gpu [N|any]] [--unsandboxed] [-- args]"
       shift
-      local workspace="$PWD" model="" budget="" unsandboxed=0
+      local workspace="$PWD" model="" budget="" unsandboxed=0 isolation="" gpu=""
       local extra=()
       while [ $# -gt 0 ]; do
         case "$1" in
           --workspace) workspace="''${2:?--workspace needs a value}"; shift 2 ;;
           --model) model="''${2:?--model needs a value}"; shift 2 ;;
           --budget) budget="''${2:?--budget needs a value}"; shift 2 ;;
+          --isolation) isolation="''${2:?--isolation needs a value}"; shift 2 ;;
+          --gpu)
+            if [ $# -ge 2 ] && [[ "$2" =~ ^(any|[0-9]+(,[0-9]+)*)$ ]]; then
+              gpu="$2"; shift 2
+            else
+              gpu=any; shift
+            fi ;;
           --unsandboxed) unsandboxed=1; shift ;;
           --) shift; extra+=("$@"); break ;;
           *) extra+=("$1"); shift ;;
@@ -144,6 +212,22 @@ writeShellApplication {
       fi
       [ -d "$workspace" ] || die "No such workspace: $workspace"
       workspace=$(realpath "$workspace")
+
+      case "$isolation" in
+        ""|sandbox|container) ;;
+        *) die "unknown isolation mode: $isolation (use sandbox or container)" ;;
+      esac
+      if [ "$unsandboxed" -eq 1 ]; then
+        [ "$isolation" != container ] || die "--isolation container conflicts with --unsandboxed"
+        [ -z "$gpu" ] || die "--gpu needs a sandboxed agent (the GPU grant is enforced by its unit)"
+        isolation=none
+      else
+        isolation="''${isolation:-$DEFAULT_ISOLATION}"
+      fi
+      if [ "$isolation" = container ]; then
+        [ "$CONTAINER_ENABLED" = "true" ] || die "--isolation container needs agentos.networking.enable (agent bridge and gateway)"
+        [ -n "$NETNS_HELPER" ] || die "runtime.json has no container helper"
+      fi
 
       local sandboxed=0
       if [ "$unsandboxed" -eq 0 ]; then
@@ -186,11 +270,15 @@ writeShellApplication {
         env+=("AGENTOS_MODEL=$model")
       fi
       if [ "$GATEWAY_ENABLED" = "true" ]; then
-        local health
+        local health agent_gateway="$GATEWAY"
         health=$(curl -fsS -m 5 "$GATEWAY/_agentos/health") || die "model gateway is not responding at $GATEWAY"
+        # A container cannot see the host's loopback; it uses the bridge address
+        if [ "$isolation" = container ]; then
+          agent_gateway="$CONTAINER_GATEWAY"
+        fi
         env+=(
-          "ANTHROPIC_BASE_URL=$GATEWAY/agent/$id/anthropic"
-          "OPENAI_BASE_URL=$GATEWAY/agent/$id/openai/v1"
+          "ANTHROPIC_BASE_URL=$agent_gateway/agent/$id/anthropic"
+          "OPENAI_BASE_URL=$agent_gateway/agent/$id/openai/v1"
         )
         local provider keyvar
         for provider in anthropic openai; do
@@ -216,6 +304,23 @@ writeShellApplication {
         fi
       done
 
+      # Reserve GPUs (exclusive; released when the agent's unit stops)
+      local gpu_devices=() gpu_indexes="[]"
+      if [ -n "$gpu" ]; then
+        [ -n "$GPU_HELPER" ] || die "runtime.json has no GPU helper"
+        local grant e
+        grant=$(sudo -n "$GPU_HELPER" alloc "$id" "$gpu") || die "could not reserve a GPU (see: agentos gpu)"
+        while IFS= read -r e; do
+          env+=("$e")
+        done < <(echo "$grant" | jq -r '.env | to_entries[] | "\(.key)=\(.value)"')
+        env+=("LD_LIBRARY_PATH=/run/opengl-driver/lib")
+        while IFS= read -r e; do
+          gpu_devices+=("$e")
+        done < <(echo "$grant" | jq -r '.devices[]')
+        gpu_indexes=$(echo "$grant" | jq -c '[.gpus[].index]')
+        info "Reserved GPU $(echo "$gpu_indexes" | jq -r 'join(",")')"
+      fi
+
       # Register with the daemon
       local unit="" user
       user=$(id -un)
@@ -228,14 +333,16 @@ writeShellApplication {
         --arg workspace "$workspace" --arg branch "$branch" --arg user "$user" \
         --arg unit "$unit" --arg operator "$(id -un)" --argjson pid "$$" \
         --argjson sandboxed "$sandboxed" --argjson started "$(date +%s)" \
+        --arg isolation "$isolation" --argjson gpus "$gpu_indexes" \
         '{id: $id, agent: $agent, command: $command, workspace: $workspace,
           branch: $branch, user: $user, operator: $operator, pid: $pid,
-          sandboxed: ($sandboxed == 1), started_at: $started, status: "running"}
+          sandboxed: ($sandboxed == 1), isolation: $isolation, gpus: $gpus,
+          started_at: $started, status: "running"}
          + (if $unit != "" then {unit: $unit} else {} end)' \
         > "$(state_file "$id")")
 
       ok "Starting $agent as $id"
-      info "Workspace: $workspace (branch $branch)"
+      info "Workspace: $workspace (branch $branch), isolation: $isolation"
 
       if [ "$sandboxed" -eq 1 ]; then
         local ncpu mem cpu tasks
@@ -268,16 +375,44 @@ writeShellApplication {
         for e in "''${env[@]}"; do
           props+=(--setenv="$e")
         done
+        if [ "$isolation" = container ]; then
+          container_props "$id" "$workspace" "$gpu"
+          props+=("''${CONTAINER_PROPS[@]}")
+        fi
+        if [ "$GPU_ENABLED" = "true" ]; then
+          # Only the GPUs granted below stay reachable
+          props+=(-p DevicePolicy=closed)
+        fi
+        if [ -n "$gpu" ]; then
+          local d g
+          for d in "''${gpu_devices[@]}"; do
+            props+=(-p "DeviceAllow=$d rw")
+          done
+          for g in render video; do
+            if getent group "$g" >/dev/null; then
+              props+=(-p "SupplementaryGroups=$g")
+            fi
+          done
+          props+=(-p "ExecStopPost=+$GPU_HELPER release $id")
+        fi
         local io=--pipe
         if [ -t 0 ] && [ -t 1 ]; then
           io=--pty
         fi
-        exec sudo -n systemd-run --quiet --collect --wait "$io" \
-          --unit="agentos-agent-$id" \
-          --uid="$AGENT_USER" --gid="$AGENT_USER" \
-          --working-directory="$workspace" \
-          "''${props[@]}" \
-          -- "$cmd_path" "''${extra[@]}"
+        local run=(sudo -n systemd-run --quiet --collect --wait "$io"
+          --unit="agentos-agent-$id"
+          --uid="$AGENT_USER" --gid="$AGENT_USER"
+          --working-directory="$workspace"
+          "''${props[@]}"
+          -- "$cmd_path" "''${extra[@]}")
+        if [ -z "$gpu" ]; then
+          exec "''${run[@]}"
+        fi
+        # The unit releases the GPU when it stops; if it never started, do it here
+        local rc=0
+        "''${run[@]}" || rc=$?
+        sudo -n "$GPU_HELPER" release "$id" || true
+        exit "$rc"
       else
         warn "running unsandboxed as $(id -un): no resource limits, and the agent can bypass the gateway"
         cd "$workspace"
@@ -303,9 +438,11 @@ writeShellApplication {
         return
       fi
       jq -rs --argjson spend "$spend" '
-        (["ID", "STATUS", "SPENT TODAY", "WORKSPACE"] | @tsv),
+        (["ID", "STATUS", "SPENT TODAY", "ISOLATION", "WORKSPACE"] | @tsv),
         (.[] | [ .id, .status + (if .reason then " (" + .reason + ")" else "" end),
                  "$" + ((($spend.agents // {})[.id].usd // 0) * 10000 | round / 10000 | tostring),
+                 (.isolation // (if .sandboxed then "sandbox" else "none" end))
+                   + (if (.gpus // []) | length > 0 then " gpu:" + (.gpus | map(tostring) | join(",")) else "" end),
                  .workspace ] | @tsv)' "''${files[@]}" | column -t -s $'\t'
     }
 
@@ -374,8 +511,30 @@ writeShellApplication {
       local pid
       pid=$(sudo -n systemctl show -p MainPID --value "$unit")
       [ "''${pid:-0}" -gt 0 ] || die "$unit is not running"
-      exec sudo -n nsenter -t "$pid" -m -S "$(id -u "$AGENT_USER")" -G "$(id -g "$AGENT_USER")" \
+      local ns=(-m)
+      if [ "$(jq -r '.isolation // "sandbox"' "$f")" = container ]; then
+        # Enter the container's own mount, network, PID, IPC and UTS namespaces.
+        # With PrivatePIDs the unit's main process may be outside the PID
+        # namespace, so use a process of the unit that is inside it.
+        local cg inner
+        cg=$(sudo -n systemctl show -p ControlGroup --value "$unit")
+        inner=$(sudo -n sh -c 'host=$(readlink /proc/self/ns/pid)
+          for p in $(cat "/sys/fs/cgroup$1/cgroup.procs"); do
+            if [ "$(readlink "/proc/$p/ns/pid")" != "$host" ]; then echo "$p"; exit 0; fi
+          done' sh "$cg" || true)
+        pid="''${inner:-$pid}"
+        ns=(-m -n -p -i -u)
+      fi
+      exec sudo -n nsenter -t "$pid" "''${ns[@]}" -S "$(id -u "$AGENT_USER")" -G "$(id -g "$AGENT_USER")" \
         --wd="$workspace" -- env HOME="$AGENT_HOME" PATH=/run/current-system/sw/bin bash
+    }
+
+    cmd_gpu() {
+      [ -n "$GPU_HELPER" ] || die "runtime.json has no GPU helper"
+      if [ "$GPU_ENABLED" != "true" ]; then
+        info "GPU scheduling is off (agentos.gpu.enable); showing detected devices only"
+      fi
+      "$GPU_HELPER" list "$@"
     }
 
     cmd_status() {
@@ -480,6 +639,7 @@ writeShellApplication {
         logs)            cmd_logs "$@" ;;
         kill|stop)       cmd_kill "$@" ;;
         shell)           cmd_shell "$@" ;;
+        gpu|gpus)        cmd_gpu "$@" ;;
         status|st)       cmd_status ;;
         workspace|ws)    cmd_workspace "$@" ;;
         snapshot)        cmd_snapshot "$@" ;;

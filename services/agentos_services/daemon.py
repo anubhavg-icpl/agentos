@@ -25,6 +25,7 @@ import time
 import urllib.request
 
 from . import config as configmod
+from .gpu import Registry as GpuRegistry
 from .store import Store, connect
 
 log = logging.getLogger("agentos.daemon")
@@ -69,6 +70,7 @@ class Daemon:
         self.state_dir = cfg["daemon"]["state_dir"]
         self.history_dir = os.path.join(self.state_dir, "history")
         self._lock = threading.Lock()
+        self.gpus = GpuRegistry(cfg["gpu"]["lock_dir"], clock=clock)
 
     # ── registry ───────────────────────────────────────────────────────
     def _path(self, agent_id):
@@ -134,6 +136,20 @@ class Daemon:
                     os.unlink(self._path(state["id"]))
                 except OSError:
                     pass
+            self.release_stale_gpus()
+
+    def release_stale_gpus(self):
+        """Safety net for GPU locks the agent unit's ExecStopPost did not free."""
+        if not os.path.isdir(self.gpus.dir):
+            return  # GPU scheduling is not enabled
+        running = {s["id"] for s in self.agents() if s.get("status") == "running"}
+        try:
+            freed = self.gpus.release_stale(running.__contains__, float(self.cfg["gpu"]["stale_grace_sec"]))
+        except OSError as exc:
+            log.warning("could not release stale GPU locks: %s", exc)
+            return
+        if freed:
+            log.info("released stale GPU locks: %s", freed)
 
     # ── enforcement ────────────────────────────────────────────────────
     def kill(self, agent_id, reason):

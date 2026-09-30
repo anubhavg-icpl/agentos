@@ -29,6 +29,22 @@ let
     admin_socket = config.agentos.services.settings.gateway.admin_socket;
     gateway_enabled = config.agentos.networking.enable;
     limits = cfg.agentLimits;
+    default_isolation = cfg.defaultIsolation;
+    # `agentos spawn --isolation container`: own mount/net/pid/ipc namespaces
+    container = {
+      enabled = config.agentos.networking.enable;
+      netns_helper = "${pkgs.agentos.services}/bin/agentos-netns";
+      bridge = "agentos0";
+      bridge_address = config.agentos.networking.bridgeAddress;
+      network = config.agentos.networking.agentNetCIDR;
+      gateway_url = "http://${config.agentos.networking.bridgeAddress}:${toString config.agentos.networking.modelGatewayPort}";
+      shell = "/run/current-system/sw/bin/bash";
+    };
+    # `agentos spawn --gpu`, `agentos gpu`
+    gpu = {
+      enabled = config.agentos.gpu.enable;
+      helper = "${pkgs.agentos.services}/bin/agentos-gpu";
+    };
   });
 in
 {
@@ -50,6 +66,18 @@ in
       type = lib.types.enum [ "containerd" "podman" "docker" ];
       default = "containerd";
       description = "Container runtime installed for agent tooling";
+    };
+
+    defaultIsolation = lib.mkOption {
+      type = lib.types.enum [ "sandbox" "container" ];
+      default = "sandbox";
+      description = ''
+        How `agentos spawn` isolates agents unless told otherwise with
+        `--isolation`. "sandbox" runs the agent in the host's namespaces with
+        a hardened systemd unit. "container" also gives it its own root
+        filesystem, PID/IPC/UTS namespaces and a network namespace on the
+        agentos0 bridge (needs agentos.networking.enable).
+      '';
     };
 
     maxAgents = lib.mkOption {
@@ -108,6 +136,10 @@ in
 
   # ── Configuration ───────────────────────────────────────────────────
   config = lib.mkIf cfg.enable {
+    assertions = [{
+      assertion = cfg.defaultIsolation != "container" || config.agentos.networking.enable;
+      message = "agentos.runtime.defaultIsolation = \"container\" needs agentos.networking.enable (agent bridge and gateway)";
+    }];
 
     # ─ Container runtime ──────────────────────────────────────────────
     virtualisation = lib.mkMerge [
