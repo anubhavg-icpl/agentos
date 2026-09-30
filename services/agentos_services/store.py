@@ -14,6 +14,10 @@ Keys (all prefixed with "agentos:"):
   rate:<id>:<minute>           int     requests in the current minute
   cb:failures:<id>             int     consecutive upstream failures
   cb:open:<id>                 float   unix time until which the circuit is open
+  loop:<id>                    hash    fingerprint of the last request + run length
+  record:<id>                  "1"     record this agent's requests (in addition to the global flag)
+  replay:<id>                  hash    recording being replayed, position, total
+  bus:<topic>                  stream  inter-agent messages (bounded length)
 Events are published on the "agentos:events" channel as JSON.
 """
 
@@ -172,3 +176,71 @@ class Store:
     def history(self, days=7):
         now = self.clock()
         return {utc_date(now - i * 86400): self.global_spend(utc_date(now - i * 86400)) for i in range(days)}
+
+    # ── loop detection ─────────────────────────────────────────────────
+    def loop_hit(self, agent, fingerprint, window):
+        """Count consecutive requests with the same fingerprint.
+
+        The run restarts when the fingerprint changes or `window` seconds
+        have passed since its first request. Returns the run length.
+        """
+        key = self._k("loop", agent)
+        now = self.clock()
+        cur = self.r.hgetall(key)
+        if cur.get("fp") == fingerprint and now - float(cur.get("start", 0)) <= window:
+            count = int(self.r.hincrby(key, "count", 1))
+        else:
+            self.r.delete(key)
+            self.r.hset(key, mapping={"fp": fingerprint, "count": 1, "start": repr(now)})
+            count = 1
+        self.r.expire(key, max(60, int(window) * 2))
+        return count
+
+    def loop_reset(self, agent):
+        self.r.delete(self._k("loop", agent))
+
+    # ── recording & replay ─────────────────────────────────────────────
+    def set_record(self, agent, enabled):
+        if enabled:
+            self.r.set(self._k("record", agent), "1")
+        else:
+            self.r.delete(self._k("record", agent))
+
+    def record_enabled(self, agent):
+        return self.r.get(self._k("record", agent)) == "1"
+
+    def set_replay(self, agent, recording, total):
+        self.r.hset(self._k("replay", agent), mapping={"recording": recording, "pos": 0, "total": int(total)})
+
+    def clear_replay(self, agent):
+        self.r.delete(self._k("replay", agent))
+
+    def replay_state(self, agent):
+        state = self.r.hgetall(self._k("replay", agent))
+        if not state:
+            return None
+        return {"recording": state["recording"], "pos": int(state["pos"]), "total": int(state["total"])}
+
+    def replay_advance(self, agent):
+        self.r.hincrby(self._k("replay", agent), "pos", 1)
+
+    # ── message bus (Redis streams) ────────────────────────────────────
+    def bus_publish(self, topic, fields, maxlen):
+        return self.r.xadd(self._k("bus", topic), fields, maxlen=int(maxlen), approximate=False)
+
+    def bus_last_id(self, topic):
+        last = self.r.xrevrange(self._k("bus", topic), count=1)
+        return last[0][0] if last else "0-0"
+
+    def bus_read(self, topic, after, count, block_ms=0):
+        """Entries after cursor `after`, blocking up to block_ms if none."""
+        key = self._k("bus", topic)
+        entries = self.r.xrange(key, min="(" + after, max="+", count=count)
+        if not entries and block_ms > 0:
+            res = self.r.xread({key: after}, count=count, block=int(block_ms))
+            entries = res[0][1] if res else []
+        return entries
+
+    def bus_topics(self):
+        prefix = self._k("bus", "")
+        return sorted(key[len(prefix):] for key in self.r.scan_iter(match=prefix + "*"))

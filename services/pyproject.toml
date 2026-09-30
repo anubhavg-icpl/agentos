@@ -16,6 +16,7 @@ agentos-daemon = "agentos_services.daemon:main"
 agentos-dashboard = "agentos_services.dashboard:main"
 agentos-fleet = "agentos_services.fleet:main"
 agentos-market = "agentos_services.market:main"
+agentos-mcp-bus = "agentos_services.mcp_bus:main"
 
 [tool.setuptools.packages.find]
 include = ["agentos_services*"]

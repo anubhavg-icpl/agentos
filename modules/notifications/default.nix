@@ -8,8 +8,8 @@
 #   task-completed    an agent exited on its own
 #   budget-threshold  an agent crossed a budget alert threshold, exceeded its
 #                     budget, or the global budget ran out
-#   agent-error       an agent was stopped (budget, manual) or its circuit
-#                     breaker opened
+#   agent-error       an agent was stopped (budget, manual), its circuit
+#                     breaker opened, or loop detection refused it
 #
 # Webhook URLs are secrets, so they are read from files at send time (for
 # example sops secrets under /run/secrets) instead of being put in the
@@ -24,7 +24,7 @@ let
     agent-started = [ "agent_started" ];
     task-completed = [ "agent_exited" ];
     budget-threshold = [ "budget_threshold" "budget_exceeded" "global_budget_exceeded" ];
-    agent-error = [ "agent_killed" "circuit_open" ];
+    agent-error = [ "agent_killed" "circuit_open" "loop_detected" ];
   };
 
   targets =

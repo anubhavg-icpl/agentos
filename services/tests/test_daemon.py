@@ -115,6 +115,18 @@ def test_notifications(make_daemon, tmp_path):
     assert len(sent) == 2
 
 
+def test_loop_detected_notification(make_daemon):
+    sent = []
+    d = make_daemon(sent=sent, notify={
+        "events": ["loop_detected"], "targets": [{"kind": "slack", "url": "https://hooks.example/slack"}],
+    })
+    d.handle({"type": "loop_detected", "agent": "a1", "count": 5, "window_sec": 600})
+    deadline = time.time() + 5
+    while not sent and time.time() < deadline:
+        time.sleep(0.05)
+    assert sent[0][1]["text"] == "AgentOS: Agent a1 looks stuck: it sent the same request 5 times in a row"
+
+
 def test_metrics(make_daemon, store):
     d = make_daemon(FakeRunner(active={"agentos-agent-a1.service"}))
     register(d, "a1", unit="agentos-agent-a1.service")

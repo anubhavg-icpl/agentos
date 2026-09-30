@@ -39,6 +39,7 @@ EVENT_TEXT = {
     "budget_exceeded": "Agent {agent} exceeded its daily budget (${usd:.2f} of ${limit_usd:.2f})",
     "global_budget_exceeded": "AgentOS global daily budget exhausted (${usd:.2f} of ${limit_usd:.2f})",
     "circuit_open": "Circuit breaker opened for agent {agent} after {failures} upstream failures",
+    "loop_detected": "Agent {agent} looks stuck: it sent the same request {count} times in a row",
 }
 
 
@@ -185,7 +186,7 @@ class Daemon:
         try:
             text = EVENT_TEXT.get(event["type"], event["type"]).format(**{
                 "agent": "?", "reason": "", "threshold": "?", "usd": 0.0, "limit_usd": 0.0,
-                "failures": "?", "command": "", **event,
+                "failures": "?", "command": "", "count": "?", **event,
             })
         except (KeyError, ValueError):
             text = event["type"]

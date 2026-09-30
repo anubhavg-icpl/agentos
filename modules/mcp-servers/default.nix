@@ -154,6 +154,18 @@ in
             category = "core";
             enabled = true;
           }
+          {
+            # Ships with AgentOS (no download); reads AGENTOS_AGENT_ID and the
+            # gateway URL from the environment `agentos spawn` sets.
+            name = "agentos-bus";
+            description = "Message other agents through the AgentOS gateway: send_message, read_messages";
+            command = "${pkgs.agentos.services}/bin/agentos-mcp-bus";
+            args = [ ];
+            category = "core";
+            port = null;
+            env = { };
+            enabled = true;
+          }
         ])
 
         # ════════════════════════════════════════════════════════════

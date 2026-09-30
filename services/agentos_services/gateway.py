@@ -17,6 +17,13 @@ request the gateway:
   4. prices the usage, records spend in Redis, publishes budget alerts, and
      trips the circuit breaker after repeated upstream failures.
 
+Before forwarding, the gateway also refuses an agent stuck repeating the same
+request (429 loop_detected), rewrites the requested model per the routing
+rules (routing.py), and, when recording is on, stores the request/response
+pair under recording.dir/<agent>/ (recorder.py). An agent registered for
+replay is answered from a recording instead, without contacting the
+provider. /agent/<id>/bus/<topic> is the inter-agent message bus (bus.py).
+
 Requests to /<provider>/... (no agent prefix) are accounted to "unmanaged".
 
 Admin endpoints (served on both listeners unless noted):
@@ -26,6 +33,13 @@ Admin endpoints (served on both listeners unless noted):
   PUT    /_agentos/budget/<agent>   {"daily_usd": 5.0}   admin socket only
   DELETE /_agentos/budget/<agent>                        admin socket only
   DELETE /_agentos/circuit/<agent>                       admin socket only
+  DELETE /_agentos/loop/<agent>                          admin socket only
+  GET    /_agentos/routing[?agent=&provider=&model=]     admin socket only
+  GET|PUT|DELETE /_agentos/record/<agent>  {"enabled": true}   admin socket only
+  GET|PUT|DELETE /_agentos/replay/<agent>  {"recording": "<agent-id>"}   admin socket only
+  GET    /_agentos/recordings[/<id>]                     admin socket only
+  GET    /_agentos/bus                                   admin socket only
+  GET|POST /_agentos/bus/<topic>[?from=]                 admin socket only
 """
 
 import argparse
@@ -41,6 +55,10 @@ import time
 import urllib.parse
 
 from . import config as configmod
+from .bus import Bus, BusError
+from .loops import fingerprint
+from .recorder import Recorder, body_hash, decode_body
+from .routing import Router
 from .store import Store, connect
 from .usage import Pricing, UsageParser
 
@@ -54,12 +72,13 @@ UNMANAGED = "unmanaged"
 
 
 class HTTPError(Exception):
-    def __init__(self, status, error_type, message, headers=None):
+    def __init__(self, status, error_type, message, headers=None, details=None):
         super().__init__(message)
         self.status = status
         self.error_type = error_type
         self.message = message
         self.headers = headers or {}
+        self.details = details
 
 
 class Gateway:
@@ -70,6 +89,10 @@ class Gateway:
         self.clock = clock
         self.log_dir = cfg["gateway"]["log_dir"]
         self._log_lock = threading.Lock()
+        self.router = Router(cfg["routing"], pricing)
+        self.recorder = Recorder(cfg["recording"]["dir"], cfg["recording"]["max_body_bytes"])
+        self.bus = Bus(cfg, store, clock)
+        self._replay_lock = threading.Lock()
 
     # ── helpers ────────────────────────────────────────────────────────
     def provider_key(self, provider):
@@ -155,6 +178,31 @@ class Gateway:
             self._budget_exceeded(agent, agent_total, limit)
         return usd, priced
 
+    def check_loop(self, agent, payload):
+        """Refuse an agent that keeps sending the same request."""
+        limits = self.cfg["limits"]
+        if not limits["loop_detection"] or int(limits["loop_repeat_threshold"]) <= 0:
+            return
+        fp = fingerprint(payload, limits["loop_fingerprint_messages"])
+        if fp is None:
+            return
+        threshold = int(limits["loop_repeat_threshold"])
+        count = self.store.loop_hit(agent, fp, float(limits["loop_window_sec"]))
+        if count >= threshold:
+            if count == threshold:
+                self.store.publish({"type": "loop_detected", "agent": agent, "count": count,
+                                    "window_sec": limits["loop_window_sec"]})
+            raise HTTPError(
+                429, "loop_detected",
+                "AgentOS loop detection: agent %s sent the same request %d times in a row; "
+                "change the request or ask an operator to reset it" % (agent, count),
+                {"Retry-After": "30"},
+            )
+
+    def used_pct(self, agent):
+        limit = self.daily_limit(agent)
+        return self.store.spend(agent) / limit * 100.0 if limit > 0 else 0.0
+
     def upstream_failed(self, agent):
         limits = self.cfg["limits"]
         failures = self.store.record_failure(agent)
@@ -171,6 +219,10 @@ class Gateway:
         try:
             if parts[:1] == ["_agentos"]:
                 return self.api(req, parts[1:], urllib.parse.parse_qs(path.query), admin)
+            if len(parts) >= 3 and parts[0] == "agent" and parts[2] == "bus":
+                if not configmod.valid_agent_id(parts[1]):
+                    raise HTTPError(400, "invalid_request_error", "invalid agent id")
+                return self.bus_request(req, parts[1], parts[3:], urllib.parse.parse_qs(path.query), False)
             if len(parts) >= 3 and parts[0] == "agent":
                 agent, provider, rest = parts[1], parts[2], parts[3:]
             elif parts and parts[0] in self.cfg["providers"]:
@@ -183,7 +235,10 @@ class Gateway:
                 raise HTTPError(404, "not_found", "unknown provider %r" % provider)
             self.proxy(req, agent, provider, rest, path.query, started)
         except HTTPError as exc:
-            send_json(req, exc.status, {"type": "error", "error": {"type": exc.error_type, "message": exc.message}}, exc.headers)
+            error = {"type": exc.error_type, "message": exc.message}
+            if exc.details:
+                error["details"] = exc.details
+            send_json(req, exc.status, {"type": "error", "error": error}, exc.headers)
             if parts[:1] != ["_agentos"] and len(parts) >= 2:
                 agent = parts[1] if parts[0] == "agent" else UNMANAGED
                 if configmod.valid_agent_id(agent):
@@ -205,12 +260,34 @@ class Gateway:
         if req.command == "GET" and parts == ["history"]:
             days = int((query.get("days") or ["7"])[0])
             return send_json(req, 200, self.store.history(max(1, min(days, 35))))
-        if len(parts) == 2 and parts[0] in ("budget", "circuit"):
+        if parts[:1] == ["bus"]:
             if not admin:
-                raise HTTPError(403, "permission_error", "use the admin socket to change budgets")
+                raise HTTPError(403, "permission_error", "use the admin socket to read or post as an operator")
+            return self.bus_request(req, query.get("from", ["operator"])[0], parts[1:], query, True)
+        if parts[:1] in (["routing"], ["record"], ["replay"], ["recordings"]) or (
+                len(parts) == 2 and parts[0] in ("budget", "circuit", "loop")):
+            if not admin:
+                raise HTTPError(403, "permission_error", "use the admin socket for this endpoint")
+        if parts[:1] == ["routing"] and req.command == "GET":
+            q = {k: v[0] for k, v in query.items()}
+            agent = q.get("agent", "")
+            used = self.used_pct(agent) if configmod.valid_agent_id(agent) else 0.0
+            return send_json(req, 200, self.router.describe(agent or None, q.get("provider"), q.get("model"), used))
+        if parts[:1] == ["recordings"] and req.command == "GET":
+            if len(parts) == 1:
+                return send_json(req, 200, {"recordings": self.recorder.list()})
+            if len(parts) == 2 and configmod.valid_agent_id(parts[1]) and self.recorder.count(parts[1]):
+                return send_json(req, 200, {"id": parts[1], "requests": self.recorder.summary(parts[1])})
+            raise HTTPError(404, "not_found", "no such recording")
+        if parts[:1] in (["record"], ["replay"]) and len(parts) == 2:
+            return self.recording_api(req, parts[0], parts[1])
+        if len(parts) == 2 and parts[0] in ("budget", "circuit", "loop"):
             agent = parts[1]
             if not configmod.valid_agent_id(agent):
                 raise HTTPError(400, "invalid_request_error", "invalid agent id")
+            if parts[0] == "loop" and req.command == "DELETE":
+                self.store.loop_reset(agent)
+                return send_json(req, 200, {"agent": agent, "loop": "reset"})
             if parts[0] == "circuit" and req.command == "DELETE":
                 self.store.reset_circuit(agent)
                 return send_json(req, 200, {"agent": agent, "circuit": "closed"})
@@ -229,27 +306,148 @@ class Gateway:
                 return send_json(req, 200, {"agent": agent, "limit_usd": usd})
         raise HTTPError(404, "not_found", "unknown admin endpoint")
 
+    def recording_api(self, req, kind, agent):
+        if not configmod.valid_agent_id(agent):
+            raise HTTPError(400, "invalid_request_error", "invalid agent id")
+        if kind == "record":
+            if req.command == "GET":
+                return send_json(req, 200, {"agent": agent, "recording": self.store.record_enabled(agent)})
+            if req.command in ("PUT", "DELETE"):
+                enabled = req.command == "PUT"
+                if enabled:
+                    try:
+                        body = json.loads(read_body(req, 65536) or b"{}")
+                        enabled = bool(body.get("enabled", True))
+                    except (ValueError, AttributeError):
+                        raise HTTPError(400, "invalid_request_error", 'expected {"enabled": <bool>}')
+                self.store.set_record(agent, enabled)
+                return send_json(req, 200, {"agent": agent, "recording": enabled})
+        else:
+            if req.command == "GET":
+                return send_json(req, 200, {"agent": agent, "replay": self.store.replay_state(agent)})
+            if req.command == "DELETE":
+                self.store.clear_replay(agent)
+                return send_json(req, 200, {"agent": agent, "replay": None})
+            if req.command == "PUT":
+                try:
+                    recording = json.loads(read_body(req, 65536) or b"{}")["recording"]
+                except (ValueError, KeyError, TypeError):
+                    raise HTTPError(400, "invalid_request_error", 'expected {"recording": "<agent-id>"}')
+                if not isinstance(recording, str) or not configmod.valid_agent_id(recording):
+                    raise HTTPError(400, "invalid_request_error", "invalid recording id")
+                total = self.recorder.count(recording)
+                if not total:
+                    raise HTTPError(404, "not_found", "no recording for %s" % recording)
+                if recording == agent:
+                    raise HTTPError(400, "invalid_request_error", "an agent cannot replay its own recording")
+                self.store.set_replay(agent, recording, total)
+                return send_json(req, 200, {"agent": agent, "replay": self.store.replay_state(agent)})
+        raise HTTPError(404, "not_found", "unknown admin endpoint")
+
+    def bus_request(self, req, agent, rest, query, admin):
+        if len(rest) != 1:
+            if admin and not rest and req.command == "GET":
+                return send_json(req, 200, {"topics": self.store.bus_topics()})
+            raise HTTPError(404, "not_found", "use /agent/<id>/bus/<topic>")
+        topic, q = rest[0], {k: v[0] for k, v in query.items()}
+        try:
+            if req.command == "POST":
+                raw = read_body(req, int(self.cfg["bus"]["max_message_bytes"])) or b""
+                return send_json(req, 200, self.bus.publish(agent, topic, raw))
+            if req.command == "GET":
+                try:
+                    wait, limit = float(q.get("wait", 0)), int(q.get("limit", 100))
+                except ValueError:
+                    raise BusError(400, "wait and limit must be numbers")
+                return send_json(req, 200, self.bus.read(agent, topic, q.get("after", "0"), wait, limit, admin))
+        except BusError as exc:
+            raise HTTPError(exc.status, "permission_error" if exc.status == 403 else "invalid_request_error", exc.message)
+        raise HTTPError(405, "invalid_request_error", "use GET or POST")
+
+    def serve_replay(self, req, agent, rest_path, orig_body, started):
+        """Answer from the recording this agent is registered to replay."""
+        with self._replay_lock:
+            state = self.store.replay_state(agent)
+            if state is None:
+                raise HTTPError(409, "replay_ended", "replay was cleared for agent %s" % agent)
+            seq = state["pos"] + 1
+            if seq > state["total"]:
+                raise HTTPError(409, "replay_exhausted",
+                                "recording %s has only %d requests" % (state["recording"], state["total"]))
+            entry = self.recorder.load(state["recording"], seq)
+            if entry is None:
+                raise HTTPError(500, "api_error", "recording %s/%d is unreadable" % (state["recording"], seq))
+            want = entry["request"]
+            got = {"method": req.command, "path": "/" + rest_path, "body_sha256": body_hash(orig_body)}
+            if any(want[k] != got[k] for k in got):
+                raise HTTPError(
+                    409, "replay_diverged",
+                    "request %d differs from recording %s" % (seq, state["recording"]),
+                    details={"seq": seq, "recording": state["recording"],
+                             "expected": {k: want[k] for k in got}, "got": got},
+                )
+            self.store.replay_advance(agent)
+        resp = entry["response"]
+        # Account before answering, so a client never sees the response first
+        self.store.count_request(agent, resp["status"])
+        self.write_log(agent, {
+            "method": req.command, "path": "/" + rest_path, "status": resp["status"],
+            "model": entry.get("model"), "replayed": "%s/%d" % (state["recording"], seq),
+            "cost_usd": 0.0, "duration_ms": int((self.clock() - started) * 1000),
+        })
+        data = decode_body(resp.get("body"), resp.get("body_encoding"))
+        req.send_response(resp["status"])
+        for name, value in resp.get("headers", {}).items():
+            req.send_header(name, value)
+        req.send_header("Content-Length", str(len(data)))
+        req.send_header("X-AgentOS-Replay", "%s/%d" % (state["recording"], seq))
+        req.send_header("Connection", "close")
+        req.end_headers()
+        write_chunk(req, data)
+
     def proxy(self, req, agent, provider, rest, query, started):
         prov = self.cfg["providers"][provider]
         api = prov.get("api", "openai")
-        self.admit(agent)
+        replaying = self.store.replay_state(agent) is not None
+        if not replaying:
+            self.admit(agent)
 
         body = read_body(req, int(self.cfg["gateway"]["max_request_bytes"]))
+        orig_body = body
         request_model = None
+        route = None
         rest_path = "/".join(urllib.parse.quote(p, safe="") for p in rest)
+        if replaying:
+            return self.serve_replay(req, agent, rest_path, orig_body, started)
+        payload = None
         if body and "json" in (req.headers.get("Content-Type") or "json"):
             try:
                 payload = json.loads(body)
             except ValueError:
                 payload = None
-            if isinstance(payload, dict):
-                request_model = payload.get("model")
-                # Ask for usage on streamed Chat Completions so it can be priced
-                if (api == "openai" and payload.get("stream") is True
-                        and rest_path.endswith("chat/completions")
-                        and "stream_options" not in payload):
-                    payload["stream_options"] = {"include_usage": True}
-                    body = json.dumps(payload).encode()
+        if isinstance(payload, dict):
+            self.check_loop(agent, payload)
+            request_model = payload.get("model")
+            edited = False
+            routed, reason = self.router.route(agent, provider, request_model, self._route_pct(agent))
+            if reason:
+                route = {"original_model": request_model, "routed_model": routed, "route_reason": reason}
+                payload["model"] = request_model = routed
+                edited = True
+            # Ask for usage on streamed Chat Completions so it can be priced
+            if (api == "openai" and payload.get("stream") is True
+                    and rest_path.endswith("chat/completions")
+                    and "stream_options" not in payload):
+                payload["stream_options"] = {"include_usage": True}
+                edited = True
+            if edited:
+                body = json.dumps(payload).encode()
+        record_seq = None
+        captured = bytearray()
+        capture_cap = int(self.cfg["recording"]["max_body_bytes"])
+        truncated = False
+        if self.cfg["recording"]["enabled"] or self.store.record_enabled(agent):
+            record_seq = self.recorder.next_seq(agent)
 
         base = urllib.parse.urlsplit(prov["base_url"])
         target = base.path.rstrip("/") + "/" + rest_path
@@ -305,6 +503,11 @@ class Gateway:
                 if not chunk:
                     break
                 parser.feed(chunk)
+                if record_seq is not None:
+                    if len(captured) + len(chunk) <= capture_cap:
+                        captured += chunk
+                    else:
+                        truncated = True
                 if pending and not client_gone:
                     client_gone = not write_chunk(req, pending)
                 pending = chunk
@@ -324,6 +527,17 @@ class Gateway:
             }
             if client_gone:
                 entry["client_disconnected"] = True
+            if route:
+                entry.update(route)
+            if record_seq is not None:
+                rec = self.recorder.build(
+                    agent, record_seq, round(self.clock(), 3), provider, req.command, "/" + rest_path, query,
+                    orig_body, resp.status, dict(resp.getheaders()), bytes(captured), model, parser.streaming,
+                    truncated)
+                if client_gone:
+                    rec["incomplete"] = True
+                if self.recorder.write(agent, record_seq, rec):
+                    entry["recorded"] = record_seq
             if usage:
                 usd, priced = self.after_usage(agent, model, usage)
                 entry.update(usage=usage, cost_usd=round(usd, 6), priced=priced)
@@ -334,6 +548,12 @@ class Gateway:
         finally:
             if pending and not client_gone:
                 write_chunk(req, pending)
+
+    def _route_pct(self, agent):
+        # Only look up spend when a downgrade rule can use it
+        if float((self.cfg["routing"].get("downgrade") or {}).get("threshold_pct") or 0) <= 0:
+            return 0.0
+        return self.used_pct(agent)
 
     def inject_key(self, provider, api, headers):
         key = self.provider_key(provider)

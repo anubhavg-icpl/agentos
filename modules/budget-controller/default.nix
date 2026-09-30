@@ -50,6 +50,8 @@ let
         reset <agent-id>           Back to the default daily budget
         history                    Global spend for the last 7 days
         by-model                   Spend per model today
+        routing [<agent> <provider> <model>]
+                                   Model routing rules; with arguments, how a request would be routed
       EOF
       }
 
@@ -91,6 +93,13 @@ let
         by-model)
           get spend | jq -r '.models | to_entries | sort_by(-.value)[] | "\(.key)\t$\(.value * 10000 | round / 10000)"' | column -t -s $'\t'
           ;;
+        routing)
+          if [ $# -eq 4 ]; then
+            admin GET "routing?agent=$2&provider=$3&model=$4" | jq .
+          else
+            admin GET routing | jq .
+          fi
+          ;;
         -h|--help|help) usage ;;
         *) usage; exit 1 ;;
       esac
@@ -130,6 +139,60 @@ in
       default = ./pricing.json;
       description = "JSON file with per-model pricing (USD per million tokens)";
     };
+
+    routing = {
+      strategy = lib.mkOption {
+        type = lib.types.enum [ "static" "cheapest" ];
+        default = "static";
+        description = ''
+          "static" applies only the rewrites below. "cheapest" also replaces a
+          model that belongs to one of `equivalenceGroups` with the cheapest
+          member of that group according to pricing.json.
+        '';
+      };
+
+      rewrites = lib.mkOption {
+        type = lib.types.attrsOf lib.types.str;
+        default = { };
+        example = { "claude-opus-5-5" = "claude-sonnet-5-5"; };
+        description = "Replace the requested model, for all agents";
+      };
+
+      agentRewrites = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.attrsOf lib.types.str);
+        default = { };
+        example = { "ci-" = { "claude-opus-5-5" = "claude-haiku-4-5"; }; };
+        description = ''
+          Rewrites for agents whose id starts with the attribute name. They
+          take precedence over `rewrites`; the longest matching prefix wins.
+        '';
+      };
+
+      downgrade = {
+        thresholdPercent = lib.mkOption {
+          type = lib.types.ints.between 0 100;
+          default = 0;
+          description = ''
+            Once an agent has used this percentage of its daily budget, requests
+            are rewritten to the provider's model in `models` (never to a
+            costlier one). 0 disables the downgrade.
+          '';
+        };
+        models = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = { };
+          example = { anthropic = "claude-haiku-4-5"; };
+          description = "Cheaper model to fall back to, per gateway provider name";
+        };
+      };
+
+      equivalenceGroups = lib.mkOption {
+        type = lib.types.listOf (lib.types.listOf lib.types.str);
+        default = [ ];
+        example = [ [ "claude-sonnet-5-5" "claude-haiku-4-5" ] ];
+        description = "Models considered interchangeable, for strategy = \"cheapest\"";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -145,6 +208,18 @@ in
       global_daily_usd = cfg.globalDailyBudgetUSD;
       alert_thresholds = cfg.alertThresholds;
       auto_shutdown = cfg.autoShutdown;
+    };
+
+    # Routing never crosses providers: the gateway refuses a rewrite whose
+    # target model belongs to another vendor in pricing.json.
+    agentos.services.settings.routing = {
+      inherit (cfg.routing) strategy rewrites;
+      agents = cfg.routing.agentRewrites;
+      groups = cfg.routing.equivalenceGroups;
+      downgrade = {
+        threshold_pct = cfg.routing.downgrade.thresholdPercent;
+        inherit (cfg.routing.downgrade) models;
+      };
     };
 
     environment.systemPackages = [ budgetCli ];
