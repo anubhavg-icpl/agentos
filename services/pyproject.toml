@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentos-services"
 version = "0.3.0"
-description = "AgentOS model gateway and agent daemon"
+description = "AgentOS model gateway, agent daemon, orchestrator and scheduler"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = ["redis>=5"]
@@ -19,6 +19,9 @@ agentos-market = "agentos_services.market:main"
 agentos-mcp-bus = "agentos_services.mcp_bus:main"
 agentos-gpu = "agentos_services.gpu:main"
 agentos-netns = "agentos_services.netns:main"
+agentos-orchestrator = "agentos_services.orchestrator:main"
+agentos-task-runner = "agentos_services.taskrunner:main"
+agentos-scheduler = "agentos_services.scheduler:main"
 
 [tool.setuptools.packages.find]
 include = ["agentos_services*"]
