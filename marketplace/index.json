@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "agents": [
+    {
+      "name": "kilo",
+      "description": "Kilo Code CLI - open-source AI coding agent for the terminal",
+      "homepage": "https://github.com/Kilo-Org/kilocode",
+      "license": "MIT",
+      "kind": "npm",
+      "package": "@kilocode/cli",
+      "version": "7.8.1",
+      "bin": "kilo",
+      "commands": ["kilo", "kilocode"],
+      "maintainers": ["Kilo-Org"]
+    },
+    {
+      "name": "auggie",
+      "description": "Auggie - Augment Code's agent CLI",
+      "homepage": "https://www.augmentcode.com",
+      "license": "Proprietary",
+      "kind": "npm",
+      "package": "@augmentcode/auggie",
+      "version": "0.36.0",
+      "bin": "auggie",
+      "maintainers": ["Augment Code"]
+    },
+    {
+      "name": "every-code",
+      "description": "Every Code - terminal coding agent, a fork of OpenAI Codex",
+      "homepage": "https://github.com/just-every/code",
+      "license": "Apache-2.0",
+      "kind": "npm",
+      "package": "@just-every/code",
+      "version": "0.6.196",
+      "bin": "coder",
+      "commands": ["coder"],
+      "maintainers": ["just-every"]
+    },
+    {
+      "name": "grok",
+      "description": "Grok CLI - open-source terminal agent for xAI's Grok models",
+      "homepage": "https://www.npmjs.com/package/@vibe-kit/grok-cli",
+      "license": "MIT",
+      "kind": "npm",
+      "package": "@vibe-kit/grok-cli",
+      "version": "0.0.34",
+      "bin": "grok",
+      "maintainers": ["vibe-kit"]
+    },
+    {
+      "name": "mini-swe-agent",
+      "description": "mini-SWE-agent - minimal software engineering agent from the SWE-bench team",
+      "homepage": "https://pypi.org/project/mini-swe-agent/",
+      "license": "MIT",
+      "kind": "pypi",
+      "package": "mini-swe-agent",
+      "version": "2.4.6",
+      "bin": "mini",
+      "commands": ["mini", "mini-swe-agent"],
+      "maintainers": ["SWE-agent"]
+    },
+    {
+      "name": "code-puppy",
+      "description": "Code Puppy - terminal code generation agent",
+      "homepage": "https://pypi.org/project/code-puppy/",
+      "license": "MIT",
+      "kind": "pypi",
+      "package": "code-puppy",
+      "version": "0.0.884",
+      "bin": "code-puppy",
+      "commands": ["code-puppy", "pup"],
+      "maintainers": ["code-puppy"]
+    },
+    {
+      "name": "mistral-vibe",
+      "description": "Mistral Vibe - minimal CLI coding agent by Mistral",
+      "homepage": "https://github.com/mistralai/mistral-vibe",
+      "license": "Apache-2.0",
+      "kind": "nixpkgs",
+      "package": "mistral-vibe",
+      "version": "2.25.0",
+      "bin": "vibe",
+      "commands": ["vibe"],
+      "maintainers": ["Mistral AI"]
+    }
+  ]
+}

@@ -18,6 +18,9 @@
     ./runtime
     ./security
     ./observability
+    ./dashboard
+    ./fleet
+    ./marketplace
     ./storage
     ./networking
 
