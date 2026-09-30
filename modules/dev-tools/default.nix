@@ -32,7 +32,7 @@ in
       duf             # df replacement
       procs           # ps replacement
       sd              # sed replacement
-      chose           # awk replacement
+      choose          # awk replacement
       jq              # JSON processor
       yq              # YAML processor
       xq              # XML processor
@@ -94,9 +94,8 @@ in
       ninja
       bazel_7          # Google's build system
       buck2            # Meta's build system
-      pants            # monorepo build tool
       just             # modern Makefile alternative
-      task             # task runner
+      go-task          # task runner
 
       # ════════════════════════════════════════════════════════════════
       # VERSION CONTROL
@@ -126,7 +125,7 @@ in
       # SEARCH & NAVIGATION
       # ════════════════════════════════════════════════════════════════
       ast-grep         # structural search
-      astgrep          # AST-based search/replace
+      ast-grep         # AST-based search/replace
       sd               # sed alternative
       tealdeer         # tldr client
       cheat            # cheatsheets
@@ -165,7 +164,7 @@ in
       sops             # secrets ops
       gnupg            # GPG
       openssl          # TLS toolkit
-      netcat-openbd    # netcat
+      netcat-openbsd   # netcat
       socat            # socket relay
       time             # command timer
       parallel         # GNU parallel
@@ -181,7 +180,6 @@ in
       starship.enable = true;
       tmux.enable = true;
       fzf = {
-        enable = true;
         fuzzyCompletion = true;
         keybindings = true;
       };

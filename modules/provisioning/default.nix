@@ -88,12 +88,12 @@ in
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ python311 python311Packages.pip python311Packages.virtualenv ];
-        shellHook = ''
+        shellHook = '''
           if [ ! -d .venv ]; then
             python -m venv .venv
           fi
           source .venv/bin/activate
-        '';
+        ''';
       }
     '';
 
@@ -148,7 +148,7 @@ in
     '';
 
     # ─ Provisioning service ──────────────────────────────────────────
-    systemd.services.agentos-provisioner = {
+    systemd.services.agentos-provisioner = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Environment Provisioner";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -284,6 +284,6 @@ in
       '')
     ];
 
-    networking.firewall.allowedTCPPorts = lib.optional cfg.enableCache 5000;
+    networking.firewall.interfaces.agentos0.allowedTCPPorts = lib.optional cfg.enableCache 5000;
   };
 }

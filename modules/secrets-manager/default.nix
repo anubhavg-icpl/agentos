@@ -6,7 +6,7 @@
 #   - Encrypted at rest (sops-nix / age)
 #   - Per-agent secret access (agent X can only read its keys)
 #   - Short-lived tokens (auto-rotation)
-#   - Never exposed in env, process args, or logs
+#   - Never written to disk or the Nix store in plaintext
 #   - Integration with Vault, AWS Secrets Manager, Doppler
 #
 { config, pkgs, lib, ... }:
@@ -25,9 +25,35 @@ in
     };
 
     secretsFile = lib.mkOption {
-      type = lib.types.path;
-      default = /var/lib/agentos/secrets/secrets.yaml;
-      description = "Path to encrypted secrets file (sops format)";
+      type = lib.types.str;
+      default = "/var/lib/agentos/secrets/secrets.yaml";
+      description = "Path (on the target machine) to the sops-encrypted secrets file";
+    };
+
+    sopsInitialized = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Set to true once secretsFile exists on the machine and is encrypted
+        for its age / SSH host key. Until then no sops secrets are declared,
+        so activation doesn't fail on a fresh install.
+      '';
+    };
+
+    secrets = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "ANTHROPIC_API_KEY"
+        "OPENAI_API_KEY"
+        "GOOGLE_API_KEY"
+        "GITHUB_TOKEN"
+        "FACTORY_API_KEY"
+        "SLACK_BOT_TOKEN"
+        "LINEAR_API_KEY"
+        "SENTRY_TOKEN"
+        "BRAVE_API_KEY"
+      ];
+      description = "Keys in secretsFile to expose as /run/secrets/<name>";
     };
 
     enableAutoRotation = lib.mkOption {
@@ -45,25 +71,20 @@ in
 
   config = lib.mkIf cfg.enable {
     # ─ sops-nix for secrets decryption at boot ───────────────────────
-    sops = lib.mkIf (cfg.backend == "sops") {
+    sops = lib.mkIf (cfg.backend == "sops" && cfg.sopsInitialized) {
       defaultSopsFile = cfg.secretsFile;
+      # The file lives on the target machine, not in this repository
+      validateSopsFiles = false;
       age = {
         keyFile = "/var/lib/agentos/secrets/age-key.txt";
         sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
       };
 
-      # Define secrets (each becomes a file at /run/secrets/<name>)
-      secrets = {
-        ANTHROPIC_API_KEY = { };
-        OPENAI_API_KEY = { };
-        GOOGLE_API_KEY = { };
-        GITHUB_TOKEN = { };
-        FACTORY_API_KEY = { };
-        SLACK_BOT_TOKEN = { };
-        LINEAR_API_KEY = { };
-        SENTRY_TOKEN = { };
-        BRAVE_API_KEY = { };
-      };
+      # Each becomes /run/secrets/<name>, readable by the agentos group
+      secrets = lib.genAttrs cfg.secrets (_: {
+        group = "agentos";
+        mode = "0440";
+      });
     };
 
     # ─ Secrets directory ─────────────────────────────────────────────
@@ -89,15 +110,8 @@ in
         - GOOGLE_API_KEY
       github-copilot-cli:
         - GITHUB_TOKEN
-      swe-agent:
+      open-interpreter:
         - ANTHROPIC_API_KEY
-        - OPENAI_API_KEY
-      gpt-engineer:
-        - OPENAI_API_KEY
-      devika:
-        - ANTHROPIC_API_KEY
-        - OPENAI_API_KEY
-      auto-gpt:
         - OPENAI_API_KEY
       all-tools:
         - GITHUB_TOKEN
@@ -136,22 +150,21 @@ in
               echo "You will be prompted to enter the value (hidden)"
               exit 1
             fi
+            if [ ! -f "${cfg.secretsFile}" ]; then
+              echo -e "''${RED}No secrets file at ${cfg.secretsFile}.''${NC}"
+              echo "Create it (encrypted) with: agentos-secrets edit"
+              exit 1
+            fi
             read -rsp "Enter value for $KEY: " VALUE
             echo ""
-            # Write to sops file
-            if [ ! -f "${toString cfg.secretsFile}" ]; then
-              echo "Creating new secrets file..."
-              echo "$KEY: '''" > "${toString cfg.secretsFile}"
-              echo "$VALUE" >> "${toString cfg.secretsFile}"
-              echo "'''" >> "${toString cfg.secretsFile}"
-            else
-              echo "Use sops to edit: sops ${toString cfg.secretsFile}"
-            fi
+            # Written encrypted by sops; the value never touches disk in plaintext
+            ${pkgs.sops}/bin/sops set "${cfg.secretsFile}" "[\"$KEY\"]" \
+              "$(${pkgs.jq}/bin/jq -Rn --arg v "$VALUE" '$v')"
             echo -e "''${GREEN}Secret $KEY set.''${NC}"
             ;;
 
           edit)
-            exec ${pkgs.sops}/bin/sops "${toString cfg.secretsFile}"
+            exec ${pkgs.sops}/bin/sops "${cfg.secretsFile}"
             ;;
 
           check)

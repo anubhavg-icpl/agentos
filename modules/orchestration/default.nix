@@ -53,22 +53,21 @@ in
 
   config = lib.mkIf cfg.enable {
     # ─ Redis for task queue and message bus ──────────────────────────
-    services.redis = {
+    services.redis.servers.agentos = {
       enable = true;
       port = 6379;
       settings = {
         maxmemory = "256mb";
         maxmemory-policy = "allkeys-lru";
         appendonly = "yes";
-        save = "60 1000";
       };
     };
 
     # ─ Orchestrator service ──────────────────────────────────────────
-    systemd.services.agentos-orchestrator = {
+    systemd.services.agentos-orchestrator = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Multi-Agent Orchestrator";
-      after = [ "network.target" "redis.service" "agentos-daemon.service" ];
-      wants = [ "redis.service" "agentos-daemon.service" ];
+      after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
+      wants = [ "redis-agentos.service" "agentos-daemon.service" ];
       wantedBy = [ "multi-user.target" ];
 
       environment = {
@@ -111,8 +110,8 @@ in
           status)
             info "Orchestration status:"
             echo "  Mode: ${cfg.mode}"
-            echo "  Max workers: ${cfg.maxWorkers}"
-            echo "  Task timeout: ${cfg.taskTimeoutSec}s"
+            echo "  Max workers: ${toString cfg.maxWorkers}"
+            echo "  Task timeout: ${toString cfg.taskTimeoutSec}s"
             echo "  Result strategy: ${cfg.resultStrategy}"
             echo ""
             echo "  Active tasks:"
@@ -220,6 +219,7 @@ in
       '')
     ];
 
-    networking.firewall.allowedTCPPorts = [ 6379 ];
+    # Redis has no auth: reachable from agent containers on the bridge only
+    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ 6379 ];
   };
 }

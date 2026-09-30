@@ -28,7 +28,6 @@ in
       gosec            # Go security scanner
       cargo-audit      # Rust vulnerability scanner
       pip-audit        # Python dependency scanner
-      npm-audit-html   # Node dependency scanner wrapper
       osv-scanner      # open source vulnerability scanner
       grype            # container image vulnerability scanner
 

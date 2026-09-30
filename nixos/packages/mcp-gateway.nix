@@ -1,6 +1,6 @@
 # MCP Gateway - routes MCP tool calls between agents and tool providers
 # Implements the Model Context Protocol server side.
-{ stdenv, rustPlatform, baseTools }:
+{ rustPlatform }:
 
 rustPlatform.buildRustPackage {
   pname = "agentos-mcp-gateway";

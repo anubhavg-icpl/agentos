@@ -21,6 +21,23 @@ in
       description = "Port for the Grafana dashboard";
     };
 
+    tempoOtlpPort = lib.mkOption {
+      type = lib.types.port;
+      default = 4417;
+      description = "Local OTLP gRPC port Tempo receives traces on from the collector";
+    };
+
+    grafanaAdminPasswordFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "/run/secrets/grafana-admin-password";
+      description = ''
+        File containing the Grafana admin password. When null, Grafana's
+        built-in default (admin/admin) applies and must be changed on first
+        login. Grafana only listens on localhost; reach it with an SSH tunnel.
+      '';
+    };
+
     retentionDays = lib.mkOption {
       type = lib.types.int;
       default = 30;
@@ -50,8 +67,8 @@ in
         };
         exporters = {
           # Send traces to Tempo, metrics to Prometheus
-          otlp/tempo = {
-            endpoint = "localhost:4317";
+          "otlp/tempo" = {
+            endpoint = "127.0.0.1:${toString cfg.tempoOtlpPort}";
             tls.insecure = true;
           };
           prometheus = {
@@ -101,12 +118,15 @@ in
       enable = true;
       settings = {
         server.http_listen_port = 3200;
-        distributor.receivers.otlp.protocols.grpc.endpoint = "127.0.0.1:4317";
+        server.grpc_listen_port = 9096;
+        # The OTel collector owns :4317; Tempo receives from it on its own port
+        distributor.receivers.otlp.protocols.grpc.endpoint = "127.0.0.1:${toString cfg.tempoOtlpPort}";
         storage = {
           trace.backend = "local";
           trace.local.path = "/var/lib/tempo/traces";
-          trace.retention = "${toString cfg.retentionDays}h";
+          trace.wal.path = "/var/lib/tempo/wal";
         };
+        compactor.compaction.block_retention = "${toString (cfg.retentionDays * 24)}h";
       };
     };
 
@@ -115,13 +135,14 @@ in
       enable = true;
       settings = {
         server = {
-          http_addr = "0.0.0.0";
+          http_addr = "127.0.0.1";
           http_port = cfg.grafanaPort;
         };
         security = {
           admin_user = "admin";
-          admin_password = "agentos";  # change immediately
           disable_gravatar = true;
+        } // lib.optionalAttrs (cfg.grafanaAdminPasswordFile != null) {
+          admin_password = "$__file{${cfg.grafanaAdminPasswordFile}}";
         };
         analytics.reporting_enabled = false;
       };
@@ -144,7 +165,7 @@ in
       };
     };
 
-    # ─ Network: expose internal-only ports ───────────────────────────
-    networking.firewall.allowedTCPPorts = [ cfg.grafanaPort ];
+    # Grafana is bound to localhost and not opened in the firewall:
+    #   ssh -L 2342:localhost:2342 admin@agentos
   };
 }

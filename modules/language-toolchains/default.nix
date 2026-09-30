@@ -36,9 +36,9 @@ in
         python312 python312Packages.pip python312Packages.virtualenv
         uv pipx poetry conda rye
         # Python linters/formatters
-        ruff black mypy pyright isort pylint flake8
+        ruff black mypy pyright isort pylint python3Packages.flake8
         # Python tools
-        ipython jupyter httpx
+        python3Packages.ipython jupyter httpx
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -46,14 +46,14 @@ in
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
         nodejs_22 nodejs_20
-        nodePackages.npm nodePackages.pnpm nodePackages.yarn nodePackages.bun
-        nodePackages.ts-node nodePackages.tsx
+        nodePackages.npm nodePackages.pnpm nodePackages.yarn bun
+        nodePackages.ts-node
         deno
         # JS/TS linters/formatters
         nodePackages.prettier nodePackages.eslint nodePackages.eslint_d
         typescript typescript-language-server
         # Build tools
-        nodePackages.turbo nodePackages.vite nodePackages.webpack
+        turbo
         tailwindcss
       ]))
 
@@ -65,7 +65,7 @@ in
         gopls gotools go-tools golangci-lint
         delve # debugger
         air # live reload
-        mockery # mock generator
+        go-mockery # mock generator
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -90,7 +90,7 @@ in
         # Package managers
         conan vcpkg
         # Formatters
-        clang-format cppcheck
+        cppcheck # clang-format ships in clang-tools
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -104,7 +104,7 @@ in
         # JVM tools
         coursier mill
         # Formatters/Linters
-        google-java-format spotbugs
+        google-java-format
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -121,7 +121,7 @@ in
       # PHP
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        php82 composer
+        php82 php82Packages.composer
         php82Packages.phpstan php82Packages.php-cs-fixer
       ]))
 
@@ -137,8 +137,7 @@ in
       # ELIXIR / ERLANG
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        elixir erlang
-        mix # comes with elixir
+        elixir erlang # mix ships with elixir
       ]))
 
       # ════════════════════════════════════════════════════════════════
@@ -213,7 +212,7 @@ in
       # NIX (native, since we're NixOS)
       # ════════════════════════════════════════════════════════════════
       (lib.optionals cfg.enableAll (with pkgs; [
-        nixfmt nixpkgs-fmt nil alejandra
+        nixfmt-rfc-style nixpkgs-fmt nil alejandra
         nixd
         statix manix
       ]))
@@ -225,10 +224,8 @@ in
         bashInteractive zsh fish nushell
         shellcheck shfmt bash-language-server
       ]))
-    ];
-
-    # ── Language versions command ────────────────────────────────────
-    environment.systemPackages = [
+    ] ++ [
+      # ── Language versions command ──────────────────────────────────
       (pkgs.writeShellScriptBin "agentos-langs" ''
         #!/usr/bin/env bash
         echo "╔══════════════════════════════════════════════╗"

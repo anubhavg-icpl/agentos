@@ -4,6 +4,10 @@
 
 let
   cfg = config.agentos.networking;
+  cidrParts = lib.splitString "/" cfg.agentNetCIDR;
+  octets = lib.splitString "." (lib.head cidrParts);
+  hostAddress = lib.concatStringsSep "." (lib.take 3 octets ++ [ "1" ]);
+  prefixLength = lib.toInt (lib.last cidrParts);
 in
 {
   options.agentos.networking = {
@@ -26,11 +30,10 @@ in
     # ─ Network bridge for agent containers ────────────────────────────
     networking.bridges.agentos0.interfaces = [ ];
 
+    # Use .1 of the agent subnet as the host address
     networking.interfaces.agentos0.ipv4.addresses = [{
-      address = lib.head (lib.splitString "." (lib.head (lib.splitString "/" cfg.agentNetCIDR)));
-      # Use .1 as the host on the agent subnet
-      address = "10.200.0.1";
-      prefixLength = 24;
+      address = hostAddress;
+      prefixLength = prefixLength;
     }];
 
     # ─ NAT for agent subnet ───────────────────────────────────────────
@@ -49,7 +52,7 @@ in
     # A proxy that sits between agents and LLM APIs.
     # Enforces: budget caps, rate limits, per-agent quotas, logging,
     #           fallback models, provider health checks.
-    systemd.services.agentos-model-gateway = {
+    systemd.services.agentos-model-gateway = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS LLM Model Gateway";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -106,6 +109,7 @@ in
       log_responses = false  # set true for debugging only
     '';
 
-    networking.firewall.allowedTCPPorts = [ cfg.modelGatewayPort ];
+    # Reachable from agent containers on the bridge only
+    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ cfg.modelGatewayPort ];
   };
 }

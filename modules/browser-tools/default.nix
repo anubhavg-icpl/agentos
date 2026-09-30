@@ -34,7 +34,7 @@ in
       firefox          # headless: firefox --headless
 
       # Browser automation frameworks
-      playwright       # modern browser automation
+      playwright-driver # modern browser automation
       puppeteer-cli    # headless Chrome Node API
       selenium-server-standalone
 

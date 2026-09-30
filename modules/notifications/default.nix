@@ -86,10 +86,10 @@ in
 
   config = lib.mkIf cfg.enable {
     # ─ Notification dispatcher ───────────────────────────────────────
-    systemd.services.agentos-notifier = {
+    systemd.services.agentos-notifier = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Notification Dispatcher";
-      after = [ "network.target" "redis.service" ];
-      wants = [ "redis.service" ];
+      after = [ "network.target" "redis-agentos.service" ];
+      wants = [ "redis-agentos.service" ];
       wantedBy = [ "multi-user.target" ];
 
       environment = {

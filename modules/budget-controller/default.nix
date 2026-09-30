@@ -64,10 +64,10 @@ in
     environment.etc."agentos/pricing.json".source = ./pricing.json;
 
     # ─ Budget controller service ─────────────────────────────────────
-    systemd.services.agentos-budget-controller = {
+    systemd.services.agentos-budget-controller = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Budget Controller";
-      after = [ "network.target" "redis.service" "agentos-model-gateway.service" ];
-      wants = [ "redis.service" "agentos-model-gateway.service" ];
+      after = [ "network.target" "redis-agentos.service" "agentos-model-gateway.service" ];
+      wants = [ "redis-agentos.service" "agentos-model-gateway.service" ];
       wantedBy = [ "multi-user.target" ];
 
       environment = {
@@ -101,7 +101,9 @@ in
         Type = "oneshot";
         User = "agentos";
         ExecStart = toString (pkgs.writeShellScript "budget-reset" ''
-          ${pkgs.redis}/bin/redis-cli -n 2 DEL "daily:*" 2>/dev/null || true
+          # DEL doesn't expand globs; delete the matching keys one by one
+          ${pkgs.redis}/bin/redis-cli -n 2 --scan --pattern "daily:*" 2>/dev/null \
+            | ${pkgs.findutils}/bin/xargs -r ${pkgs.redis}/bin/redis-cli -n 2 DEL >/dev/null || true
           echo "[budget-reset] Daily counters reset at $(date)"
         '');
       };

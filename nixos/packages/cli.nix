@@ -14,7 +14,7 @@
 #   agentos snapshot              Snapshot current state
 #   agentos rollback <snap>       Rollback to a snapshot
 #   agentos shell <id>            Attach to an agent's shell
-{ stdenv, writeShellScriptBin, lib, baseTools, jq, curl, git, btrfs-progs, containerd, nerdctl }:
+{ writeShellScriptBin, jq, btrfs-progs }:
 
 writeShellScriptBin "agentos" ''
   #!/usr/bin/env bash
@@ -25,7 +25,6 @@ writeShellScriptBin "agentos" ''
   GREEN='\033[0;32m'
   YELLOW='\033[1;33m'
   BLUE='\033[0;34m'
-  CYAN='\033[0;36m'
   BOLD='\033[1m'
   NC='\033[0m'
 
@@ -35,7 +34,6 @@ writeShellScriptBin "agentos" ''
   err()   { echo -e "''${RED}[ERR]''${NC} $*" >&2; }
 
   # ── Config ─────────────────────────────────────────────────────────
-  DAEMON_SOCKET="/var/run/agentos/daemon.sock"
   WORKSPACE_ROOT="/var/lib/agentos/workspaces"
   STATE_DIR="/var/lib/agentos/state"
 
@@ -75,7 +73,7 @@ writeShellScriptBin "agentos" ''
 
   EXAMPLES:
       agentos spawn claude-code --workspace ./myproject
-      agentos spawn aider --model claude-sonnet-4-20250514
+      agentos spawn aider -- --model sonnet
       agentos budget
   HELP
   }
@@ -91,84 +89,92 @@ writeShellScriptBin "agentos" ''
   ║                    PRE-INSTALLED AGENTS                          ║
   ╠══════════════════════════════════════════════════════════════════╣
   ║                                                                  ║
-  ║  TIER 1 — PRIMARY AGENTS                                         ║
+  ║  NIX-PACKAGED (reproducible, pinned by flake.lock)               ║
   ║                                                                  ║
   ║  claude            Anthropic Claude Code                         ║
   ║  codex             OpenAI Codex CLI                              ║
-  ║  droid             Factory Droid                                 ║
   ║  aider             AI pair programmer (terminal)                 ║
   ║  gemini            Google Gemini CLI                             ║
-  ║  qwen-code         Alibaba Qwen Code                             ║
+  ║  qwen              Alibaba Qwen Code (also: qwen-code)           ║
   ║  amp               Sourcegraph Amp                               ║
   ║  goose             Block Goose                                   ║
   ║  opencode          OpenCode (SST)                                ║
   ║  crush             Charm Crush                                   ║
-  ║                                                                  ║
-  ║  TIER 2 — EXTENDED AGENTS                                        ║
-  ║                                                                  ║
-  ║  cursor            Cursor CLI (headless)                         ║
-  ║  cline             Cline autonomous agent                        ║
-  ║  continue          Continue Dev                                  ║
+  ║  cursor-agent      Cursor CLI (also: cursor)                     ║
   ║  copilot           GitHub Copilot CLI                            ║
-  ║  devin             Devin CLI (Cognition)                         ║
-  ║  roo               Roo Code (Cline fork)                         ║
-  ║                                                                  ║
-  ║  TIER 3 — RESEARCH / EXPERIMENTAL                                ║
-  ║                                                                  ║
   ║  interpreter       Open Interpreter                              ║
-  ║  sweagent          SWE-Agent (Princeton)                         ║
-  ║  gpt-engineer      GPT-Engineer                                  ║
-  ║  devika            Devika (open-source Devin)                    ║
-  ║  autogpt           AutoGPT                                       ║
-  ║  smol-developer    smol-developer                                ║
+  ║                                                                  ║
+  ║  NPM LAUNCHERS (pinned version, fetched on first run)            ║
+  ║                                                                  ║
+  ║  droid             Factory Droid                                 ║
+  ║  cline             Cline                                         ║
+  ║  cn                Continue CLI (also: continue)                 ║
   ║                                                                  ║
   ╚══════════════════════════════════════════════════════════════════╝
 
   To start an agent:
-      agentos spawn <name>       (managed, sandboxed)
-      <name>                     (direct, standalone)
-
-  To install additional agents:
-      nix profile install .#<name>
+      agentos spawn <name>       (on a fresh agent/* git branch)
+      <name>                     (direct)
   AGENTS
   }
 
   cmd_spawn() {
     local agent="''${1:-}"
     shift || true
-    local workspace="''$(pwd)"
+    local workspace
+    workspace="$(pwd)"
     local model=""
-    local extra_args=("$@")
+    local extra_args=()
 
-    # Parse flags
+    # AgentOS flags are consumed here; everything else goes to the agent
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --workspace) workspace="$2"; shift 2 ;;
         --model) model="$2"; shift 2 ;;
-        *) ;;
+        --) shift; extra_args+=("$@"); break ;;
+        *) extra_args+=("$1"); shift ;;
       esac
-      shift || true
     done
 
     if [ -z "$agent" ]; then
-      err "Usage: agentos spawn <agent-name> [--workspace ./path] [--model name]"
+      err "Usage: agentos spawn <agent-name> [--workspace ./path] [--model name] [agent args...]"
       echo ""
-      echo "Available agents:"
-      echo "  claude  codex  droid  aider  gemini  qwen-code"
-      echo "  amp  goose  opencode  crush  cursor  cline"
-      echo "  continue  copilot  devin  roo"
+      echo "Run 'agentos agents' to see available agents"
       exit 1
     fi
 
-    local agent_id="agent-$(date +%s)-$$"
-    local ws_path="$WORKSPACE_ROOT/$agent_id"
+    # Map agent names to commands
+    local cmd=""
+    case "$agent" in
+      claude|claude-code)          cmd="claude" ;;
+      codex)                       cmd="codex" ;;
+      aider)                       cmd="aider" ;;
+      gemini|gemini-cli)           cmd="gemini" ;;
+      qwen|qwen-code)              cmd="qwen" ;;
+      amp)                         cmd="amp" ;;
+      goose)                       cmd="goose" ;;
+      opencode)                    cmd="opencode" ;;
+      crush)                       cmd="crush" ;;
+      cursor|cursor-agent|cursor-cli) cmd="cursor-agent" ;;
+      copilot|github-copilot)      cmd="copilot" ;;
+      interpreter|open-interpreter) cmd="interpreter" ;;
+      droid|factory-droid)         cmd="droid" ;;
+      cline)                       cmd="cline" ;;
+      cn|continue)                 cmd="cn" ;;
+      *)
+        err "Unknown agent: $agent"
+        echo "Run 'agentos agents' to see available agents"
+        exit 1
+        ;;
+    esac
+
+    local agent_id
+    agent_id="agent-$(date +%s)-$$"
 
     info "Spawning agent: $agent"
     info "Workspace: $workspace"
     info "Agent ID: $agent_id"
 
-    # Create workspace
-    mkdir -p "$ws_path"
     cd "$workspace"
 
     # Initialize git if not already
@@ -181,38 +187,6 @@ writeShellScriptBin "agentos" ''
     local branch="agent/$agent-$(date +%s)"
     git checkout -b "$branch" --quiet 2>/dev/null || true
 
-    # Map agent names to commands
-    local cmd=""
-    case "$agent" in
-      claude|claude-code) cmd="claude" ;;
-      codex)              cmd="codex" ;;
-      droid|factory-droid) cmd="droid" ;;
-      aider)              cmd="aider" ;;
-      gemini|gemini-cli)  cmd="gemini" ;;
-      qwen-code|qwen)     cmd="qwen-code" ;;
-      amp)                cmd="amp" ;;
-      goose)              cmd="goose" ;;
-      opencode)           cmd="opencode" ;;
-      crush)              cmd="crush" ;;
-      cursor|cursor-cli)  cmd="cursor" ;;
-      cline)              cmd="cline" ;;
-      continue)           cmd="continue" ;;
-      copilot|github-copilot) cmd="copilot" ;;
-      devin|devin-cli)    cmd="devin" ;;
-      roo|roo-code)       cmd="roo" ;;
-      interpreter|open-interpreter) cmd="interpreter" ;;
-      sweagent|swe-agent) cmd="sweagent" ;;
-      gpt-engineer)       cmd="gpt-engineer" ;;
-      devika)             cmd="devika" ;;
-      autogpt|auto-gpt)   cmd="autogpt" ;;
-      smol-dev|smol-developer) cmd="smol-developer" ;;
-      *)
-        err "Unknown agent: $agent"
-        echo "Run 'agentos agents' to see available agents"
-        exit 1
-        ;;
-    esac
-
     ok "Starting $cmd in workspace"
 
     # Set environment for agent
@@ -224,7 +198,7 @@ writeShellScriptBin "agentos" ''
     fi
 
     # Execute the agent
-    exec "$cmd" "''${extra_args[@]}"
+    exec "$cmd" ''${extra_args[@]+"''${extra_args[@]}"}
   }
 
   cmd_list() {
@@ -272,7 +246,7 @@ writeShellScriptBin "agentos" ''
   }
 
   cmd_shell() {
-    local id="${1:-}"
+    local id="''${1:-}"
     if [ -z "$id" ]; then
       err "Usage: agentos shell <agent-id>"
       exit 1
@@ -375,7 +349,10 @@ writeShellScriptBin "agentos" ''
           err "Usage: agentos workspace rm <name>"
           exit 1
         fi
-        rm -rf "$WORKSPACE_ROOT/$name"
+        case "$name" in
+          */*|.|..) err "Invalid workspace name: $name"; exit 1 ;;
+        esac
+        rm -rf "''${WORKSPACE_ROOT:?}/$name"
         ok "Removed workspace: $name"
         ;;
       *)

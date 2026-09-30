@@ -111,10 +111,10 @@ in
     '';
 
     # ─ Circuit breaker service ───────────────────────────────────────
-    systemd.services.agentos-circuit-breaker = {
+    systemd.services.agentos-circuit-breaker = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Circuit Breaker";
-      after = [ "network.target" "redis.service" "agentos-daemon.service" ];
-      wants = [ "redis.service" "agentos-daemon.service" ];
+      after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
+      wants = [ "redis-agentos.service" "agentos-daemon.service" ];
       wantedBy = [ "multi-user.target" ];
 
       environment = {
@@ -136,7 +136,7 @@ in
     };
 
     # ─ Resource monitor (checks every 30s for runaway agents) ────────
-    systemd.services.agentos-resource-monitor = {
+    systemd.services.agentos-resource-monitor = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Resource Monitor";
       after = [ "agentos-daemon.service" ];
       wantedBy = [ "multi-user.target" ];

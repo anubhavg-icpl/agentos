@@ -1,5 +1,5 @@
 # Model Gateway - LLM API proxy with budget/rate limiting
-{ stdenv, rustPlatform, baseTools }:
+{ rustPlatform }:
 
 rustPlatform.buildRustPackage {
   pname = "agentos-model-gateway";

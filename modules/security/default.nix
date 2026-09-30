@@ -18,22 +18,44 @@ in
     allowedEgressDomains = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
-        # LLM APIs
-        "api.anthropic.com"
-        "api.openai.com"
-        "generativelanguage.googleapis.com"
-        "api.groq.com"
+        # LLM APIs used by the pre-installed agents
+        "anthropic.com"
+        "claude.ai"
+        "openai.com"
+        "chatgpt.com"
+        "googleapis.com"
+        "aliyuncs.com"
+        "qwen.ai"
+        "ampcode.com"
+        "cursor.sh"
+        "cursor.com"
+        "githubcopilot.com"
+        "factory.ai"
         "openrouter.ai"
-        # Package managers
+        "groq.com"
+        # Source hosting / package registries
         "github.com"
-        "registry.npmjs.org"
+        "githubusercontent.com"
+        "npmjs.org"
         "pypi.org"
+        "pythonhosted.org"
         "crates.io"
-        "repo1.maven.org"
+        "maven.org"
+        # NixOS itself (binary cache, channels, auto-upgrade)
+        "nixos.org"
         # Search
-        "api.tavily.com"
+        "tavily.com"
       ];
-      description = "Domains agents are allowed to reach";
+      description = ''
+        Domains (including their subdomains) that the host may reach when
+        defaultEgress is "deny".
+      '';
+    };
+
+    upstreamDNS = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "1.1.1.1" "8.8.8.8" ];
+      description = "Upstream resolvers used by the local dnsmasq";
     };
 
     enableAuditLog = lib.mkOption {
@@ -53,10 +75,11 @@ in
     # ─ AppArmor ───────────────────────────────────────────────────────
     security.apparmor = {
       enable = true;
-      killUnconfinedConfinement = true;
+      killUnconfinedConfinables = true;
     };
 
     # ─ Audit framework ────────────────────────────────────────────────
+    security.auditd.enable = true;
     security.audit = {
       enable = true;
       rules = [
@@ -86,22 +109,26 @@ in
     };
 
     # ─ DNS-based egress filtering ─────────────────────────────────────
-    # Only resolve allowed domains via local resolver with filtering
+    # All DNS goes through a local dnsmasq. With defaultEgress = "deny" it
+    # only forwards queries for allowed domains (and their subdomains),
+    # answers NXDOMAIN for everything else, and adds every resolved address
+    # to the `agentos-egress` ipset. The firewall then only lets outbound
+    # traffic through to addresses in that set.
     services.dnsmasq = {
       enable = true;
+      resolveLocalQueries = true;
       settings = {
         no-resolv = true;
-        server = [ "1.1.1.1" "8.8.8.8" ];
-        listen-address = "127.0.0.1";
+        listen-address = [ "127.0.0.1" ];
         bind-interfaces = true;
-      } // lib.optionalAttrs (cfg.defaultEgress == "deny") (
-        builtins.listToAttrs (
-          map (domain: {
-            name = "address";
-            value = "/${domain}/1.1.1.1";
-          }) cfg.allowedEgressDomains
-        )
-      );
+        server =
+          if cfg.defaultEgress == "deny"
+          then lib.concatMap (d: map (up: "/${d}/${up}") cfg.upstreamDNS) cfg.allowedEgressDomains
+          else cfg.upstreamDNS;
+      } // lib.optionalAttrs (cfg.defaultEgress == "deny") {
+        address = "/#/";
+        ipset = "/${lib.concatStringsSep "/" cfg.allowedEgressDomains}/agentos-egress";
+      };
     };
 
     # ─ iptables egress policy ────────────────────────────────────────
@@ -113,23 +140,42 @@ in
       # Allow SSH for admin access (change in production)
       allowedTCPPorts = [ 22 ];
 
+      extraPackages = [ pkgs.ipset ];
+
       extraCommands = lib.optionalString (cfg.defaultEgress == "deny") ''
-        # Allow established connections
-        iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-        # Allow loopback
-        iptables -A OUTPUT -o lo -j ACCEPT
-        # Allow DNS to local dnsmasq
-        iptables -A OUTPUT -p udp --dport 53 -d 127.0.0.1 -j ACCEPT
-        # Allow egress to approved domains (resolved by dnsmasq)
-      '' + lib.concatStrings (
-        map (domain: ''
-          for ip in $(dig +short ${domain} 2>/dev/null); do
-            iptables -A OUTPUT -d "$ip" -j ACCEPT
-          done
-        '') cfg.allowedEgressDomains
-      ) + lib.optionalString (cfg.defaultEgress == "deny") ''
-        # Default deny egress
-        iptables -P OUTPUT DROP
+        ipset create agentos-egress hash:ip family inet -exist
+
+        for ipt in iptables ip6tables; do
+          $ipt -D OUTPUT -j agentos-egress 2>/dev/null || true
+          $ipt -F agentos-egress 2>/dev/null || $ipt -N agentos-egress
+          $ipt -A OUTPUT -j agentos-egress
+          $ipt -A agentos-egress -o lo -j RETURN
+          $ipt -A agentos-egress -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+          # dnsmasq may talk to the upstream resolvers
+          $ipt -A agentos-egress -p udp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
+          $ipt -A agentos-egress -p tcp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
+          # time sync
+          $ipt -A agentos-egress -p udp --dport 123 -j RETURN
+        done
+        # DHCP
+        iptables -A agentos-egress -p udp --dport 67:68 -j RETURN
+        ip6tables -A agentos-egress -p udp --dport 546:547 -j RETURN
+        ip6tables -A agentos-egress -p ipv6-icmp -j RETURN
+        # Addresses resolved for allowed domains
+        iptables -A agentos-egress -m set --match-set agentos-egress dst -j RETURN
+
+        for ipt in iptables ip6tables; do
+          $ipt -A agentos-egress -m limit --limit 5/min -j LOG --log-prefix "agentos-egress-deny: "
+          $ipt -A agentos-egress -j REJECT
+        done
+      '';
+
+      extraStopCommands = lib.optionalString (cfg.defaultEgress == "deny") ''
+        for ipt in iptables ip6tables; do
+          $ipt -D OUTPUT -j agentos-egress 2>/dev/null || true
+          $ipt -F agentos-egress 2>/dev/null || true
+          $ipt -X agentos-egress 2>/dev/null || true
+        done
       '';
     };
 

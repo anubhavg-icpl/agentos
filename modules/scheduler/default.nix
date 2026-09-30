@@ -78,10 +78,10 @@ in
     '';
 
     # ─ Scheduler service ─────────────────────────────────────────────
-    systemd.services.agentos-scheduler = {
+    systemd.services.agentos-scheduler = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Task Scheduler";
-      after = [ "network.target" "redis.service" "agentos-daemon.service" ];
-      wants = [ "redis.service" "agentos-daemon.service" ];
+      after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
+      wants = [ "redis-agentos.service" "agentos-daemon.service" ];
       wantedBy = [ "multi-user.target" ];
 
       environment = {

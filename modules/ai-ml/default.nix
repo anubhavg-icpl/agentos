@@ -33,8 +33,7 @@ let cfg = config.agentos.ai-ml; in
       python311Packages.datasets
       python311Packages.jupyter
       python311Packages.jupyterlab
-      whisper-cpp
-      stable-diffusion-cpp
+      openai-whisper-cpp
       cmake  # for building models from source
     ];
   };

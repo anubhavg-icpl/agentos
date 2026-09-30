@@ -71,6 +71,7 @@
           modules = sharedModules ++ [
             ./nixos/hosts/agentos
             ./nixos/hosts/agentos/hardware.nix
+            ./nixos/hosts/agentos/disko.nix
           ];
         };
 
@@ -90,15 +91,27 @@
         let pkgs = pkgsFor system; in
         (import ./agents/default.nix { inherit pkgs lib; })
         // {
-          default = self.packages.${system}.agentos-installer;
-
+          default = self.packages.${system}.cli;
+        }
+        # The OS images target x86_64 (several pre-installed toolchains are
+        # x86_64-only); agent packages are available on both systems.
+        // lib.optionalAttrs (system == "x86_64-linux") {
           # Build the ISO image
           iso-image = self.nixosConfigurations.agentos-iso.config.system.build.isoImage;
 
           # Build a QCOW2 VM image
           vm-image = nixos-generators.nixosGenerate {
-            inherit pkgs;
-            modules = sharedModules ++ [ ./nixos/hosts/agentos ];
+            inherit system;
+            specialArgs = { inherit inputs; };
+            modules = sharedModules ++ [
+              ./nixos/hosts/agentos
+              ({ lib, ... }: {
+                # The qcow image has a single ext4 root and boots with GRUB
+                boot.loader.systemd-boot.enable = lib.mkForce false;
+                boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
+                agentos.storage.filesystem = lib.mkForce "ext4";
+              })
+            ];
             format = "qcow";
           };
         });

@@ -14,7 +14,7 @@ let cfg = config.agentos.cloud-tools; in
       google-cloud-sdk
       azure-cli
       cloudflared
-      vercel
+      nodePackages.vercel
       flyctl
       doctl
       scaleway-cli

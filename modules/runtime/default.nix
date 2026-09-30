@@ -63,7 +63,9 @@ in
 
     # ─ Agent workspace directories ───────────────────────────────────
     systemd.tmpfiles.rules = [
-      "d ${toString cfg.workspaceRoot} 0755 agentos agentos"
+      # group-writable so members of the agentos group (e.g. admin) can
+      # create workspaces with `agentos workspace create`
+      "d ${toString cfg.workspaceRoot} 2775 agentos agentos"
       "d /var/lib/agentos/state 0755 agentos agentos"
       "d /var/lib/agentos/logs 0755 agentos agentos"
       "d /var/lib/agentos/cache 0755 agentos agentos"
@@ -82,7 +84,7 @@ in
     users.groups.agentos = { };
 
     # ─ AgentOS daemon (manages agent lifecycle) ──────────────────────
-    systemd.services.agentos-daemon = {
+    systemd.services.agentos-daemon = lib.mkIf config.agentos.daemons.enable {
       description = "AgentOS Agent Daemon";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -100,7 +102,7 @@ in
         PrivateTmp = true;
         ProtectSystem = "strict";
         ProtectHome = true;
-        ReadWritePaths = [ "/var/lib/agentos" toString cfg.workspaceRoot ];
+        ReadWritePaths = [ "/var/lib/agentos" (toString cfg.workspaceRoot) ];
         RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
         LockPersonality = true;
         MemoryDenyWriteExecute = false;  # agents need JIT
@@ -110,7 +112,7 @@ in
     };
 
     # ─ MCP Gateway (routes tool calls to agents) ─────────────────────
-    systemd.services.agentos-mcp-gateway = lib.mkIf cfg.enableMCPGateway {
+    systemd.services.agentos-mcp-gateway = lib.mkIf (cfg.enableMCPGateway && config.agentos.daemons.enable) {
       description = "AgentOS MCP Gateway";
       after = [ "network.target" "agentos-daemon.service" ];
       wants = [ "agentos-daemon.service" ];
@@ -151,9 +153,10 @@ in
 
       # Make agent management tools available system-wide
       systemPackages = with pkgs; [
+        agentos.cli
+      ] ++ lib.optionals config.agentos.daemons.enable [
         agentos.daemon
         agentos.mcp-gateway
-        agentos.cli
       ] ++ [
         git
         jq

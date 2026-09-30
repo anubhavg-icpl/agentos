@@ -6,10 +6,8 @@
 { config, pkgs, lib, inputs, ... }:
 
 {
-  imports = [
-    ./hardware.nix
-    ./disko.nix
-  ];
+  # Disk layout (disko.nix) and hardware.nix are added per target in
+  # flake.nix, so the same host config can also be built as a VM image.
 
   # ── Bootloader ─────────────────────────────────────────────────────
   boot.loader.systemd-boot.enable = true;
@@ -46,11 +44,15 @@
   users.users.admin = {
     isNormalUser = true;
     extraGroups = [ "wheel" "containerd" "agentos" ];
+    # agentos-install writes the key given at install time to
+    # ~/.ssh/authorized_keys; keys can also be pinned here.
     openssh.authorizedKeys.keys = [
-      # Add your SSH public key here
       # "ssh-ed25519 AAAA..."
     ];
   };
+
+  # admin has no password (SSH key login only), so sudo can't prompt for one
+  security.sudo.wheelNeedsPassword = false;
 
   # ── Nix settings ──────────────────────────────────────────────────
   nix = {
@@ -188,8 +190,6 @@
 
     # ── AgentOS internal tools ───────────────────────────────────────
     agentos.cli
-    agentos.daemon
-    agentos.mcp-gateway
 
     # ── Language runtimes ────────────────────────────────────────────
     python311
@@ -295,7 +295,7 @@
     enable = true;
     allowReboot = false;
     dates = "04:00";
-    flake = "github:yourorg/agentos";
+    flake = "github:anubhavg-icpl/agentos";
   };
 
   system.stateVersion = "24.11";

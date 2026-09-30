@@ -1,7 +1,11 @@
 # AgentOS - Disk layout via disko
-# btrfs root + FAT32 EFI partition
+# btrfs root (with subvolumes) + FAT32 EFI partition.
+# disko generates the fileSystems entries for these mounts.
 { lib, ... }:
 
+let
+  mountOptions = [ "compress=zstd" "noatime" ];
+in
 {
   disko.devices = {
     disk.main = {
@@ -17,28 +21,22 @@
               type = "filesystem";
               format = "vfat";
               mountpoint = "/boot";
-              label = "BOOT";
+              mountOptions = [ "umask=0077" ];
+              extraArgs = [ "-n" "BOOT" ];
             };
           };
           root = {
             size = "100%";
             content = {
-              type = "filesystem";
-              format = "btrfs";
-              mountpoint = "/";
-              label = "agentos-root";
-              extraArgs = [ "-f" ];
+              type = "btrfs";
+              extraArgs = [ "-f" "-L" "agentos-root" ];
               subvolumes = {
-                "@root" = { mountpoint = "/"; };
-                "@nix" = { mountpoint = "/nix"; };
-                "@var" = { mountpoint = "/var"; };
-                "@var-lib-agentos" = {
-                  mountpoint = "/var/lib/agentos";
-                  extraArgs = [ "--compression=zstd" ];
-                };
-                "@snapshots" = {
-                  mountpoint = "/var/lib/agentos/snapshots";
-                };
+                "@root" = { mountpoint = "/"; inherit mountOptions; };
+                "@nix" = { mountpoint = "/nix"; inherit mountOptions; };
+                "@var" = { mountpoint = "/var"; inherit mountOptions; };
+                "@var-lib-agentos" = { mountpoint = "/var/lib/agentos"; inherit mountOptions; };
+                "@workspaces" = { mountpoint = "/var/lib/agentos/workspaces"; inherit mountOptions; };
+                "@snapshots" = { mountpoint = "/var/lib/agentos/snapshots"; inherit mountOptions; };
               };
             };
           };

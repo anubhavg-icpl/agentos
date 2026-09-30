@@ -36,15 +36,16 @@ in
 
   config = lib.mkIf cfg.enable {
     # ─ btrfs snapshot management ──────────────────────────────────────
-    services.btrbk = lib.mkIf (cfg.filesystem == "btrfs") {
-      enable = true;
-      instances."agentos-workspaces" = {
-        onCalendar = cfg.snapshotInterval;
-        settings = {
-          timestamp_format = "long";
-          snapshot_preserve = "${toString cfg.snapshotRetention}h 7d 4w";
-          snapshot_dir = "/var/lib/agentos/snapshots";
-          subvolume."/var/lib/agentos/workspaces" = { };
+    # The workspace root must be a btrfs subvolume (see disko.nix).
+    services.btrbk.instances."agentos-workspaces" = lib.mkIf (cfg.filesystem == "btrfs") {
+      onCalendar = cfg.snapshotInterval;
+      settings = {
+        timestamp_format = "long";
+        snapshot_preserve_min = "2h";
+        snapshot_preserve = "${toString cfg.snapshotRetention}h 7d 4w";
+        volume."/var/lib/agentos" = {
+          snapshot_dir = "snapshots";
+          subvolume = "workspaces";
         };
       };
     };
@@ -69,8 +70,7 @@ in
             fi
           done
 
-          # Remove snapshots older than retention period
-          ${pkgs.findutils}/bin/find /var/lib/agentos/snapshots -maxdepth 1 -type d -mtime +${toString cfg.snapshotRetention} -exec rm -rf {} \;
+          # Snapshot retention is handled by btrbk (snapshot_preserve).
         '');
       };
     };
@@ -89,7 +89,8 @@ in
       startAt = "daily";
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.btrfs-dedupe}/bin/duperemove -drh /var/lib/agentos/workspaces || true";
+        ExecStart = "${pkgs.duperemove}/bin/duperemove -drh /var/lib/agentos/workspaces";
+        SuccessExitStatus = [ 0 1 ];
       };
     };
   };

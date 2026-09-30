@@ -20,7 +20,7 @@ max_session_usd = 100.0
 [agents]
 # Which agents are allowed in this workspace?
 # Add agent names to enable them
-# allowed = ["claude-code", "aider", "swe-agent"]
+# allowed = ["claude-code", "aider", "codex"]
 allowed = []
 
 [git]
