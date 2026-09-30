@@ -8,6 +8,7 @@
 { config, pkgs, lib, ... }:
 
 let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
   cfg = config.agentos.databases;
 in
 {
@@ -105,7 +106,7 @@ in
     };
 
     # ─ Database CLI tools ────────────────────────────────────────────
-    environment.systemPackages = lib.flatten [
+    environment.systemPackages = avail (lib.flatten [
       (lib.optionals cfg.enablePostgres (with pkgs; [
         pgcli                    # nice CLI for postgres
         pgcenter                 # monitoring
@@ -154,6 +155,6 @@ in
           *) echo "Usage: agentos-db <status|connect>" ;;
         esac
       '')
-    ];
+    ]);
   };
 }

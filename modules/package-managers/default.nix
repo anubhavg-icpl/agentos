@@ -2,14 +2,17 @@
 # Every package manager pre-installed so agents can install deps for any project
 { config, pkgs, lib, ... }:
 
-let cfg = config.agentos.package-managers; in
+let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
+  cfg = config.agentos.package-managers;
+in
 {
   options.agentos.package-managers = {
     enable = lib.mkEnableOption "AgentOS package managers";
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = avail (with pkgs; [
       # Python
       python3Packages.pip
       pipx
@@ -41,6 +44,6 @@ let cfg = config.agentos.package-managers; in
       nix
       flatpak
       appimage-run
-    ];
+    ]);
   };
 }

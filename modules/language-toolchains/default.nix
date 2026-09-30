@@ -13,6 +13,7 @@
 { config, pkgs, lib, ... }:
 
 let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
   cfg = config.agentos.language-toolchains;
 in
 {
@@ -27,7 +28,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = lib.flatten [
+    environment.systemPackages = avail (lib.flatten [
       # ════════════════════════════════════════════════════════════════
       # PYTHON
       # ════════════════════════════════════════════════════════════════
@@ -224,7 +225,7 @@ in
         bashInteractive zsh fish nushell
         shellcheck shfmt bash-language-server
       ]))
-    ] ++ [
+    ]) ++ [
       # ── Language versions command ──────────────────────────────────
       (pkgs.writeShellScriptBin "agentos-langs" ''
         #!/usr/bin/env bash
