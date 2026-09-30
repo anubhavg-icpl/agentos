@@ -194,14 +194,20 @@ pkgs.testers.runNixOSTest {
         spent = budget["agents"][agent_id]["usd"]
         assert abs(spent - 4.0) < 1e-6, budget
         assert budget["agents"][agent_id]["limit_usd"] == 3.0, budget
-        # further requests with the agent's credentials are refused before
-        # reaching the provider
+        # the agent's token was revoked when the daemon reaped it, so its
+        # credentials no longer work at all
         base = machine.succeed("cat /var/lib/agentos/workspaces/demo/base-url.txt").strip()
         assert base.startswith(f"http://127.0.0.1:8080/agent/{agent_id}:"), base
-        code = machine.succeed(
-            f"curl -s -o /dev/null -w '%{{http_code}}' -H 'content-type: application/json' "
-            f"-d '{{}}' {base}/v1/messages"
-        )
+        post = ("curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' "
+                "-d '{}' ")
+        assert machine.succeed(post + f"{base}/v1/messages") == "401"
+        # with a valid token the agent is still over budget: refused before
+        # reaching the provider
+        token = "e2e-" + "0" * 60
+        digest = machine.succeed(f"printf %s {token} | sha256sum | cut -d' ' -f1").strip()
+        admin("curl -fsS --unix-socket /run/agentos-gateway/admin.sock -X PUT "
+              f"-d '{{\"token_sha256\": \"{digest}\"}}' http://x/_agentos/agents/{agent_id}")
+        code = machine.succeed(post + f"http://127.0.0.1:8080/agent/{agent_id}:{token}/anthropic/v1/messages")
         assert code == "402", code
         # without the token (or with a made-up id) the gateway does not serve
         # the request at all, so budgets cannot be sidestepped
