@@ -28,7 +28,7 @@ modules/          NixOS modules (27 modules)
   security/       AppArmor, firewall, audit
   context/        Qdrant vector memory
   ...
-agents/           22 coding agent packages
+agents/           15 coding agent packages
 nixos/
   hosts/          Host configurations (bare metal + ISO)
   packages/       Internal Rust binaries

@@ -5,6 +5,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+- The flake now evaluates. `nixosConfigurations.agentos`, the ISO, the VM image and `nix flake check` all pass. Previously five modules had syntax errors and many options and packages didn't exist in nixpkgs 24.11.
+- Agents are built from nixpkgs instead of wrappers that ran `npx`, `go run …@latest` or `curl | bash` on every invocation, or used placeholder source hashes.
+- Egress allowlist: dnsmasq resolved every allowed domain to 1.1.1.1. It now forwards only allowed domains, fills an ipset, and iptables rejects everything else, in its own chain.
+- Security: removed the live ISO's fixed `agentos` password, the hardcoded Grafana password, public firewall openings for Redis, Qdrant, nix-serve and the model gateway, and git's `safe.directory = *`.
+- OTel collector and Tempo both bound :4317; Tempo retention was hours instead of days.
+- disko layout, which conflicted with `hardware.nix` and used nonexistent options; added a `@workspaces` subvolume for btrbk.
+- Installer uses `disko-install`, supports NVMe disks, and installs an SSH key for `admin`.
+- `agentos spawn` argument parsing; `agentos workspace rm` path traversal.
+- MCP registry: 21 entries pointed at npm packages that don't exist. They are fixed where a real package exists and removed otherwise. `agentos-mcp` / `agentos-tools` jq and write-to-/etc bugs.
+- sops secrets no longer break activation before the secrets file exists, and `agentos-secrets set` no longer writes plaintext.
+
+### Changed
+- 15 agents instead of 22. Devin, Roo Code, SWE-Agent, GPT-Engineer, Devika, AutoGPT and smol-developer had no buildable package.
+- The service daemons have no source yet. Their units are gated behind `agentos.daemons.enable` (default off).
+- Docs describe what is implemented; see docs/STATUS.md.
+
 ## [0.2.0] - 2026-08-05
 
 ### Added
