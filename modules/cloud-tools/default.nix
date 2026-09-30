@@ -2,14 +2,17 @@
 # CLI tools for every major cloud provider
 { config, pkgs, lib, ... }:
 
-let cfg = config.agentos.cloud-tools; in
+let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
+  cfg = config.agentos.cloud-tools;
+in
 {
   options.agentos.cloud-tools = {
     enable = lib.mkEnableOption "AgentOS cloud CLI tools";
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = avail (with pkgs; [
       awscli2
       google-cloud-sdk
       azure-cli
@@ -21,6 +24,6 @@ let cfg = config.agentos.cloud-tools; in
       talosctl
       k3s
       k3sup
-    ];
+    ]);
   };
 }

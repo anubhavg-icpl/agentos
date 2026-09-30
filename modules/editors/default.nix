@@ -2,20 +2,23 @@
 # Pre-configured editors with agent-friendly defaults
 { config, pkgs, lib, ... }:
 
-let cfg = config.agentos.editors; in
+let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
+  cfg = config.agentos.editors;
+in
 {
   options.agentos.editors = {
     enable = lib.mkEnableOption "AgentOS pre-configured editors";
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = avail (with pkgs; [
       neovim
       helix
       micro
       vim
       tree-sitter
-    ];
+    ]);
 
     # Neovim with default config
     programs.neovim = {

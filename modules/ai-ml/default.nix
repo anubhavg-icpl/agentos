@@ -2,7 +2,10 @@
 # Local model inference and ML tooling
 { config, pkgs, lib, ... }:
 
-let cfg = config.agentos.ai-ml; in
+let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
+  cfg = config.agentos.ai-ml;
+in
 {
   options.agentos.ai-ml = {
     enable = lib.mkEnableOption "AgentOS AI/ML tools";
@@ -35,7 +38,7 @@ let cfg = config.agentos.ai-ml; in
       loadModels = cfg.ollamaModels;
     };
 
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = avail (with pkgs; [
       # A Python with the ML stack importable (`python3 -c "import torch"`)
       (lib.lowPrio (python3.withPackages (ps: with ps; [
         torch
@@ -48,6 +51,6 @@ let cfg = config.agentos.ai-ml; in
       ])))
       whisper-cpp
       cmake  # for building models from source
-    ] ++ lib.optional cfg.enableLlamaCpp llama-cpp;
+    ] ++ lib.optional cfg.enableLlamaCpp llama-cpp);
   };
 }

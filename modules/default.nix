@@ -41,6 +41,7 @@
     ./git-automation
     ./provisioning
     ./editors
+    ./desktop
 
     # Automation
     ./scheduler

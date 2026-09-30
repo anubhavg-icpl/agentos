@@ -8,6 +8,7 @@
 { config, pkgs, lib, ... }:
 
 let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
   cfg = config.agentos.browser-tools;
 in
 {
@@ -28,7 +29,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = avail (with pkgs; [
       # Headless browsers
       chromium         # headless mode: chromium --headless --dump-dom
       firefox          # headless: firefox --headless
@@ -120,6 +121,6 @@ in
             ;;
         esac
       '')
-    ];
+    ]);
   };
 }

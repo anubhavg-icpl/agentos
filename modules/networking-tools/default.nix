@@ -2,14 +2,17 @@
 # Network diagnostics and analysis
 { config, pkgs, lib, ... }:
 
-let cfg = config.agentos.networking-tools; in
+let
+  avail = import ../lib/available.nix { inherit pkgs lib; };
+  cfg = config.agentos.networking-tools;
+in
 {
   options.agentos.networking-tools = {
     enable = lib.mkEnableOption "AgentOS networking tools";
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = avail (with pkgs; [
       nmap
       tcpdump
       wireshark-cli
@@ -27,6 +30,6 @@ let cfg = config.agentos.networking-tools; in
       httpie
       mitmproxy
       charles
-    ];
+    ]);
   };
 }

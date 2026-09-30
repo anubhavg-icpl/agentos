@@ -97,7 +97,7 @@
   };
 
   # ── Disable GUI ───────────────────────────────────────────────────
-  services.xserver.enable = false;
+  services.xserver.enable = lib.mkDefault false;
 
   system.stateVersion = "24.11";
 }
