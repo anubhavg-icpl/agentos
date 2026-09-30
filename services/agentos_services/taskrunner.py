@@ -1,0 +1,362 @@
+"""Root helper that runs one orchestrator task: agentos-task-runner <task-id>.
+
+Started as agentos-task-runner@<task-id>.service. The orchestrator (user
+agentos) may start that unit and nothing else as root, so this program is
+the only thing an orchestrator compromise can reach. It therefore trusts
+nothing in the task record:
+
+  * the record is re-validated (agent known to /etc/agentos/runtime.json,
+    workspace below the workspace root, prompt one argv element);
+  * the command comes from the root-owned services.toml (task_commands),
+    never from the record;
+  * git runs as the agent user, not as root (repositories are writable by
+    the agent, so their hooks and config must not run with root's rights);
+  * the log file is created O_EXCL|O_NOFOLLOW in a directory the
+    orchestrator can write to.
+
+It then starts the agent in the same sandbox as `agentos spawn` (a
+transient agentos-agent-<id>.service, see cli.nix cmd_spawn: read-only
+system, hidden homes, workspace-only writes, resource limits), registers it
+with the daemon so budgets, `agentos list` and auto-shutdown cover it,
+captures its output in tasks_dir/<id>.log, and records the result.
+"""
+
+import argparse
+import grp
+import json
+import logging
+import os
+import pwd
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.request
+
+from . import config as configmod
+from . import tasks as T
+from .store import Store, connect
+from .unixapi import call
+
+log = logging.getLogger("agentos.taskrunner")
+
+KILL_LOOKUP_SEC = 3
+
+
+class RunnerError(Exception):
+    pass
+
+
+class TaskRunner:
+    def __init__(self, cfg, runtime, tasks, clock=time.time, systemd_run="systemd-run",
+                 systemctl="systemctl", drop_privileges=True):
+        self.cfg = cfg
+        self.opts = T.settings(cfg, "orchestrator")
+        self.runtime = runtime
+        self.tasks = tasks
+        self.clock = clock
+        self.systemd_run = systemd_run
+        self.systemctl = systemctl
+        self.drop = drop_privileges
+        self.state_dir = runtime.get("state_dir") or cfg["daemon"]["state_dir"]
+        self.cancel = threading.Event()
+        self.proc = None
+
+    # ── helpers ────────────────────────────────────────────────────────
+    def stop_unit(self, unit):
+        subprocess.run([self.systemctl, "stop", unit], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       check=False, timeout=60)
+
+    def _agent_ids(self):
+        if not self.drop:
+            return {}
+        pw = pwd.getpwnam(self.runtime["agent_user"])
+        return {"user": pw.pw_uid, "group": pw.pw_gid, "extra_groups": [pw.pw_gid]}
+
+    def git(self, args, cwd, check=True):
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": self.runtime["agent_home"], "GIT_TERMINAL_PROMPT": "0", "LANG": "C.UTF-8"}
+        res = subprocess.run(["git", *args], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
+                             **self._agent_ids())
+        if check and res.returncode != 0:
+            raise RunnerError("git %s failed: %s" % (" ".join(args[:2]), (res.stderr or "").strip()[:300]))
+        return res
+
+    def prepare_workspace(self, task):
+        """Create the agent's branch. Returns (working dir, branch, writable paths)."""
+        ws, branch = task["workspace"], "agent/" + task["id"]
+        if self.git(["rev-parse", "--git-dir"], ws, check=False).returncode != 0:
+            self.git(["init", "--quiet"], ws)
+        if task.get("isolate"):
+            # Concurrent agents cannot share one working tree: give this one
+            # its own worktree (next to the workspace, so still under the root)
+            if self.git(["rev-parse", "--verify", "--quiet", "HEAD"], ws, check=False).returncode != 0:
+                self.git(["-c", "user.name=AgentOS", "-c", "user.email=agentos@localhost",
+                          "commit", "--quiet", "--allow-empty", "-m", "Initialize workspace"], ws)
+            wt = os.path.join(os.path.dirname(ws), "%s.%s" % (os.path.basename(ws), task["id"]))
+            self.git(["worktree", "add", "--quiet", "-b", branch, wt], ws)
+            return wt, branch, [wt, os.path.join(ws, ".git")]
+        if self.git(["checkout", "--quiet", "-b", branch], ws, check=False).returncode != 0:
+            current = self.git(["branch", "--show-current"], ws, check=False).stdout.strip()
+            log.warning("could not create %s; staying on %r", branch, current)
+            branch = current
+        return ws, branch, [ws]
+
+    def register(self, task, unit, command, branch, workdir):
+        """Write the daemon's registry entry (same shape as `agentos spawn`)."""
+        state = {
+            "id": task["id"], "agent": task["agent"], "command": command, "workspace": workdir,
+            "branch": branch, "user": self.runtime["agent_user"], "operator": "agentos-orchestrator",
+            "pid": os.getpid(), "sandboxed": True, "started_at": int(self.clock()), "status": "running",
+            "unit": unit, "task": task["id"],
+        }
+        os.makedirs(self.state_dir, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=self.state_dir, prefix=".%s." % task["id"])
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f, indent=2, sort_keys=True)
+        os.chmod(tmp, 0o664)
+        os.replace(tmp, os.path.join(self.state_dir, task["id"] + ".json"))
+
+    def open_log(self, task_id):
+        directory = self.opts["tasks_dir"]
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, task_id + ".log")
+        try:
+            os.unlink(path)  # a stale file or a planted symlink; never follow it
+        except FileNotFoundError:
+            pass
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+        try:
+            os.fchown(fd, -1, grp.getgrnam("agentos").gr_gid)
+        except (KeyError, PermissionError):
+            pass
+        return fd, path
+
+    def agent_env(self, task, workdir, branch):
+        env = {
+            "AGENTOS_AGENT_ID": task["id"],
+            "AGENTOS_TASK_ID": task["id"],
+            "AGENTOS_WORKSPACE": workdir,
+            "AGENTOS_BRANCH": branch,
+        }
+        if not self.runtime.get("gateway_enabled"):
+            if task.get("budget_usd"):
+                raise RunnerError("a task budget needs the model gateway (agentos.networking.enable)")
+            return env
+        base = self.runtime["gateway_url"]
+        try:
+            with urllib.request.urlopen(base + "/_agentos/health", timeout=5) as resp:
+                health = json.load(resp)
+        except (OSError, ValueError) as exc:
+            raise RunnerError("model gateway is not responding at %s: %s" % (base, exc))
+        env["ANTHROPIC_BASE_URL"] = "%s/agent/%s/anthropic" % (base, task["id"])
+        env["OPENAI_BASE_URL"] = "%s/agent/%s/openai/v1" % (base, task["id"])
+        for provider in ("anthropic", "openai"):
+            if health.get("providers", {}).get(provider, {}).get("managed_key"):
+                env[provider.upper() + "_API_KEY"] = configmod.MANAGED_KEY
+        if task.get("budget_usd"):
+            status, body = call(self.runtime["admin_socket"], "PUT", "/_agentos/budget/" + task["id"],
+                                {"daily_usd": task["budget_usd"]})
+            if status != 200:
+                raise RunnerError("could not set the task budget: %s" % body)
+        return env
+
+    def sandbox_args(self, unit, workdir, writable, env, timeout):
+        """systemd-run options; keep in step with cmd_spawn in cli.nix."""
+        limits = self.runtime.get("limits") or {}
+        ncpu = os.cpu_count() or 1
+        user = self.runtime["agent_user"]
+        home = self.runtime["agent_home"]
+        args = [
+            "--quiet", "--collect", "--wait", "--pipe",
+            "--unit=" + unit[:-len(".service")],
+            "--uid=" + user, "--gid=" + user,
+            "--working-directory=" + workdir,
+            "-p", "MemoryMax=%dM" % limits.get("memory_mb", 4096),
+            "-p", "CPUQuota=%d%%" % (limits.get("cpu_percent", 100) * ncpu),
+            "-p", "TasksMax=%d" % limits.get("tasks_max", 1024),
+            "-p", "NoNewPrivileges=yes",
+            "-p", "PrivateTmp=yes",
+            "-p", "ProtectSystem=strict",
+            "-p", "ProtectHome=yes",
+            "-p", "ReadWritePaths=%s %s" % (" ".join(writable), home),
+            "-p", "ProtectKernelTunables=yes",
+            "-p", "ProtectKernelModules=yes",
+            "-p", "ProtectControlGroups=yes",
+            "-p", "RestrictSUIDSGID=yes",
+            "-p", "LockPersonality=yes",
+            "-p", "UMask=0002",
+            # Backstop in case this helper dies before enforcing the timeout
+            "-p", "RuntimeMaxSec=%d" % (timeout + 60),
+            "--setenv=HOME=" + home,
+            "--setenv=USER=" + user,
+            "--setenv=PATH=" + self.opts["agent_path"],
+            "--setenv=TERM=dumb",
+            "--setenv=LANG=C.UTF-8",
+        ]
+        args += ["--setenv=%s=%s" % kv for kv in env.items()]
+        return args
+
+    def killed_reason(self, task_id):
+        """Why the daemon stopped this agent (budget), if it did."""
+        deadline = time.time() + KILL_LOOKUP_SEC
+        while True:
+            for path in (os.path.join(self.state_dir, task_id + ".json"),
+                         os.path.join(self.state_dir, "history", task_id + ".json")):
+                try:
+                    with open(path) as f:
+                        state = json.load(f)
+                except (OSError, ValueError):
+                    continue
+                if state.get("status") == "killed":
+                    return state.get("reason") or "stopped"
+            if time.time() >= deadline:
+                return None
+            time.sleep(0.25)
+
+    # ── the run ────────────────────────────────────────────────────────
+    def run(self, task_id):
+        """Run one task to completion. Returns a process exit code."""
+        task = self.tasks.get(task_id)
+        if task is None:
+            log.error("no such task: %s", task_id)
+            return 2
+        if task["status"] != T.RUNNING:
+            log.error("task %s is %s, not running; refusing to start it", task_id, task["status"])
+            return 3
+        try:
+            task = T.validate_record(task, self.runtime, self.opts)
+            template = T.task_command(self.opts, self.runtime, task["agent"])
+            argv = T.render_argv(template, task["resolved_prompt"], task["workspace"], task["id"])
+            exe = shutil.which(argv[0], path=self.opts["agent_path"])
+            if not exe:
+                raise RunnerError("%s is not installed" % argv[0])
+            argv[0] = exe
+        except (T.ValidationError, RunnerError) as exc:
+            self.tasks.finish(task_id, T.FAILED, error="rejected: %s" % exc)
+            log.error("task %s rejected: %s", task_id, exc)
+            return 1
+
+        unit = "agentos-agent-%s.service" % task_id
+        started = self.clock()
+        log_fd = None
+        try:
+            workdir, branch, writable = self.prepare_workspace(task)
+            env = self.agent_env(task, workdir, branch)
+            self.register(task, unit, os.path.basename(exe), branch, workdir)
+            log_fd, log_path = self.open_log(task_id)
+        except (RunnerError, OSError) as exc:
+            self.tasks.finish(task_id, T.FAILED, error="setup failed: %s" % exc)
+            log.error("task %s: setup failed: %s", task_id, exc)
+            return 1
+
+        cmd = [self.systemd_run] + self.sandbox_args(unit, workdir, writable, env, task["timeout_sec"]) + ["--"] + argv
+        tail = bytearray()
+        tail_max = int(self.opts["result_tail_kb"]) * 1024
+        cap = int(self.opts["log_cap_mb"]) * 1024 * 1024
+
+        try:
+            self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except OSError as exc:
+            os.close(log_fd)
+            self.tasks.finish(task_id, T.FAILED, error="could not start the sandbox: %s" % exc, branch=branch, log=log_path)
+            return 1
+
+        logf = os.fdopen(log_fd, "wb")
+
+        def pump():
+            written = 0
+            while True:
+                chunk = os.read(self.proc.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                tail.extend(chunk)
+                if len(tail) > tail_max:
+                    del tail[:len(tail) - tail_max]
+                if written < cap:
+                    part = chunk[:cap - written]
+                    logf.write(part)
+                    logf.flush()
+                    written += len(part)
+                    if written >= cap:
+                        logf.write(b"\n[agentos: log truncated at %d MB]\n" % (cap // (1024 * 1024)))
+                        logf.flush()
+
+        pumper = threading.Thread(target=pump, daemon=True)
+        pumper.start()
+
+        outcome = None
+        while True:
+            try:
+                rc = self.proc.wait(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                if self.cancel.is_set():
+                    outcome = T.CANCELLED
+                elif self.clock() - started > task["timeout_sec"]:
+                    outcome = T.TIMEOUT
+                if outcome:
+                    self.stop_unit(unit)
+                    try:
+                        rc = self.proc.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        self.proc.kill()
+                        rc = self.proc.wait()
+                    break
+        pumper.join(timeout=10)
+        logf.close()
+        if outcome is None and self.cancel.is_set():
+            outcome = T.CANCELLED  # the unit was stopped as part of a cancel
+
+        error = None
+        if outcome is None:
+            if rc == 0:
+                outcome = T.SUCCEEDED
+            else:
+                outcome = T.FAILED
+                reason = self.killed_reason(task_id)
+                error = "stopped: %s" % reason if reason else "exit code %d" % rc
+        elif outcome == T.TIMEOUT:
+            error = "timed out after %ds" % task["timeout_sec"]
+        else:
+            error = "cancelled by operator"
+        result = {
+            "exit_code": rc, "output_tail": tail.decode(errors="replace"), "branch": branch, "log": log_path,
+            "duration_sec": round(self.clock() - started, 1),
+            "worktree": workdir if workdir != task["workspace"] else None,
+        }
+        if error:
+            result["error"] = error
+        self.tasks.finish(task_id, outcome, **result)
+        try:
+            self.tasks.store.publish({"type": "task_finished", "task": task_id, "agent": task_id,
+                                      "status": outcome, "exit_code": rc})
+        except Exception as exc:  # Redis down must not lose the result on disk
+            log.warning("could not publish task_finished: %s", exc)
+        log.info("task %s %s (exit %s)", task_id, outcome, rc)
+        return 0 if outcome == T.SUCCEEDED else 1
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Run one AgentOS orchestrator task (root helper)")
+    parser.add_argument("task_id")
+    parser.add_argument("--config", default=None, help="services.toml path")
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr)
+    if not configmod.valid_agent_id(args.task_id):
+        print("invalid task id", file=sys.stderr)
+        return 2
+    cfg = configmod.load(args.config)
+    opts = T.settings(cfg, "orchestrator")
+    runtime = T.load_runtime(opts["runtime_file"])
+    runner = TaskRunner(cfg, runtime, T.TaskStore(Store(connect(cfg["redis"]["url"]))))
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: runner.cancel.set())
+    return runner.run(args.task_id)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

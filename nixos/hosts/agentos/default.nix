@@ -99,7 +99,6 @@
     };
     orchestration = {
       enable = true;
-      mode = "planner-worker";
       maxWorkers = 4;
     };
     mcp-registry = {
@@ -139,7 +138,6 @@
     };
     scheduler = {
       enable = true;
-      maxConcurrent = 4;
     };
     # Pre-installed toolchains (20+ languages, databases, dev tools)
     language-toolchains = {

@@ -2,222 +2,170 @@
 # AgentOS Scheduler Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Schedules agent tasks:
-#   - Cron-like scheduling for recurring agent tasks
-#   - Priority queues (high/normal/low)
-#   - Deadline-aware scheduling (run before a date)
-#   - Dependency chains (task B runs after task A completes)
-#   - Resource-aware (don't oversubscribe CPU/GPU)
-#   - Time-window scheduling (only run during off-hours)
+# Runs agent tasks on a calendar (services/agentos_services/scheduler.py):
+#   - schedules use systemd OnCalendar syntax, evaluated by
+#     `systemd-analyze calendar` (UTC unless the expression names a zone)
+#   - each firing submits a task (or a swarm) to the orchestrator, so
+#     concurrency, sandboxing, budgets and logs are the orchestrator's
+#   - persistent schedules run once at start-up if a run was missed
+#   - declare schedules here, or manage them at runtime with `agentos-schedule`
 #
 { config, pkgs, lib, ... }:
 
 let
   cfg = config.agentos.scheduler;
+  rt = config.agentos.runtime;
+
+  scheduleType = lib.types.submodule {
+    options = {
+      calendar = lib.mkOption {
+        type = lib.types.str;
+        example = "Mon..Fri 09:00";
+        description = "systemd OnCalendar expression (check with `systemd-analyze calendar`)";
+      };
+      agent = lib.mkOption {
+        type = lib.types.str;
+        example = "claude";
+        description = "Agent to run; it needs an entry in agentos.orchestration.taskCommands";
+      };
+      workspace = lib.mkOption {
+        type = lib.types.str;
+        description = "Workspace name or path under agentos.runtime.workspaceRoot";
+      };
+      prompt = lib.mkOption {
+        type = lib.types.str;
+        description = "Prompt given to the agent";
+      };
+      budgetUSD = lib.mkOption {
+        type = lib.types.nullOr (lib.types.either lib.types.int lib.types.float);
+        default = null;
+        description = "Daily budget for each task's agent (null: the gateway default)";
+      };
+      timeoutSec = lib.mkOption {
+        type = lib.types.nullOr lib.types.ints.positive;
+        default = null;
+        description = "Task timeout (null: agentos.orchestration.taskTimeoutSec)";
+      };
+      swarm = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 1;
+        description = "Run this many agents in parallel, each on its own branch";
+      };
+      persistent = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Run once when the scheduler starts if a run came due while it was down";
+      };
+      allowOverlap = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Start a new run even if the previous one is still queued or running";
+      };
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether this schedule is active";
+      };
+    };
+  };
+
+  toSettings = name: s: {
+    inherit name;
+    inherit (s) calendar agent workspace prompt swarm persistent;
+    allow_overlap = s.allowOverlap;
+    enabled = s.enable;
+  }
+  // lib.optionalAttrs (s.budgetUSD != null) { budget_usd = s.budgetUSD; }
+  // lib.optionalAttrs (s.timeoutSec != null) { timeout_sec = s.timeoutSec; };
 in
 {
+  imports = [
+    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "maxConcurrent" ]
+      "Concurrency is limited by agentos.orchestration.maxWorkers.")
+    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "enablePriorityQueues" ]
+      "Tasks run in submission order; there are no priority queues.")
+    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursOnly" ]
+      "Put the window in the schedule's calendar expression instead, e.g. \"*-*-* 22..23,00..05:00/30:00\".")
+    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursStart" ] "See offHoursOnly.")
+    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursEnd" ] "See offHoursOnly.")
+  ];
+
   options.agentos.scheduler = {
     enable = lib.mkEnableOption "AgentOS scheduler";
 
-    maxConcurrent = lib.mkOption {
-      type = lib.types.int;
-      default = 4;
-      description = "Maximum concurrent scheduled tasks";
-    };
-
-    enablePriorityQueues = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable priority-based task scheduling";
-    };
-
-    offHoursOnly = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Only run scheduled tasks during off-hours (22:00-06:00)";
-    };
-
-    offHoursStart = lib.mkOption {
-      type = lib.types.int;
-      default = 22;
-      description = "Start of off-hours (24h format)";
-    };
-
-    offHoursEnd = lib.mkOption {
-      type = lib.types.int;
-      default = 6;
-      description = "End of off-hours (24h format)";
+    schedules = lib.mkOption {
+      type = lib.types.attrsOf scheduleType;
+      default = { };
+      example = lib.literalExpression ''
+        {
+          nightly-audit = {
+            calendar = "*-*-* 02:00:00";
+            agent = "claude";
+            workspace = "main-project";
+            prompt = "Run a security audit of this codebase and fix what you find";
+            budgetUSD = 5;
+            persistent = true;
+          };
+        }
+      '';
+      description = ''
+        Schedules managed by the configuration (keyed by name). They are
+        re-synced whenever the scheduler starts and cannot be removed with
+        `agentos-schedule`. Schedules added with the CLI are kept separately.
+      '';
     };
   };
 
   config = lib.mkIf cfg.enable {
-    # ─ Scheduled tasks config ────────────────────────────────────────
-    environment.etc."agentos/schedules.yaml".text = ''
-      # Scheduled agent tasks
-      # Each task defines: when to run, which agent, what prompt
-      #
-      # - name: nightly-security-scan
-      #   schedule: "0 2 * * *"        # 2 AM daily
-      #   agent: claude-code
-      #   prompt: "Run a security audit of this codebase"
-      #   priority: low
-      #   workspace: /var/lib/agentos/workspaces/main-project
-      #
-      # - name: weekly-dependency-update
-      #   schedule: "0 4 * * 1"        # 4 AM every Monday
-      #   agent: aider
-      #   prompt: "Update all dependencies and run tests"
-      #   priority: normal
-      #
-      # - name: hourly-test-run
-      #   schedule: "@hourly"
-      #   agent: swe-agent
-      #   prompt: "Run the test suite and fix any failures"
-      #   priority: high
-      #   deadline: "1h"               # must complete within 1 hour
-    '';
+    assertions = [
+      {
+        assertion = rt.enable;
+        message = "agentos.scheduler needs agentos.runtime.enable (it stores schedules in the control-plane Redis)";
+      }
+      {
+        assertion = config.agentos.orchestration.enable;
+        message = "agentos.scheduler submits its work to the orchestrator; set agentos.orchestration.enable = true";
+      }
+    ];
+
+    agentos.services.settings.scheduler.schedules = lib.mapAttrsToList toSettings cfg.schedules;
 
     # ─ Scheduler service ─────────────────────────────────────────────
-    systemd.services.agentos-scheduler = lib.mkIf config.agentos.plannedServices.enable {
-      description = "AgentOS Task Scheduler";
-      after = [ "network.target" "redis-agentos.service" "agentos-daemon.service" ];
-      wants = [ "redis-agentos.service" "agentos-daemon.service" ];
+    systemd.services.agentos-scheduler = {
+      description = "AgentOS scheduler";
+      after = [ "redis-agentos.service" "agentos-orchestrator.service" ];
+      requires = [ "redis-agentos.service" ];
+      wants = [ "agentos-orchestrator.service" ];
       wantedBy = [ "multi-user.target" ];
-
-      environment = {
-        AGENTOS_MAX_CONCURRENT = toString cfg.maxConcurrent;
-        AGENTOS_SCHEDULES = "/etc/agentos/schedules.yaml";
-        AGENTOS_OFF_HOURS_ONLY = lib.boolToString cfg.offHoursOnly;
-        AGENTOS_OFF_HOURS_START = toString cfg.offHoursStart;
-        AGENTOS_OFF_HOURS_END = toString cfg.offHoursEnd;
-        AGENTOS_REDIS_URL = "redis://localhost:6379";
-      };
+      restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+      path = [ config.systemd.package ]; # systemd-analyze
 
       serviceConfig = {
         Type = "simple";
         User = "agentos";
         Group = "agentos";
-        ExecStart = "${pkgs.agentos.scheduler}/bin/agentos-scheduler";
+        SupplementaryGroups = [ "redis-agentos" ];
+        ExecStart = "${pkgs.agentos.services}/bin/agentos-scheduler";
         Restart = "on-failure";
-        RestartSec = 5;
+        RestartSec = 3;
+        RuntimeDirectory = "agentos-scheduler";
+        RuntimeDirectoryMode = "0750";
+        UMask = "0007";
+
         NoNewPrivileges = true;
+        PrivateTmp = true;
         ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/agentos" ];
+        ProtectHome = true;
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        LockPersonality = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
       };
     };
 
-    # ─ Scheduler CLI ─────────────────────────────────────────────────
-    # The CLI only queues work for the planned service, so ship them together
-    environment.systemPackages = lib.optionals config.agentos.plannedServices.enable [
-      (pkgs.writeShellScriptBin "agentos-schedule" ''
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        GREEN='\033[0;32m'
-        BLUE='\033[0;34m'
-        YELLOW='\033[1;33m'
-        NC='\033[0m'
-        info()  { echo -e "''${BLUE}[INFO]''${NC} $*"; }
-        ok()    { echo -e "''${GREEN}[OK]''${NC} $*"; }
-        warn()  { echo -e "''${YELLOW}[WARN]''${NC} $*"; }
-
-        SCHEDULES="/etc/agentos/schedules.yaml"
-
-        case "''${1:-list}" in
-          list)
-            info "Scheduled tasks:"
-            if [ -f "$SCHEDULES" ]; then
-              ${pkgs.yq}/bin/yq -r '.[] | "  \(.name): \(.schedule) [\(.agent)] \(.priority // \"normal\")"' "$SCHEDULES" 2>/dev/null || \
-                echo "  (no tasks scheduled, or yq not installed)"
-            else
-              echo "  (no schedules file)"
-            fi
-            ;;
-
-          add)
-            NAME="''${2:-}"
-            SCHEDULE="''${3:-}"
-            AGENT="''${4:-claude-code}"
-            PROMPT="''${5:-No prompt provided}"
-            if [ -z "$NAME" ] || [ -z "$SCHEDULE" ]; then
-              echo "Usage: agentos-schedule add <name> <cron> [agent] [prompt]"
-              echo ""
-              echo "Example:"
-              echo "  agentos-schedule add nightly-scan '0 2 * * *' claude-code 'Run security audit'"
-              exit 1
-            fi
-            info "Adding scheduled task: $NAME"
-            # Append to schedules file (simple YAML append)
-            echo "" >> "$SCHEDULES"
-            echo "- name: $NAME" >> "$SCHEDULES"
-            echo "  schedule: \"$SCHEDULE\"" >> "$SCHEDULES"
-            echo "  agent: $AGENT" >> "$SCHEDULES"
-            echo "  prompt: \"$PROMPT\"" >> "$SCHEDULES"
-            echo "  priority: normal" >> "$SCHEDULES"
-            ok "Added: $NAME (cron: $SCHEDULE, agent: $AGENT)"
-            systemctl restart agentos-scheduler
-            ;;
-
-          remove)
-            NAME="''${2:-}"
-            if [ -z "$NAME" ]; then
-              echo "Usage: agentos-schedule remove <name>"
-              exit 1
-            fi
-            info "Removing scheduled task: $NAME"
-            # Remove block from YAML
-            ${pkgs.gnused}/bin/sed -i "/name: $NAME/,/priority:/d" "$SCHEDULES"
-            ok "Removed: $NAME"
-            systemctl restart agentos-scheduler
-            ;;
-
-          status)
-            info "Scheduler status:"
-            echo "  Max concurrent: ${toString cfg.maxConcurrent}"
-            echo "  Off-hours only: ${lib.boolToString cfg.offHoursOnly}"
-            echo ""
-            echo "  Queue:"
-            ${pkgs.redis}/bin/redis-cli -n 4 ZRANGE "schedule_queue" 0 -1 WITHSCORES 2>/dev/null | while read -r task; read -r score; do
-              echo "    $task (score: $score)"
-            done || echo "    (empty)"
-            ;;
-
-          run-now)
-            NAME="''${2:-}"
-            if [ -z "$NAME" ]; then
-              echo "Usage: agentos-schedule run-now <name>"
-              exit 1
-            fi
-            info "Triggering immediate run: $NAME"
-            ${pkgs.redis}/bin/redis-cli -n 4 LPUSH "schedule_trigger" "$NAME" >/dev/null
-            ok "Triggered: $NAME"
-            ;;
-
-          help|*)
-            cat <<'HELP'
-        AgentOS Scheduler
-
-        USAGE:
-            agentos-schedule <COMMAND> [ARGS]
-
-        COMMANDS:
-            list                          List scheduled tasks
-            add <name> <cron> [agent] [prompt]  Add a scheduled task
-            remove <name>                 Remove a scheduled task
-            status                        Show scheduler status and queue
-            run-now <name>                Trigger a task immediately
-
-        CRON FORMAT:
-            "0 2 * * *"     - Daily at 2 AM
-            "0 4 * * 1"     - Every Monday at 4 AM
-            "@hourly"       - Every hour
-            "@daily"        - Every day at midnight
-            "*/30 * * * *"  - Every 30 minutes
-
-        HELP
-            ;;
-        esac
-      '')
-    ];
+    environment.systemPackages = [ pkgs.agentos.schedule-cli ];
   };
 }
