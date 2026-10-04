@@ -186,7 +186,7 @@ def test_default_output_limits_are_forwarded(make_gateway, upstream, tmp_path):
     assert upstream.requests[-1]["body"]["max_tokens"] == 4096
 
     assert request(gw, "POST", "/agent/o1/openai/v1/chat/completions", {"model": "gpt-test", "messages": []})[0] == 200
-    assert upstream.requests[-1]["body"]["max_tokens"] == 4096
+    assert upstream.requests[-1]["body"]["max_completion_tokens"] == 4096
 
     assert request(gw, "POST", "/agent/o1/openai/v1/responses",
                    {"model": "gpt-test", "input": [], "stream": True})[0] == 200

@@ -348,3 +348,14 @@ def test_publish_kind_task_without_a_branch_fails(cfg, runtime, taskstore, orch)
                           status="running", created_at=1.0, result=None))
     assert runner.run("task-pub") == 1
     assert "no successful dependency" in taskstore.get("task-pub")["result"]["error"]
+
+
+def test_publish_refused_when_not_on_the_tasks_own_branch(cfg, runtime, taskstore):
+    fake = FakePublisher()
+    runner = make_runner(cfg, runtime, taskstore, fake)
+    task = {"id": "t", "workspace": "/w/demo", "publish": {"repo": REPO}}
+    fields, error = runner.try_publish(task, "/w/demo", "agent/other", None)
+    assert error == "task is not on its own branch" and fields["publish"]["status"] == "skipped"
+    cfg["publish"]["auto"] = True
+    fields, error = runner.try_publish({"id": "t", "workspace": "/w/demo"}, "/w/demo", "main", None)
+    assert error is None and fields["publish"]["status"] == "skipped" and not fake.calls

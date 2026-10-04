@@ -137,38 +137,47 @@ class Netns:
             fcntl.flock(f, fcntl.LOCK_EX)
             yield
 
-    def setup(self, agent_id):
-        """Create the namespace; returns the container's address."""
-        n = names(agent_id)
+    def setup(self, agent_id, sweep=False):
+        """Create the namespace; returns the container's address.
+
+        The whole setup runs under the state lock, so a concurrent sweep or
+        teardown never sees (and deletes) a half-built namespace or veth.
+        With `sweep`, stale agents are cleared first, under the same lock.
+        """
         with self._locked():
-            self._teardown_locked(agent_id)  # leftovers of an earlier run with the same id
-            try:
-                addr = allocate_ip(self.used_addresses(), self.network, self.gateway)
-                d = self.dir(agent_id)
-                os.makedirs(d, mode=0o755)
-                with open(os.path.join(d, "ip"), "w") as f:
-                    f.write(str(addr) + "\n")
-                self._files(agent_id, d)
-                ns = n["ns"]
-                r = self.run
-                r(["ip", "netns", "add", ns])
-                r(["ip", "link", "add", n["host_if"], "type", "veth", "peer", "name", n["peer_if"]])
-                r(["ip", "link", "set", n["peer_if"], "netns", ns, "name", "eth0"])
-                r(["ip", "-n", ns, "addr", "add", "%s/%d" % (addr, self.network.prefixlen), "dev", "eth0"])
-                r(["ip", "-n", ns, "link", "set", "lo", "up"])
-                r(["ip", "-n", ns, "link", "set", "eth0", "up"])
-                r(["ip", "-n", ns, "route", "add", "default", "via", str(self.gateway)])
-                r(["ip", "link", "set", n["host_if"], "master", self.bridge])
-                r(["bridge", "link", "set", "dev", n["host_if"], "isolated", "on"])
-                r(["ip", "link", "set", n["host_if"], "up"])
-                # The egress policy is IPv4 only, so the container gets no IPv6
-                with contextlib.suppress(FileNotFoundError):
-                    r(["ip", "netns", "exec", ns, _tool("sysctl"), "-q", "-w",
-                       "net.ipv6.conf.all.disable_ipv6=1"], check=False)
-                return addr
-            except Exception:
-                self._teardown_locked(agent_id)
-                raise
+            if sweep:
+                self._sweep_locked(keep=(agent_id,))
+            return self._setup_locked(agent_id)
+
+    def _setup_locked(self, agent_id):
+        n = names(agent_id)
+        self._teardown_locked(agent_id)  # leftovers of an earlier run with the same id
+        try:
+            addr = allocate_ip(self.used_addresses(), self.network, self.gateway)
+            d = self.dir(agent_id)
+            os.makedirs(d, mode=0o755)
+            with open(os.path.join(d, "ip"), "w") as f:
+                f.write(str(addr) + "\n")
+            self._files(agent_id, d)
+            ns = n["ns"]
+            r = self.run
+            r(["ip", "netns", "add", ns])
+            r(["ip", "link", "add", n["host_if"], "type", "veth", "peer", "name", n["peer_if"]])
+            r(["ip", "link", "set", n["peer_if"], "netns", ns, "name", "eth0"])
+            r(["ip", "-n", ns, "addr", "add", "%s/%d" % (addr, self.network.prefixlen), "dev", "eth0"])
+            r(["ip", "-n", ns, "link", "set", "lo", "up"])
+            r(["ip", "-n", ns, "link", "set", "eth0", "up"])
+            r(["ip", "-n", ns, "route", "add", "default", "via", str(self.gateway)])
+            r(["ip", "link", "set", n["host_if"], "master", self.bridge])
+            r(["bridge", "link", "set", "dev", n["host_if"], "isolated", "on"])
+            r(["ip", "link", "set", n["host_if"], "up"])
+            # The egress policy is IPv4 only, so the container gets no IPv6
+            with contextlib.suppress(FileNotFoundError):
+                r(["ip", "netns", "exec", ns, _tool("sysctl"), "-q", "-w", "net.ipv6.conf.all.disable_ipv6=1"], check=False)
+            return addr
+        except Exception:
+            self._teardown_locked(agent_id)
+            raise
 
     def _files(self, agent_id, d):
         """The container's own /etc/{resolv.conf,passwd,group,hosts,nsswitch.conf}."""
@@ -203,12 +212,12 @@ class Netns:
         """Remove namespaces, state and veths of agents with no live unit.
 
         `keep` are ids that must stay (the agent being set up). Returns the
-        ids and interfaces removed.
+        ids and interfaces removed. Serialized with setup and teardown.
         """
         with self._locked():
             return self._sweep_locked(keep)
 
-    def _sweep_locked(self, keep):
+    def _sweep_locked(self, keep=()):
         ids = set()
         for d in (self.netns_dir, self.state_dir):
             try:
@@ -257,8 +266,7 @@ def main(argv=None):
                 print("agentos-netns: removed stale " + item)
         elif args.action == "setup":
             # Clear leftovers of crashed agents before taking a new address
-            ns.sweep(keep=(args.agent,))
-            ns.setup(args.agent)
+            ns.setup(args.agent, sweep=True)
         else:
             ns.teardown(args.agent)
     except subprocess.CalledProcessError as exc:

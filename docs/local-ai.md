@@ -40,7 +40,7 @@ logs failures and exits 0. Retry with `systemctl restart agentos-local-ai-pull`.
 ## Gateway provider `local`
 
 The module registers `agentos.networking.providers.local`:
-`baseUrl = http://127.0.0.1:<port>`, `api = "openai-compatible"`, no `keyFile`. The
+`baseUrl = http://127.0.0.1:<port>`, `api = "openai-compatible"`, `zeroCost = true`, no `keyFile`. The
 backend's OpenAI-compatible API is at `/v1`, so an agent uses
 
 ```

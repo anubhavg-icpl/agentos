@@ -66,7 +66,7 @@ from .providers import adapter_for
 from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
 from .store import BudgetRefused, Store, connect
-from .usage import GENERATION_KEYS, Pricing, UsageParser, estimate_cost, output_cap
+from .usage import GENERATION_KEYS, Pricing, UsageParser, apply_output_cap, estimate_cost, output_cap
 
 log = logging.getLogger("agentos.gateway")
 
@@ -168,8 +168,7 @@ class Gateway:
         if not self.cfg["budget"].get("reserve", True):
             usd = 0.0
         try:
-            return self.store.reserve(agent, usd, limit, global_limit,
-                                      float(self.cfg["gateway"]["upstream_timeout_sec"]) + 60)
+            return self.store.reserve(agent, usd, limit, global_limit, self.lease_sec())
         except BudgetRefused as exc:
             if exc.scope == "agent":
                 if exc.spent >= exc.limit:
@@ -190,6 +189,27 @@ class Gateway:
                                "$%.4f reserved, ~$%.4f estimated, limit $%.2f" % (
                                    exc.spent, exc.reserved, usd, exc.limit))
             raise HTTPError(402, "budget_exceeded", message)
+
+    def lease_sec(self):
+        """How long a budget hold lasts without being renewed: the longest
+        upstream timeout plus a minute. Requests renew it while in flight."""
+        timeouts = [float(self.cfg["gateway"]["upstream_timeout_sec"])]
+        timeouts += [float(p.get("timeout_sec") or 0) for p in self.cfg["providers"].values()]
+        return max(timeouts) + 60
+
+    def grow_budget(self, agent, resv, usd):
+        """Raise a request's hold to `usd` before an attempt that may cost more
+        than what is held. False (nothing changed) if the budget cannot cover it."""
+        if not self.cfg["budget"].get("reserve", True) or usd <= resv.usd:
+            return True
+        try:
+            self.store.grow(resv, usd, self.daily_limit(agent), float(self.cfg["budget"]["global_daily_usd"]))
+            return True
+        except BudgetRefused:
+            return False
+        except redis.RedisError as exc:
+            log.error("cannot grow budget reservation for agent %s: %s", agent, exc)
+            return False
 
     def _budget_exceeded(self, agent, spent, limit):
         if self.store.mark_alert(agent, "exceeded"):
@@ -554,34 +574,28 @@ class Gateway:
                     provider = target
                     adapter = adapter_for(self.cfg["providers"][provider])
         rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
-        default_max_tokens = int(self.cfg["budget"].get("default_max_tokens", 4096))
-        if isinstance(payload, dict) and adapter.prepare(payload, rest_path, default_max_tokens):
+        if isinstance(payload, dict) and adapter.prepare(payload, rest_path):
+            edited = True
+        free = adapter.zero_cost
+        if not free and self.cfg["budget"].get("reserve", True) and self.cap_output(adapter, payload, rest_path):
             edited = True
         if edited:
             body = json.dumps(payload).encode()
-        primary_estimate, estimate = self.estimate_chain(
-            provider, adapter, request_model, payload, body, rest, rest_path, default_max_tokens)
+        estimate = 0.0 if free else self.estimate(request_model, payload, body, rest_path)
         resv = self.reserve_budget(agent, estimate)
-        resv.estimate = primary_estimate
-        stop_renewal = threading.Event()
-        renewal = None
-        if resv.store is not None:
-            interval = max(0.1, min(30.0, resv.hold_sec / 3.0))
-
-            def renew_while_live():
-                while not stop_renewal.wait(interval):
-                    resv.renew()
-
-            renewal = threading.Thread(target=renew_while_live, daemon=True)
-            renewal.start()
+        resv.estimate = estimate
         try:
             self.forward(req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
-                         request_model, route, resv, default_max_tokens)
+                         request_model, route, resv)
         finally:
-            if renewal:
-                stop_renewal.set()
-                renewal.join()
             resv.release()
+
+    def cap_output(self, adapter, payload, rest_path):
+        """Set the provider's output limit on a paid request that has none, to
+        the amount the budget reservation assumes (budget.default_max_tokens)."""
+        version = adapter.prov.get("api_version") if adapter.name == "azure-openai" else None
+        return apply_output_cap(payload, adapter.wire, rest_path,
+                                int(self.cfg["budget"].get("default_max_tokens", 4096)), version)
 
     def can_switch(self, source, target):
         """Cost routing may move a request to another provider only when it
@@ -593,34 +607,14 @@ class Gateway:
         return a.wire == b.wire and not a.model_in_path and not b.model_in_path and (
             b.zero_cost or self.provider_key(target) is not None)
 
-    def estimate(self, model, payload, body, rest_path, adapter=None):
+    def estimate(self, model, payload, body, rest_path):
         """Estimated USD of a request, held against the budget while it runs."""
         if not isinstance(payload, dict) or not any(k in payload for k in GENERATION_KEYS):
             return 0.0
         if rest_path.endswith("embeddings"):
             return estimate_cost(self.pricing, model, len(body or b""), 0)
-        cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)),
-                         adapter.name if adapter else None, rest_path)
+        cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)))
         return estimate_cost(self.pricing, model, len(body or b""), cap)
-
-    def estimate_attempt(self, adapter, model, payload, body, rest_path):
-        return 0.0 if adapter.zero_cost else self.estimate(model, payload, body, rest_path, adapter)
-
-    def estimate_chain(self, provider, adapter, model, payload, body, rest, rest_path, default_max_tokens):
-        primary = self.estimate_attempt(adapter, model, payload, body, rest_path)
-        maximum = primary
-        for name, fallback, fallback_model in self.fallbacks_for(provider):
-            fallback_body, fallback_rest = self.fallback_body(
-                fallback, payload, rest, fallback_model, body, default_max_tokens)
-            try:
-                fallback_payload = json.loads(fallback_body) if fallback_body is not None else None
-            except (TypeError, ValueError):
-                fallback_payload = None
-            attempt_model = (fallback_model or fallback.request_model(fallback_payload, fallback_rest) or model)
-            fallback_path = "/".join(urllib.parse.quote(part, safe=":") for part in fallback_rest)
-            maximum = max(maximum, self.estimate_attempt(
-                fallback, attempt_model, fallback_payload, fallback_body, fallback_path))
-        return primary, maximum
 
     def fallbacks_for(self, provider):
         """Usable fallbacks of a provider: [(name, adapter, model-or-None)].
@@ -648,18 +642,21 @@ class Gateway:
             out.append((name, ad, model))
         return out
 
-    def fallback_body(self, adapter, payload, rest, model, body, default_max_tokens=4096):
-        """Request body and path for a fallback attempt."""
+    def fallback_body(self, adapter, payload, rest, model, body):
+        """Request body, path and payload for a fallback attempt."""
         rest = list(rest)
         if isinstance(payload, dict):
             payload = json.loads(json.dumps(payload))
             if model:
                 rest = adapter.set_model(payload, rest, model)
-            adapter.prepare(payload, "/".join(rest), default_max_tokens)
-            return json.dumps(payload).encode(), rest
+            path = "/".join(rest)
+            adapter.prepare(payload, path)
+            if not adapter.zero_cost and self.cfg["budget"].get("reserve", True):
+                self.cap_output(adapter, payload, path)      # a free primary left it uncapped
+            return json.dumps(payload).encode(), rest, payload
         if model:
             rest = adapter.set_model(None, rest, model)
-        return body, rest
+        return body, rest, payload
 
     def open_upstream(self, req, provider, adapter, rest_path, query, body, strip=False):
         """Send the request upstream; returns (connection, response) once the
@@ -667,7 +664,11 @@ class Gateway:
         prov = self.cfg["providers"][provider]
         base = urllib.parse.urlsplit(prov["base_url"])
         target = base.path.rstrip("/") + "/" + rest_path
-        query = adapter.query_for(query, strip=strip)
+        if strip and query:
+            # a ?key= belongs to the provider the client addressed, not this one
+            query = urllib.parse.urlencode([(k, v) for k, v in urllib.parse.parse_qsl(query, keep_blank_values=True)
+                                            if k != "key"])
+        query = adapter.query_for(query)
         if query:
             target += "?" + query
         headers = {}
@@ -694,7 +695,7 @@ class Gateway:
             raise
 
     def forward(self, req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
-                request_model, route, resv, default_max_tokens=4096):
+                request_model, route, resv):
         rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
         record_seq = None
         captured = bytearray()
@@ -706,43 +707,59 @@ class Gateway:
         attempts = [(provider, adapter, None)] + self.fallbacks_for(provider)
         failed = []
         conn = None
+
+        def next_attempt(after, entry):
+            """First attempt past `after` whose cost the budget can cover (its
+            hold is grown first), or None. A fallback may be pricier than the
+            primary, which is all that was reserved."""
+            if after + 1 < len(attempts):
+                failed.append(entry)
+            for j in range(after + 1, len(attempts)):
+                name, ad, fb_model = attempts[j]
+                att_body, att_rest, att_payload = self.fallback_body(ad, payload, rest, fb_model, body)
+                att_path = "/".join(urllib.parse.quote(p, safe=":") for p in att_rest)
+                est = 0.0 if ad.zero_cost else self.estimate(fb_model or request_model, att_payload, att_body, att_path)
+                if not self.grow_budget(agent, resv, est):
+                    failed.append({"provider": name, "error": "budget cannot cover this fallback"})
+                    log.warning("agent %s: budget cannot cover fallback %s (~$%.4f); skipping", agent, name, est)
+                    continue
+                resv.renew()
+                return j, att_body, att_rest, att_path, est
+            return None
+
+        plan = (0, body, rest, rest_path, resv.estimate)
+        last_renew = self.clock()
+        renew_every = max(1.0, resv.hold_sec / 3)
         try:
-            for i, (name, ad, fb_model) in enumerate(attempts):
-                last = i == len(attempts) - 1
-                if i == 0:
-                    att_body, att_rest = body, rest
-                else:
-                    att_body, att_rest = self.fallback_body(
-                        ad, payload, rest, fb_model, body, default_max_tokens)
-                att_rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in att_rest)
-                try:
-                    att_payload = json.loads(att_body) if att_body is not None else None
-                except (TypeError, ValueError):
-                    att_payload = None
-                attempt_model = fb_model or ad.request_model(att_payload, att_rest) or request_model
-                resv.estimate = self.estimate_attempt(ad, attempt_model, att_payload, att_body, att_rest_path)
+            while True:
+                i, att_body, att_rest, att_rest_path, att_estimate = plan
+                name, ad, fb_model = attempts[i]
                 try:
                     conn, resp = self.open_upstream(req, name, ad, att_rest_path, query, att_body,
                                                     strip=bool(i or (route and route.get("routed_provider"))))
                 except (OSError, http.client.HTTPException) as exc:
-                    if not last:
-                        failed.append({"provider": name, "error": str(exc)[:200]})
+                    nxt = next_attempt(i, {"provider": name, "error": str(exc)[:200]})
+                    if nxt:
                         log.warning("provider %s failed for agent %s (%s); trying %s", name, agent, exc,
-                                    attempts[i + 1][0])
+                                    attempts[nxt[0]][0])
+                        plan = nxt
                         continue
                     try:
                         self.upstream_failed(agent)
                     except redis.RedisError as err:
                         log.error("cannot update circuit breaker: %s", err)
                     raise HTTPError(502, "api_error", "AgentOS gateway could not reach %s: %s" % (name, exc))
-                if (resp.status == 429 or resp.status >= 500) and not last:
-                    failed.append({"provider": name, "status": resp.status})
-                    log.warning("provider %s answered %d for agent %s; trying %s", name, resp.status, agent,
-                                attempts[i + 1][0])
-                    conn.close()
-                    conn = None
-                    continue
+                if resp.status == 429 or resp.status >= 500:
+                    nxt = next_attempt(i, {"provider": name, "status": resp.status})
+                    if nxt:
+                        log.warning("provider %s answered %d for agent %s; trying %s", name, resp.status, agent,
+                                    attempts[nxt[0]][0])
+                        conn.close()
+                        conn = None
+                        plan = nxt
+                        continue
                 break
+            resv.estimate = att_estimate
             if failed:
                 route = dict(route or {}, fallbacks_failed=failed)
             provider, adapter = name, ad
@@ -781,6 +798,9 @@ class Gateway:
                 if not chunk:
                     break
                 parser.feed(chunk)
+                if self.clock() - last_renew >= renew_every:
+                    resv.renew()            # a long stream must not outlive its hold
+                    last_renew = self.clock()
                 if record_seq is not None:
                     if len(captured) + len(chunk) <= capture_cap:
                         captured += chunk

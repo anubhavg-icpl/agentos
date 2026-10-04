@@ -47,11 +47,14 @@ let
       import socket
       import socketserver
       import sys
+      import threading
 
       POLICY = json.load(open(sys.argv[1]))
       ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
       ALLOWED_FIELDS = {"agent", "workspace", "prompt"}
       ACTIVE = ("queued", "running")
+      # The server is threaded: count, check and submit as one step
+      SUBMIT_LOCK = threading.Lock()
 
 
       class Upstream(http.client.HTTPConnection):
@@ -122,17 +125,18 @@ let
               raise Refused(400, "prompt is longer than %d bytes" % POLICY["max_prompt_bytes"])
           if prompt.startswith("-"):
               raise Refused(400, "prompt must not start with '-'")
-          active = [t for state in ACTIVE for t in own_tasks(state)]
-          if len(active) >= POLICY["max_active"]:
-              raise Refused(429, "%d tasks are already queued or running (limit %d)" % (len(active), POLICY["max_active"]))
-          status, out = upstream("POST", "/tasks", {
-              "agent": agent,
-              "workspace": workspace,
-              "prompt": prompt,
-              "budget_usd": POLICY["budget_usd"],
-              "timeout_sec": POLICY["timeout_sec"],
-              "origin": POLICY["origin"],
-          })
+          with SUBMIT_LOCK:
+              active = [t for state in ACTIVE for t in own_tasks(state)]
+              if len(active) >= POLICY["max_active"]:
+                  raise Refused(429, "%d tasks are already queued or running (limit %d)" % (len(active), POLICY["max_active"]))
+              status, out = upstream("POST", "/tasks", {
+                  "agent": agent,
+                  "workspace": workspace,
+                  "prompt": prompt,
+                  "budget_usd": POLICY["budget_usd"],
+                  "timeout_sec": POLICY["timeout_sec"],
+                  "origin": POLICY["origin"],
+              })
           return status, out
 
 

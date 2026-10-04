@@ -125,8 +125,9 @@ def test_paid_fallback_cost_is_reserved_before_zero_cost_primary(gw, upstream, u
     g = gw([{"provider": "backup", "model": "claude-pricey"}],
            primary_extra={"api": "openai-compatible"},
            budget={"default_daily_usd": 0.05})
+    upstream.fail_status = 500
     body = dict(BODY, max_tokens=1000)
     status, _, _ = request(g, "POST", "/agent/f1/openai/v1/chat/completions", body)
-    assert status == 402
-    assert upstream.requests == [] and upstream2.requests == []
+    assert status == 500
+    assert len(upstream.requests) == 1 and upstream2.requests == []
     assert store.reserved("f1") == 0

@@ -42,7 +42,8 @@ in
       UMask = "0077";
     };
     script = ''
-      mkdir -p ${stateDir} /run/issue.d
+      mkdir -p ${stateDir}
+      install -d -m 0755 /run/issue.d
       if [ ! -e ${doneFile} ]; then
         pw="$(openssl rand -base64 12 | tr '/+' 'xy')"
         printf '%s\n' "$pw" > ${stateFile}

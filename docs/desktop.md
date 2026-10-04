@@ -120,9 +120,9 @@ Options: `gaps.inner` / `gaps.outer`, `compositor` (picom under i3),
 - **Hyprland needs GPU acceleration.** It performs poorly or fails in VMs
   without 3D support. Use i3 or sway in VMs; the VM image and live ISO default
   to i3.
-- **The VM image has a fixed password** (`agentos`) so the lock screen and
-  `sudo` work after autologin. SSH password login stays disabled. Change it
-  with `passwd` if the VM is reachable by others.
+- **The VM image has no fixed password.** A random `admin` password is
+  generated at first boot (see the artifacts table above) and must be changed
+  at first login. SSH password login stays disabled.
 
 ## Testing
 

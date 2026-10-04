@@ -32,11 +32,6 @@ import urllib.parse
 from . import config as configmod
 
 AUTH_HEADERS = ("authorization", "x-api-key", "api-key", "x-goog-api-key")
-GENERATION_KEYS = ("messages", "input", "contents", "prompt")
-
-
-def _has_output_limit(payload, fields):
-    return any(key in payload for key in fields)
 
 
 def _find(headers, name):
@@ -81,23 +76,16 @@ class Adapter:
             payload["model"] = model
         return rest
 
-    def prepare(self, payload, rest_path, default_max_tokens=4096):
+    def prepare(self, payload, rest_path):
         """Edit a JSON request body in place; True if it changed."""
         return False
 
-    def query_for(self, query, strip=False):
+    def query_for(self, query):
         return query
 
 
 class Anthropic(Adapter):
     name = wire = "anthropic"
-
-    def prepare(self, payload, rest_path, default_max_tokens=4096):
-        if (not isinstance(payload, dict) or not any(key in payload for key in GENERATION_KEYS)
-                or _has_output_limit(payload, ("max_tokens",))):
-            return False
-        payload["max_tokens"] = int(default_max_tokens)
-        return True
 
     def inject_key(self, headers, key):
         if not key:
@@ -111,21 +99,13 @@ class Anthropic(Adapter):
 class OpenAI(Adapter):
     name = wire = "openai"
 
-    def prepare(self, payload, rest_path, default_max_tokens=4096):
+    def prepare(self, payload, rest_path):
         # Ask for usage on streamed Chat Completions so it can be priced
-        if not isinstance(payload, dict):
-            return False
-        changed = False
-        is_responses = rest_path.endswith("responses")
-        valid_limits = ("max_output_tokens",) if is_responses else ("max_tokens", "max_completion_tokens")
-        if any(key in payload for key in GENERATION_KEYS) and not _has_output_limit(payload, valid_limits):
-            payload[valid_limits[0] if is_responses else "max_tokens"] = int(default_max_tokens)
-            changed = True
         if (payload.get("stream") is True and rest_path.endswith("chat/completions")
                 and "stream_options" not in payload):
             payload["stream_options"] = {"include_usage": True}
-            changed = True
-        return changed
+            return True
+        return False
 
 
 class OpenAICompatible(OpenAI):
@@ -133,8 +113,13 @@ class OpenAICompatible(OpenAI):
     free = True
 
     def inject_key(self, headers, key):
+        # Local servers do not need the caller's credentials, and must never
+        # receive the ones meant for another provider: send only the key
+        # configured for this provider, if any.
         self.strip_credentials(headers)
-        super().inject_key(headers, key)
+        if key:
+            headers["Authorization"] = "Bearer " + key
+
 
 class AzureOpenAI(OpenAI):
     name = "azure-openai"
@@ -166,7 +151,7 @@ class AzureOpenAI(OpenAI):
             return super().set_model(payload, rest, model)
         return rest[:i] + [model] + rest[i + 1:]
 
-    def query_for(self, query, strip=False):
+    def query_for(self, query):
         version = self.prov.get("api_version")
         if version and "api-version" not in urllib.parse.parse_qs(query or ""):
             query = (query + "&" if query else "") + "api-version=" + urllib.parse.quote(str(version))
@@ -206,28 +191,13 @@ class Gemini(Adapter):
         m = self._MODEL.match(rest[i])
         return rest[:i] + [model + ((m.group("method") or "") if m else "")] + rest[i + 1:]
 
-    def prepare(self, payload, rest_path, default_max_tokens=4096):
-        if not isinstance(payload, dict) or not any(key in payload for key in GENERATION_KEYS):
-            return False
-        gen = payload.get("generationConfig")
-        if isinstance(gen, dict) and "maxOutputTokens" in gen:
-            return False
-        if gen is None:
-            gen = {}
-        elif not isinstance(gen, dict):
-            return False
-        gen["maxOutputTokens"] = int(default_max_tokens)
-        payload["generationConfig"] = gen
-        return True
-
-    def query_for(self, query, strip=False):
+    def query_for(self, query):
         # Older Google clients send the key as ?key=; the managed placeholder
-        # must not reach Google (inject_key supplies the header instead).
-        # Never forward a client's key to a fallback provider.
+        # must not reach Google (inject_key supplies the header instead)
         if not query:
             return query
         pairs = [(k, v) for k, v in urllib.parse.parse_qsl(query, keep_blank_values=True)
-                 if not (k == "key" and (strip or v == configmod.MANAGED_KEY))]
+                 if not (k == "key" and v == configmod.MANAGED_KEY)]
         return urllib.parse.urlencode(pairs)
 
 

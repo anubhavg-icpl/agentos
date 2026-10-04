@@ -128,7 +128,7 @@ agentos-task submit --agent aider --workspace myproj --prompt "Speed up the buil
 ### Priority, concurrency keys and deduplication
 
 - `priority` (`--priority`, integer -1000..1000, default 0): among tasks that could start, higher runs first, first come first served within a priority. A task that cannot start (its workspace or key is busy) never holds back a lower-priority task.
-- `concurrency_key`: at most one *running* task per key (`[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}`), across all groups.
+- `concurrency_key`: at most one *running* task per key (`[A-Za-z0-9][A-Za-z0-9._:/@#-]{0,99}`), across all groups.
 - `dedupe_key`: a submit whose key belongs to a task that has not finished (awaiting approval, queued, backing off or running) returns that task (HTTP 200, `deduplicated: true`) and queues nothing; once it finished the key is free again. The check is atomic in Redis. Not allowed with `swarm` or in workflow nodes.
 
 ### How each agent is run

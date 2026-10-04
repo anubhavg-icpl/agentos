@@ -135,7 +135,9 @@ class TaskRunner:
                 self.git(["branch", "-D", branch], ws, check=False)
             self.git(["worktree", "add", "--quiet", "-b", branch, wt], ws)
             return wt, branch, [wt, os.path.join(ws, ".git")]
-        if self.git(["checkout", "--quiet", "-b", branch], ws, check=False).returncode != 0:
+        exists = self.git(["rev-parse", "--verify", "--quiet", "refs/heads/" + branch], ws, check=False).returncode == 0
+        args = ["checkout", "--quiet", branch] if exists else ["checkout", "--quiet", "-b", branch]
+        if self.git(args, ws, check=False).returncode != 0:
             current = self.git(["branch", "--show-current"], ws, check=False).stdout.strip()
             log.warning("could not create %s; staying on %r", branch, current)
             branch = current
@@ -288,6 +290,9 @@ class TaskRunner:
             return {}, None
         if skip_reason:
             return {"publish": {"status": "skipped", "error": skip_reason}}, None
+        if branch != "agent/" + task["id"]:
+            msg = "task is not on its own branch"
+            return {"publish": {"status": "skipped", "error": msg}}, (msg if spec["explicit"] else None)
         try:
             info = self.publisher(popts).publish(spec, task["id"], workdir, branch, base_sha)
         except P.PublishError as exc:

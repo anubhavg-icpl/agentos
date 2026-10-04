@@ -270,30 +270,68 @@ DEFAULT_MAX_OUTPUT_TOKENS = 4096
 GENERATION_KEYS = ("messages", "input", "contents", "prompt")
 
 
-def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS, api=None, rest_path=None):
+def _positive(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS):
     """Total output allowance across all requested candidates."""
     if not isinstance(payload, dict):
         return default
     gen = payload.get("generationConfig")
     gen = gen if isinstance(gen, dict) else {}
-    if api == "gemini":
-        value = gen.get("maxOutputTokens")
-    elif api == "anthropic":
-        value = payload.get("max_tokens")
-    elif rest_path and rest_path.endswith("responses"):
-        value = payload.get("max_output_tokens")
-    elif api:
-        value = payload.get("max_tokens", payload.get("max_completion_tokens"))
+    cap = default
+    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+        value = payload.get(key)
+        if _positive(value):
+            cap = int(value)
+            break
     else:
-        value = next((payload[key] for key in
-                      ("max_tokens", "max_completion_tokens", "max_output_tokens") if key in payload), None)
-        if value is None:
-            value = gen.get("maxOutputTokens")
-    cap = int(value) if isinstance(value, (int, float)) and value > 0 else default
+        value = gen.get("maxOutputTokens")
+        if _positive(value):
+            cap = int(value)
     count = gen.get("candidateCount", payload.get("n", 1))
     if isinstance(count, int) and not isinstance(count, bool) and count > 0:
         cap *= count
     return cap
+
+
+def apply_output_cap(payload, api, rest_path, default, api_version=None):
+    """Give a generation request that sets no output limit one, so what is
+    reserved against the budget is also what the provider may produce.
+
+    The field is the provider's own: max_tokens (Anthropic and legacy
+    completions), max_completion_tokens (OpenAI chat; Azure from api-version
+    2024-09), max_output_tokens (Responses), generationConfig.maxOutputTokens
+    (Gemini). Returns True if the payload changed.
+    """
+    if not isinstance(payload, dict) or not any(k in payload for k in GENERATION_KEYS):
+        return False
+    if rest_path.endswith("embeddings") or not _positive(default):
+        return False
+    default = int(default)
+    if api == "gemini":
+        gen = payload.setdefault("generationConfig", {})
+        if not isinstance(gen, dict) or "maxOutputTokens" in gen:
+            return False
+        gen["maxOutputTokens"] = default
+        return True
+    if any(payload.get(k) is not None for k in ("max_tokens", "max_completion_tokens", "max_output_tokens")):
+        return False
+    if api == "anthropic":
+        field = "max_tokens"
+    elif rest_path.endswith("responses"):
+        field = "max_output_tokens"
+    elif rest_path.endswith("chat/completions"):
+        field = "max_completion_tokens"
+        if api_version is not None and str(api_version) < "2024-09":
+            field = "max_tokens"
+    elif "prompt" in payload:
+        field = "max_tokens"
+    else:
+        return False
+    payload[field] = default
+    return True
 
 
 def estimate_cost(pricing, model, input_bytes, max_output_tokens):

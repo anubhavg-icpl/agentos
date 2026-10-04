@@ -24,11 +24,6 @@ pkgs.linuxKernel.kernels.linux_6_12.override {
     enableCommonConfig = false;
     autoModules = false;
     structuredExtraConfig = {
-      # Paravirtualised guest
-      HYPERVISOR_GUEST = yes;
-      PARAVIRT = yes;
-      KVM_GUEST = yes;
-
       # Devices Firecracker exposes (no PCI: Pullrun boots with pci=off)
       VIRTIO_MENU = yes;
       VIRTIO = yes;
@@ -51,11 +46,17 @@ pkgs.linuxKernel.kernels.linux_6_12.override {
       # Console and boot-time networking (`ip=` in the kernel command line)
       TTY = yes;
       SERIAL_8250 = yes;
-      SERIAL_8250_CONSOLE = yes;
       IP_PNP = yes;
       IP_PNP_DHCP = no;
       IP_PNP_BOOTP = no;
       IP_PNP_RARP = no;
+    } // lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+      # x86-only options (they do not exist on aarch64, where a mandatory
+      # unknown option fails the build): paravirtualised guest, serial console
+      HYPERVISOR_GUEST = yes;
+      PARAVIRT = yes;
+      KVM_GUEST = yes;
+      SERIAL_8250_CONSOLE = yes;
     };
   };
 }

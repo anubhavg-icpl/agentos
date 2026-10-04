@@ -307,3 +307,14 @@ def test_judge_sees_the_runner_verify_status(env, orch):
     tid = queue(orch, prompt="ok", verify={"cmd": ["fake-agent", "fail"]})
     env.runner.run(tid)
     assert "verify: failed" in orch._judge_results([orch.tasks.get(tid)])
+
+
+def test_retry_of_a_plain_task_reuses_its_existing_branch(env, orch):
+    tid = queue(orch, prompt="x")
+    subprocess.run(["git", "-C", env.ws, "branch", "agent/" + tid], check=True)
+    subprocess.run(["git", "-C", env.ws, "branch", "agent/other"], check=True)
+    subprocess.run(["git", "-C", env.ws, "checkout", "-q", "agent/other"], check=True)
+    _, branch, _ = env.runner.prepare_workspace(orch.tasks.get(tid))
+    assert branch == "agent/" + tid
+    current = subprocess.run(["git", "-C", env.ws, "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+    assert current == "agent/" + tid

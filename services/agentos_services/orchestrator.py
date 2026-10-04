@@ -117,6 +117,11 @@ class Orchestrator:
         return "%s%s.service" % (self.opts["runner_unit_prefix"], task_id)
 
     # ── submission ─────────────────────────────────────────────────────
+    def _check_origin(self, origin, peer):
+        """The origin the OpenClaw bridge stamps is reserved for the bridge's own user."""
+        if origin == T.RESERVED_ORIGIN and (not peer or peer_identity(peer)[0] != self.opts["bridge_user"]):
+            raise ApiError(403, "origin %r is reserved for %s" % (origin, self.opts["bridge_user"]))
+
     def _new_task(self, fields, group, now, submitter, **extra):
         # The sequence number keeps FIFO order for tasks queued in the same instant
         self._seq += 1
@@ -141,6 +146,7 @@ class Orchestrator:
         swarm = T.validate_swarm(body, self.opts)
         fields = T.validate_fields({k: v for k, v in body.items() if k not in ("swarm", "judge")}, rt, self.opts)
         T.task_command(self.opts, rt, fields["agent"])
+        self._check_origin(fields.get("origin"), peer)
         judge = None
         if body.get("judge") is not None:
             if swarm < 2:
@@ -246,6 +252,7 @@ class Orchestrator:
                     T.parse_when(when, nodes=set(deps[n]))
             except T.ValidationError as exc:
                 raise T.ValidationError("node %s: %s" % (n, exc))
+            self._check_origin(fields.get("origin"), peer)
             records.append((n, fields, None if when is None else when.strip()))
 
         submitter = peer_identity(peer)[0] if peer else None

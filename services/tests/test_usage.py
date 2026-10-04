@@ -104,8 +104,7 @@ def test_pricing_longest_prefix_wins():
 
 def test_output_cap_counts_requested_candidates():
     assert output_cap({"max_tokens": 100, "n": 3}) == 300
-    assert output_cap({"generationConfig": {"maxOutputTokens": 100, "candidateCount": 2}},
-                      api="gemini") == 200
+    assert output_cap({"generationConfig": {"maxOutputTokens": 100, "candidateCount": 2}}) == 200
 
 
 def test_cost_all_token_kinds():

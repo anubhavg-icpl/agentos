@@ -246,12 +246,12 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 | Storage & snapshots | storage | `agentos snapshot` | ✅ |
 | Observability | observability | Grafana | ✅ |
 | Secrets manager | secrets-manager | `agentos-secrets` | ✅ (after sops setup) |
-| Git automation | git-automation | `agentos-git` | Helpers ✅, auto-commit/PR planned |
+| Git automation | git-automation | `agentos-git` | Helpers ✅, auto-PR for orchestrator tasks ✅, auto-commit planned |
 | Context & memory | context | `agentos-memory` | Qdrant ✅, memory manager planned |
 | MCP servers | mcp-servers | `agentos-mcp` | ✅ (config) |
 | Provisioning | provisioning | `agentos-env` | ✅ (provisioner service planned) |
-| Orchestration | orchestration | — | Planned |
-| Scheduler | scheduler | — | Planned |
+| Orchestration | orchestration | `agentos-task` | ✅ |
+| Scheduler | scheduler | `agentos-schedule` | ✅ |
 | 20 coding agents | agents | `agentos agents` | ✅ |
 
 ---
