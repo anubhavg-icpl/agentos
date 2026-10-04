@@ -79,3 +79,23 @@ def test_setup_failure_rolls_back(tmp_path):
 
 def test_main_rejects_bad_id():
     assert netns.main(["setup", "../x"]) == 2
+
+
+def test_sweep_removes_only_stale(tmp_path):
+    rec = Recorder()
+    ns = make(tmp_path, rec)
+    ns.netns_dir = str(tmp_path / "netns")
+    os.makedirs(ns.netns_dir)
+    for i in ("live", "dead", "mine"):
+        (tmp_path / "netns" / ("agentos-" + i)).write_text("")
+        os.makedirs(tmp_path / "net" / i)
+    os.makedirs(tmp_path / "net" / "orphan")
+    ns.is_live = lambda i: i == "live"
+    ns.list_veths = lambda: [names("live")["host_if"], names("dead")["host_if"], "avhdeadbeef"]
+    removed = ns.sweep(keep=("mine",))
+    assert "live" not in removed and "mine" not in removed
+    assert {"dead", "orphan", "avhdeadbeef"} <= set(removed)
+    assert not (tmp_path / "net" / "dead").exists()
+    assert (tmp_path / "net" / "live").exists() and (tmp_path / "net" / "mine").exists()
+    assert ["ip", "link", "del", "avhdeadbeef"] in rec.calls
+    assert ["ip", "netns", "del", "agentos-dead"] in rec.calls

@@ -60,14 +60,20 @@ let
   # writes into its workspace, then keeps working until it is stopped.
   fakeAgent = pkgs.writeShellApplication {
     name = "fake-agent";
-    runtimeInputs = [ pkgs.curl pkgs.coreutils ];
+    runtimeInputs = [ pkgs.curl pkgs.coreutils pkgs.util-linux pkgs.python3 ];
     text = ''
+      yesno() { if "$@" >/dev/null 2>&1; then echo yes; else echo no; fi; }
       id -un > whoami.txt
       echo "$ANTHROPIC_API_KEY" > key-seen.txt
       echo "$ANTHROPIC_BASE_URL" > base-url.txt
       echo "written by the agent" > notes.txt
       if touch /var/lib/agentos/escape 2>/dev/null; then echo yes; else echo no; fi > escaped.txt
       if curl -s -m 5 --unix-socket /run/redis-agentos/redis.sock http://x/ >/dev/null 2>&1; then echo yes; else echo no; fi > redis.txt
+      # Kernel-surface hardening: no user namespaces, no raw sockets, no cloud metadata
+      yesno unshare -U true > userns.txt
+      yesno python3 -c 'import socket; socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)' > rawsock.txt
+      yesno python3 -c 'import socket; socket.socket(socket.AF_PACKET, socket.SOCK_RAW)' > packet-sock.txt
+      curl -s -m 3 -o /dev/null -w '%{http_code}' http://169.254.169.254/ > metadata.txt || true
       for i in $(seq 1 "''${1:-3}"); do
         code=$(curl -s -o /dev/null -w '%{http_code}' \
           -H "x-api-key: $ANTHROPIC_API_KEY" -H 'content-type: application/json' \
@@ -226,6 +232,11 @@ pkgs.testers.runNixOSTest {
         assert machine.succeed(f"cat {ws}/key-seen.txt").strip() == "agentos-managed"
         assert machine.succeed(f"cat {ws}/escaped.txt").strip() == "no"
         assert machine.succeed(f"cat {ws}/redis.txt").strip() == "no"
+        # kernel-surface hardening of the unit (SystemCallFilter, RestrictNamespaces, ...)
+        assert machine.succeed(f"cat {ws}/userns.txt").strip() == "no"
+        assert machine.succeed(f"cat {ws}/rawsock.txt").strip() == "no"
+        assert machine.succeed(f"cat {ws}/packet-sock.txt").strip() == "no"
+        assert machine.succeed(f"cat {ws}/metadata.txt").strip() in ("000", "")
         machine.fail("test -e /var/lib/agentos/escape")
         # the provider saw the real key, never the placeholder
         seen = [json.loads(l) for l in machine.succeed("cat /var/lib/mock-llm/requests.jsonl").splitlines()]

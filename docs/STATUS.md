@@ -56,4 +56,6 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 - **Egress allowlist is host-wide** and IPv4 only (AAAA records are filtered).
 - **The npm/PyPI launchers, MCP servers and VIBE fetch code at runtime**, outside Nix's reproducibility guarantees.
 - **Several `@modelcontextprotocol/*` servers are archived upstream.** They still install but get no fixes.
+- **No user namespaces inside agents.** `RestrictNamespaces=yes` and the syscall filter block bubblewrap, Chromium's own sandbox and rootless containers in agents (use `--no-sandbox`). `MemoryDenyWriteExecute` and `ProcSubset=pid` are not set because Node's JIT and `os.cpus()` need them. See [containers.md](containers.md).
+- **Container agents share one subnet and NAT.** Isolation between them relies on isolated bridge ports plus the `agentos-fwd` chain; there is no per-agent firewall policy, and IPv6 is rejected.
 - **Kill latency.** The gateway refuses requests the moment the budget is exceeded. The daemon stops the agent's unit a few seconds later.

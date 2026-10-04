@@ -197,6 +197,35 @@ writeShellApplication {
       )
     }
 
+    # Kernel-surface hardening shared by sandbox and container units (keep in
+    # step with HARDEN_PROPS in taskrunner.py). Deliberately absent:
+    #  - MemoryDenyWriteExecute: Node/V8 needs W^X JIT pages.
+    #  - ProcSubset=pid: hides /proc/{cpuinfo,meminfo,stat}; Node's os.cpus()
+    #    then returns [] and jest/npm/webpack size their worker pools from it.
+    # RestrictNamespaces=yes also stops agents from nesting bwrap or Chromium's
+    # user-namespace sandbox (run Chromium with --no-sandbox in here).
+    # Denied syscalls fail with EPERM rather than killing the process, so
+    # libuv falls back from io_uring etc.
+    HARDEN_PROPS=(
+      -p SystemCallFilter=@system-service
+      -p "SystemCallFilter=~@privileged @mount @module @raw-io @reboot @swap @obsolete @cpu-emulation @debug"
+      -p SystemCallErrorNumber=EPERM
+      -p SystemCallArchitectures=native
+      -p RestrictNamespaces=yes
+      -p "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK"
+      -p ProtectProc=invisible
+      -p LockPersonality=yes
+      -p RestrictRealtime=yes
+      -p RestrictSUIDSGID=yes
+      -p ProtectClock=yes
+      -p ProtectControlGroups=yes
+      -p ProtectKernelLogs=yes
+      -p ProtectHostname=yes
+      -p CapabilityBoundingSet=
+      -p AmbientCapabilities=
+      -p MemorySwapMax=0
+    )
+
     # ── spawn ─────────────────────────────────────────────────────────
     cmd_spawn() {
       local agent="''${1:-}"
@@ -395,10 +424,8 @@ writeShellApplication {
           -p "ReadWritePaths=$workspace $AGENT_HOME"
           -p ProtectKernelTunables=yes
           -p ProtectKernelModules=yes
-          -p ProtectControlGroups=yes
-          -p RestrictSUIDSGID=yes
-          -p LockPersonality=yes
           -p UMask=0002
+          "''${HARDEN_PROPS[@]}"
           --setenv="HOME=$AGENT_HOME"
           --setenv="USER=$AGENT_USER"
           --setenv="PATH=/run/current-system/sw/bin"

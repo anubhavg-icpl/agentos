@@ -54,7 +54,7 @@ let
   # idles for $1 seconds (default 600).
   fakeAgent = pkgs.writeShellApplication {
     name = "fake-agent";
-    runtimeInputs = [ pkgs.curl pkgs.coreutils pkgs.procps pkgs.iproute2 pkgs.git pkgs.gawk pkgs.gnugrep ];
+    runtimeInputs = [ pkgs.curl pkgs.coreutils pkgs.procps pkgs.iproute2 pkgs.git pkgs.gawk pkgs.gnugrep pkgs.util-linux pkgs.python3 ];
     text = ''
       yesno() { if "$@" >/dev/null 2>&1; then echo yes; else echo no; fi; }
 
@@ -98,6 +98,12 @@ let
       curl -s -m 3 -o /dev/null -w '%{http_code}' http://10.200.0.1:9950/metrics > host-metrics.txt || true
       # Provider APIs directly (not via the gateway)
       curl -s -m 3 -o /dev/null -w '%{http_code}' https://api.anthropic.com/ > direct-provider.txt || true
+
+      # Kernel-surface hardening: no user namespaces, no raw sockets, no cloud metadata
+      yesno unshare -U true > userns.txt
+      yesno python3 -c 'import socket; socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)' > rawsock.txt
+      yesno python3 -c 'import socket; socket.socket(socket.AF_PACKET, socket.SOCK_RAW)' > packet-sock.txt
+      curl -s -m 3 -o /dev/null -w '%{http_code}' http://169.254.169.254/ > metadata.txt || true
 
       code=$(curl -s -o /dev/null -w '%{http_code}' \
         -H "x-api-key: $ANTHROPIC_API_KEY" -H 'content-type: application/json' \
@@ -295,6 +301,19 @@ pkgs.testers.runNixOSTest {
         assert ws_file("gateway-admin.txt") == "403"
         for name in ["loopback-gateway", "loopback-llm", "host-service", "host-metrics", "direct-provider"]:
             assert ws_file(f"{name}.txt") in ("000", ""), (name, ws_file(f"{name}.txt"))
+        # kernel-surface hardening and the default-deny forward policy
+        assert ws_file("userns.txt") == "no"
+        assert ws_file("rawsock.txt") == "no"
+        assert ws_file("packet-sock.txt") == "no"
+        assert ws_file("metadata.txt") in ("000", ""), ws_file("metadata.txt")
+        fwd = machine.succeed("iptables -S agentos-fwd")
+        assert "-d 169.254.169.254/32 -j REJECT" in fwd and "-o agentos0 -j REJECT" in fwd, fwd
+        for net in ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]:
+            assert f"-d {net} -j REJECT" in fwd, net
+        # the unit carries the syscall and namespace restrictions
+        props = machine.succeed(f"systemctl show agentos-agent-{agent}.service -p RestrictNamespaces -p MemorySwapMax -p MemoryDenyWriteExecute")
+        assert "RestrictNamespaces=yes" in props and "MemorySwapMax=0" in props, props
+        assert "MemoryDenyWriteExecute=no" in props, props
         # the same service is reachable from the host itself
         machine.succeed("curl -fsS -m 5 http://10.200.0.1:7777/ >/dev/null")
         rules = machine.succeed("iptables -S agentos-fwd")
@@ -317,6 +336,13 @@ pkgs.testers.runNixOSTest {
         left = leftovers()
         print(left)
         assert left == {"netns": "", "veth": "", "state": ""}, left
+
+    with subtest("stale namespaces and veths are swept"):
+        machine.succeed("ip netns add agentos-stale-1")
+        machine.succeed("ip link add avhdeadbeef type veth peer name avcdeadbeef")
+        machine.succeed("$(jq -r .container.netns_helper /etc/agentos/runtime.json) sweep")
+        assert "agentos-stale-1" not in machine.succeed("ip netns list")
+        machine.fail("ip link show avhdeadbeef")
 
     with subtest("namespace and veth are removed when the agent exits by itself"):
         machine.succeed(f"rm -f {ws}/done.txt")
