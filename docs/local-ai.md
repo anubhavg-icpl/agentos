@@ -40,7 +40,7 @@ logs failures and exits 0. Retry with `systemctl restart agentos-local-ai-pull`.
 ## Gateway provider `local`
 
 The module registers `agentos.networking.providers.local`:
-`baseUrl = http://127.0.0.1:<port>`, `api = "openai"`, no `keyFile`. The
+`baseUrl = http://127.0.0.1:<port>`, `api = "openai-compatible"`, no `keyFile`. The
 backend's OpenAI-compatible API is at `/v1`, so an agent uses
 
 ```
@@ -58,9 +58,9 @@ to it is metered at $0 and cost routing can send work there. See
 
 ### Routing example
 
-The routing rules rewrite the model within one provider, so cost routing
-between hosted and local models cannot cross providers. Within local, route
-all CI agents to a small model, and pick the cheapest of a local group:
+Routing rules can use `routing.targets` to select another provider, provided
+it speaks the same wire format. Within local, route all CI agents to a small
+model, and pick the cheapest of a local group:
 
 ```nix
 agentos.budget-controller.routing = {
