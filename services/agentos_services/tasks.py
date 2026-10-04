@@ -111,7 +111,7 @@ SUBMIT_FIELDS = {
     "agent", "workspace", "prompt", "budget_usd", "timeout_sec",
     "depends_on", "after", "swarm", "group", "isolate", "origin",
     "gate", "max_retries", "backoff_sec", "verify", "judge", "priority",
-    "concurrency_key", "dedupe_key",
+    "concurrency_key", "dedupe_key", "publish",
 }
 _PLACEHOLDER = re.compile(r"\{(prompt|workspace|task_id)\}")
 _PREV = re.compile(r"\{prev_result\}")
@@ -226,6 +226,7 @@ def validate_fields(body, runtime, opts, check_workspace=True, partial=False, no
             raise ValidationError("invalid %s" % name)
         out[name] = value
     out["verify"] = validate_verify(body.get("verify"))
+    out["publish"] = validate_publish(body.get("publish"))
 
     if _PREV.search(prompt) and not out["depends_on"] and not partial:
         raise ValidationError("prompt uses {prev_result} but the task has no dependency")
@@ -234,6 +235,34 @@ def validate_fields(body, runtime, opts, check_workspace=True, partial=False, no
         unknown = sorted(refs - set(node_refs or ()))
         if unknown:
             raise ValidationError("prompt refers to node(s) it does not depend on: %s" % ", ".join(unknown))
+    return out
+
+
+_REPO = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}")
+
+
+def validate_publish(block):
+    """A request to open a pull request after the task succeeds.
+
+    Only {repo, title, body} are accepted; whether and where the branch is
+    pushed is decided by root-owned configuration (see publish.py)."""
+    if block is None:
+        return None
+    if not isinstance(block, dict) or set(block) - {"repo", "title", "body"}:
+        raise ValidationError("publish must be an object with only repo, title and body")
+    out = {}
+    repo = block.get("repo")
+    if repo is not None:
+        if not isinstance(repo, str) or not _REPO.fullmatch(repo):
+            raise ValidationError("publish.repo must look like owner/name")
+        out["repo"] = repo
+    for key, cap in (("title", 200), ("body", 4000)):
+        value = block.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or "\0" in value or len(value) > cap:
+            raise ValidationError("publish.%s must be a string of at most %d characters" % (key, cap))
+        out[key] = value
     return out
 
 

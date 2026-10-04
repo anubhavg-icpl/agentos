@@ -330,8 +330,19 @@ def test_newer_orchestrator_gets_gate_and_dedupe_key():
     assert h.orch.bodies[0]["gate"] is True and h.orch.bodies[0]["dedupe_key"]
 
 
-def test_publish_rule_submits_a_two_node_workflow():
+def test_publish_rule_submits_one_task_with_a_publish_block():
     h = Hook(make_cfg({"fix": rule(publish=True, gate=True)}))
+    status, out = h.post(issue_payload())
+    body = h.orch.bodies[0]
+    assert out["results"][0]["style"] == "fields"
+    assert body["gate"] is True and body["publish"]["repo"] == REPO
+    assert body["origin"] == "gh:acme/widgets#7" and body["dedupe_key"] == "gh:acme/widgets#7:issues"
+
+
+def test_workflow_style_submits_a_two_node_workflow():
+    cfg = make_cfg({"fix": rule(publish=True, gate=True)})
+    cfg["triggers"]["submit_style"] = "workflow"
+    h = Hook(cfg)
     status, out = h.post(issue_payload())
     body = h.orch.bodies[0]
     run, pub = body["workflow"]
@@ -346,10 +357,10 @@ def test_todays_orchestrator_rejects_unknown_fields_so_we_fall_back():
     h = Hook(make_cfg({"fix": rule(publish=True)}), orch)
     out = h.post(issue_payload())[1]
     assert out["results"][0]["style"] == "compat"
-    assert [sorted(set(b) & {"workflow", "dedupe_key", "publish"}) for b in orch.bodies] == [["dedupe_key", "workflow"], ["dedupe_key", "publish"], []]
+    assert [sorted(set(b) & {"workflow", "dedupe_key", "publish"}) for b in orch.bodies] == [["dedupe_key", "publish"], []]
     assert set(orch.bodies[-1]) == {"agent", "workspace", "prompt", "origin"}
     # publish is requested out of band for the root task runner
-    marker = json.loads(h.state.get("publish:task-3"))
+    marker = json.loads(h.state.get("publish:task-2"))
     assert marker["repo"] == REPO and marker["title"].startswith("AgentOS: ")
 
 

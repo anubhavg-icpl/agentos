@@ -286,3 +286,12 @@ def test_api_roundtrip(orch, short_dir, systemctl):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_publish_block_is_validated():
+    from agentos_services.tasks import validate_publish, ValidationError as VE
+    assert validate_publish(None) is None
+    assert validate_publish({"repo": "acme/widgets", "title": "t"}) == {"repo": "acme/widgets", "title": "t"}
+    for bad in ({"repo": "nope"}, {"url": "x"}, {"title": 1}, {"body": "x" * 4001}, "acme/widgets"):
+        with pytest.raises(VE):
+            validate_publish(bad)

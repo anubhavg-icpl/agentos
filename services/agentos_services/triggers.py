@@ -384,7 +384,9 @@ class TriggerService:
                  "body": "Requested by a GitHub %s event on %s." % (event, origin)}
         style = self.opts["submit_style"]
         out = []
-        if rule["publish"] and style in ("auto", "workflow"):
+        # A two-node publish workflow is only sent when asked for explicitly:
+        # the orchestrator takes a `publish` block on the task itself.
+        if rule["publish"] and style == "workflow":
             run = dict(base)
             run.pop("origin")
             if rule["gate"]:

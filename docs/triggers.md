@@ -140,7 +140,7 @@ A match submits a task with `origin = "gh:<repo>#<n>"` and `dedupe_key = "gh:<re
 
 The orchestrator is evolving (`gate`, approvals, `workflow` with `depends_on`, `priority`, `dedupe_key`), and today's `tasks.py` rejects unknown fields. `agentos.triggers.submitStyle` therefore defaults to `auto`, which tries, in order, and moves on when the orchestrator answers 400:
 
-1. `workflow`, only for `publish` rules: `{origin, dedupe_key, workflow: [{id: "run", agent, workspace, prompt, gate?}, {id: "publish", kind: "publish", depends_on: ["run"], publish: {repo, title, body}}]}`;
+1. (`workflow` style only, never tried by `auto`) a two-node workflow: `{origin, dedupe_key, workflow: [{id: "run", ...}, {id: "publish", kind: "publish", depends_on: ["run"], publish: {repo, title, body}}]}`. The current orchestrator takes a `publish` block on the task itself, so `auto` starts with the next form;
 2. `fields`: one task with `dedupe_key`, `gate` and a `publish` block;
 3. `compat`: a plain task (`agent workspace prompt origin budget_usd timeout_sec`). `dedupe_key` is emulated (the task id is remembered per key; a new event is dropped while that task is queued, running or awaiting approval) and `publish` is a marker in Redis (`agentos:publish:<task-id>`) that the task runner reads. Rules with `gate = true` are never submitted in this form: they are reported `rejected`.
 
