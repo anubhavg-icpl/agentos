@@ -27,6 +27,7 @@
     # Agent intelligence
     ./context
     ./orchestration
+    ./openclaw
 
     # Tool ecosystem
     ./mcp-registry
