@@ -503,8 +503,12 @@ agentos/
 - [x] Inter-agent message bus, HTTP and MCP ([docs](docs/gateway-features.md))
 - [x] Cost routing to cheaper models ([docs](docs/gateway-features.md))
 - [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
-- [ ] Container and GPU options for orchestrator tasks
-- [ ] Agents emitting OpenTelemetry traces
+- [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
+- [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
+- [x] OpenClaw chat front end, opt-in ([docs](docs/openclaw.md))
+- [x] Pullrun packaged, experimental `--isolation pullrun` ([docs](docs/pullrun.md))
+
+What comes next, release by release: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
