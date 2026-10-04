@@ -156,6 +156,8 @@
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
+          # Eval-only: key-only sshd on the live ISO, no fixed VM password.
+          hardening = import ./tests/hardening.nix { inherit pkgs self; };
         });
 
       # ── Dev shell for working on AgentOS itself ───────────────────────

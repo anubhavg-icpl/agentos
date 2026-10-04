@@ -59,6 +59,13 @@ in
     '';
   };
 
+  imports = [
+    (lib.mkRemovedOptionModule [ "agentos" "runtime" "enableMCPGateway" ]
+      "The MCP gateway was a stub with no implementation and is removed; see docs/ROADMAP.md.")
+    (lib.mkRemovedOptionModule [ "agentos" "runtime" "mcpGatewayPort" ]
+      "The MCP gateway was a stub with no implementation and is removed; see docs/ROADMAP.md.")
+  ];
+
   options.agentos.runtime = {
     enable = lib.mkEnableOption "AgentOS runtime";
 
@@ -119,18 +126,6 @@ in
       type = lib.types.attrsOf lib.types.int;
       default = { };
       description = "Per-agent resource limits applied by `agentos spawn` (set by the circuit-breaker module)";
-    };
-
-    enableMCPGateway = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Run the MCP gateway (planned; needs agentos.plannedServices.enable)";
-    };
-
-    mcpGatewayPort = lib.mkOption {
-      type = lib.types.port;
-      default = 9944;
-      description = "Port for the MCP gateway";
     };
   };
 
@@ -306,21 +301,6 @@ in
         }
       });
     '';
-
-    # ─ MCP gateway (planned) ──────────────────────────────────────────
-    systemd.services.agentos-mcp-gateway = lib.mkIf (cfg.enableMCPGateway && config.agentos.plannedServices.enable) {
-      description = "AgentOS MCP Gateway";
-      after = [ "network.target" "agentos-daemon.service" ];
-      wants = [ "agentos-daemon.service" ];
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "simple";
-        User = "agentos";
-        Group = "agentos";
-        ExecStart = "${pkgs.agentos.mcp-gateway}/bin/agentos-mcp-gateway --port ${toString cfg.mcpGatewayPort}";
-        Restart = "on-failure";
-      };
-    };
 
     environment.systemPackages = with pkgs; [
       agentos.cli

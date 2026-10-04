@@ -28,11 +28,38 @@
   networking.networkmanager.enable = true;
   networking.wireless.enable = lib.mkForce false;
 
-  # ── SSH enabled on the ISO (for remote install) ───────────────────
-  # There is no default password. To install over SSH, set one on the
-  # console first with `passwd`, or add a key to
-  # users.users.agentos-live.openssh.authorizedKeys.keys and rebuild.
-  services.openssh.enable = true;
+  # ── SSH on the ISO (key-only) ──────────────────────────────────────
+  # The live user and root have empty passwords for the console, so sshd
+  # must never accept passwords: keys only. To install over SSH, add a
+  # public key to ~/.ssh/authorized_keys of agentos-live on the console
+  # (agentos-install also offers that key to the installed admin user).
+  # An assertion below keeps this from regressing.
+  services.openssh = {
+    enable = true;
+    settings = {
+      PasswordAuthentication = lib.mkForce false;
+      KbdInteractiveAuthentication = lib.mkForce false;
+      PermitEmptyPasswords = lib.mkForce false;
+      PermitRootLogin = lib.mkForce "prohibit-password";
+    };
+  };
+
+  assertions = [{
+    assertion =
+      let s = config.services.openssh.settings;
+      in !config.services.openssh.enable || (
+        s.PasswordAuthentication == false
+        && s.KbdInteractiveAuthentication == false
+        && !(builtins.elem (s.PermitEmptyPasswords or false) [ true "yes" ])
+        && s.PermitRootLogin != "yes"
+      );
+    message = ''
+      The live ISO has empty-password accounts (agentos-live, root). sshd
+      must be disabled or key-only there: set PasswordAuthentication,
+      KbdInteractiveAuthentication and PermitEmptyPasswords to false and do
+      not allow PermitRootLogin = "yes".
+    '';
+  }];
 
   # ── Live user ─────────────────────────────────────────────────────
   users.users.agentos-live = {
@@ -83,7 +110,8 @@
 
     To install:        sudo agentos-install /dev/sda
 
-    For SSH access, set a password first:  passwd
+    For SSH access (keys only), add a public key:
+      mkdir -p ~/.ssh && echo "ssh-ed25519 AAAA..." >> ~/.ssh/authorized_keys
     BANNER
   '';
 

@@ -252,12 +252,8 @@ rec {
   # Service daemons. These are placeholders with no source code yet;
   # they are only referenced when agentos.daemons.enable = true.
   daemon = pkgs.callPackage ../nixos/packages/daemon.nix { };
-  mcp-gateway = pkgs.callPackage ../nixos/packages/mcp-gateway.nix { };
   model-gateway = pkgs.callPackage ../nixos/packages/model-gateway.nix { };
-  memory-manager = pkgs.callPackage ../nixos/packages/memory-manager.nix { };
-  mcp-registry = pkgs.callPackage ../nixos/packages/mcp-registry.nix { };
   budget-controller = pkgs.callPackage ../nixos/packages/budget-controller.nix { };
-  provisioner = pkgs.callPackage ../nixos/packages/provisioner.nix { };
   notifier = pkgs.callPackage ../nixos/packages/notifier.nix { };
   circuit-breaker = pkgs.callPackage ../nixos/packages/circuit-breaker.nix { };
 }

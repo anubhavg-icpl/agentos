@@ -78,34 +78,6 @@ in
       extensions = [ "pgvector" ];
     };
 
-    # ─ Memory management service ─────────────────────────────────────
-    systemd.services.agentos-memory-manager = lib.mkIf config.agentos.plannedServices.enable {
-      description = "AgentOS Memory Manager";
-      after = [ "network.target" ] ++ lib.optional (cfg.vectorStore == "qdrant") "qdrant.service";
-      wants = [ "qdrant.service" ];
-      wantedBy = [ "multi-user.target" ];
-
-      environment = {
-        AGENTOS_VECTOR_STORE = cfg.vectorStore;
-        AGENTOS_VECTOR_URL = "http://localhost:${toString cfg.qdrantPort}";
-        AGENTOS_EMBEDDING_MODEL = cfg.embeddingModel;
-        AGENTOS_MEMORY_RETENTION = toString cfg.memoryRetentionDays;
-        AGENTOS_SHARED_KB = lib.boolToString cfg.enableSharedKnowledge;
-      };
-
-      serviceConfig = {
-        Type = "simple";
-        User = "agentos";
-        Group = "agentos";
-        ExecStart = "${pkgs.agentos.memory-manager}/bin/agentos-memory-manager";
-        Restart = "on-failure";
-        RestartSec = 5;
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/agentos" ];
-      };
-    };
-
     # ─ Memory GC (clean up old memories) ─────────────────────────────
     systemd.services.agentos-memory-gc = {
       description = "AgentOS memory garbage collection";
