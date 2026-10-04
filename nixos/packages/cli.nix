@@ -51,6 +51,12 @@ writeShellApplication {
     CONTAINER_GATEWAY=$(conf '.container.gateway_url // empty')
     GPU_ENABLED=$(conf '.gpu.enabled // false')
     GPU_HELPER=$(conf '.gpu.helper // empty')
+    PULLRUN_ENABLED=$(conf '.pullrun.enabled // false')
+    PULLRUN_BIN=$(conf '.pullrun.bin // empty')
+    PULLRUN_SOCKET=$(conf '.pullrun.socket // empty')
+    PULLRUN_IMAGE=$(conf '.pullrun.image // empty')
+    PULLRUN_LOG_DIR=$(conf '.pullrun.log_dir // empty')
+    PULLRUN_GATEWAY=$(conf '.pullrun.gateway_url // empty')
 
     valid_name() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; }
     state_file() { echo "$STATE_DIR/$1.json"; }
@@ -93,6 +99,8 @@ writeShellApplication {
             --isolation <mode>       sandbox (default) or container: own root
                                      filesystem, PID/IPC/hostname and network
                                      namespaces (bridge agentos0)
+                                     pullrun (experimental): headless agent in a
+                                     Pullrun container, see docs/pullrun.md
             --gpu [N|any]            Reserve GPU N (or a comma list, or any
                                      free one) exclusively for this agent
             --unsandboxed            Run as yourself instead of agentos-agent
@@ -197,10 +205,111 @@ writeShellApplication {
       )
     }
 
+    # ── pullrun isolation (experimental) ──────────────────────────────
+    # Runs the agent in a Pullrun runc container (docs/pullrun.md). The
+    # Pullrun daemon starts the container as root with a default capability
+    # set and no user namespace, so the agent is started through setpriv, which
+    # drops to the agent user's uid/gid, all capabilities and no_new_privs
+    # before it runs. The container's stdout/stderr is discarded by Pullrun
+    # and there is no stdin, so the output goes to a file that is mounted in
+    # and followed here. This process stays alive for as long as the container
+    # does: the agent daemon tracks it by pid, and `agentos kill` stops it.
+    #
+    # pullrun takes --cmd and -e as comma-separated lists; quote for that
+    pr_q() { local x="''${1//\"/\"\"}"; printf '"%s"' "$x"; }
+
+    # Usage: spawn_pullrun <id> <workspace> <agent-command> <KEY=VALUE>... -- <agent args>
+    spawn_pullrun() {
+      local id="$1" workspace="$2" cmd_path="$3"
+      shift 3
+      local envs=()
+      while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+        envs+=("$1"); shift
+      done
+      shift
+      local pr=("$PULLRUN_BIN" --direct=false --socket "$PULLRUN_SOCKET")
+
+      # Only the Nix store and the system profile are mounted into the container
+      [[ "$cmd_path" =~ ^(/nix/store|/run/current-system)/[^[:space:],:]+$ ]] || die "$cmd_path is not under /nix/store or /run/current-system, which are the only host paths a pullrun container sees"
+      [[ "$workspace" != *:* && "$AGENT_HOME" != *:* ]] || die "workspace and home paths may not contain ':' with --isolation pullrun"
+      [ -S "$PULLRUN_SOCKET" ] || die "the Pullrun daemon is not running (no $PULLRUN_SOCKET; systemctl status pullrun-runtime)"
+      [ -w "$PULLRUN_SOCKET" ] || die "no access to $PULLRUN_SOCKET: --isolation pullrun needs membership in the agentos group"
+      local digest
+      digest=$("''${pr[@]}" images --json | jq -r --arg ref "$PULLRUN_IMAGE" '[.[]? | select(.image_ref == $ref)][0].root_digest // empty') \
+        || die "could not list Pullrun images"
+      [ -n "$digest" ] || die "image $PULLRUN_IMAGE is not in the Pullrun store (systemctl status pullrun-agent-image)"
+
+      local uid gid out pw grp
+      uid=$(id -u "$AGENT_USER")
+      gid=$(id -g "$AGENT_USER")
+      out="''${PULLRUN_LOG_DIR:?}/$id.log"
+      pw="''${PULLRUN_LOG_DIR:?}/$id.passwd"
+      grp="''${PULLRUN_LOG_DIR:?}/$id.group"
+      (umask 007; : > "$out") 2>/dev/null || die "cannot write to $PULLRUN_LOG_DIR (membership in the agentos group needed)"
+      (umask 022
+        printf 'root:x:0:0:root:/root:/bin/sh\n%s:x:%s:%s::%s:/bin/sh\n' "$AGENT_USER" "$uid" "$gid" "$AGENT_HOME" > "$pw"
+        printf 'root:x:0:\n%s:x:%s:\n' "$AGENT_USER" "$gid" > "$grp")
+
+      # Read-only: the Nix store and the files the agent's tools expect. NixOS
+      # paths are symlink chains into the store; mount what they resolve to.
+      local mounts=(-v /nix/store:/nix/store:ro
+        -v "$pw:/etc/passwd:ro" -v "$grp:/etc/group:ro"
+        -v "$out:/run/agentos-agent.log")
+      local p src
+      for p in /run/current-system/sw /etc/gitconfig /bin/sh /usr/bin/env \
+               /etc/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt; do
+        if src=$(readlink -f "$p") && [ -e "$src" ]; then
+          mounts+=(-v "$src:$p:ro")
+        fi
+      done
+      mounts+=(-v "$workspace:$workspace" -v "$AGENT_HOME:$AGENT_HOME")
+
+      local envargs=() e
+      for e in "''${envs[@]}" "HOME=$AGENT_HOME" "USER=$AGENT_USER" "PATH=/run/current-system/sw/bin" \
+               "TERM=''${TERM:-xterm-256color}" "LANG=''${LANG:-C.UTF-8}" \
+               SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt; do
+        envargs+=(-e "$(pr_q "$e")")
+      done
+
+      # Runs as root inside the container until setpriv: send output to the
+      # file, enter the workspace, drop privileges, run the agent
+      # shellcheck disable=SC2016 # expanded by the shell in the container
+      local script='exec >>/run/agentos-agent.log 2>&1; cd "$1" || exit 1; sp=$2; uid=$3; gid=$4; shift 4
+    exec "$sp" --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs --bounding-set -all -- "$@"'
+      local cmdargs=() a
+      for a in "$BASH" -c "$script" agentos-pullrun "$workspace" "$(command -v setpriv)" "$uid" "$gid" "$cmd_path" "$@"; do
+        cmdargs+=(--cmd "$(pr_q "$a")")
+      done
+
+      local ncpu mem cpu
+      ncpu=$(nproc)
+      mem=$(conf '.limits.memory_mb // 4096')
+      cpu=$(conf '.limits.cpu_percent // 100')
+
+      warn "pullrun isolation is experimental: no stdin or TTY; output goes to $out"
+      local tail_pid run_pid rc=0
+      tail -n +1 -F "$out" 2>/dev/null &
+      tail_pid=$!
+      pr_stop() { "''${pr[@]}" stop "$id" >/dev/null 2>&1 || true; }
+      trap pr_stop INT TERM
+      "''${pr[@]}" run "sha256:$digest" --backend container --name "$id" --net bridge \
+        --cpu "$((cpu * ncpu * 10))" --memory "$((mem * 1024 * 1024))" \
+        "''${mounts[@]}" "''${envargs[@]}" "''${cmdargs[@]}" -a &
+      run_pid=$!
+      while kill -0 "$run_pid" 2>/dev/null; do
+        wait "$run_pid" || rc=$?
+      done
+      sleep 1
+      kill "$tail_pid" 2>/dev/null || true
+      pr_stop
+      rm -f "''${pw:?}" "''${grp:?}"
+      exit "$rc"
+    }
+
     # ── spawn ─────────────────────────────────────────────────────────
     cmd_spawn() {
       local agent="''${1:-}"
-      [ -n "$agent" ] || die "Usage: agentos spawn <agent> [--workspace <name|path>] [--budget <usd>] [--model <m>] [--isolation <sandbox|container>] [--gpu [N|any]] [--unsandboxed] [-- args]"
+      [ -n "$agent" ] || die "Usage: agentos spawn <agent> [--workspace <name|path>] [--budget <usd>] [--model <m>] [--isolation <sandbox|container|pullrun>] [--gpu [N|any]] [--unsandboxed] [-- args]"
       shift
       local workspace="$PWD" model="" budget="" unsandboxed=0 isolation="" gpu=""
       local extra=()
@@ -240,11 +349,13 @@ writeShellApplication {
       workspace=$(realpath "$workspace")
 
       case "$isolation" in
-        ""|sandbox|container) ;;
-        *) die "unknown isolation mode: $isolation (use sandbox or container)" ;;
+        ""|sandbox|container|pullrun) ;;
+        microvm) die "--isolation microvm is not supported yet: Firecracker has no host mounts in Pullrun, so the workspace cannot be shared with the VM (use --isolation container, or --isolation pullrun)" ;;
+        *) die "unknown isolation mode: $isolation (use sandbox, container or pullrun)" ;;
       esac
       if [ "$unsandboxed" -eq 1 ]; then
         [ "$isolation" != container ] || die "--isolation container conflicts with --unsandboxed"
+        [ "$isolation" != pullrun ] || die "--isolation pullrun conflicts with --unsandboxed"
         [ -z "$gpu" ] || die "--gpu needs a sandboxed agent (the GPU grant is enforced by its unit)"
         isolation=none
       else
@@ -255,6 +366,12 @@ writeShellApplication {
         [ -n "$NETNS_HELPER" ] || die "runtime.json has no container helper"
       fi
 
+      if [ "$isolation" = pullrun ]; then
+        [ -z "$gpu" ] || die "--gpu is not supported with --isolation pullrun"
+        [ "$PULLRUN_ENABLED" = "true" ] || die "--isolation pullrun needs agentos.pullrun.agentContainers.enable"
+        [ -n "$PULLRUN_BIN" ] && [ -n "$PULLRUN_SOCKET" ] && [ -n "$PULLRUN_LOG_DIR" ] || die "runtime.json has no pullrun settings"
+      fi
+
       local sandboxed=0
       if [ "$unsandboxed" -eq 0 ]; then
         case "$workspace" in
@@ -263,7 +380,8 @@ writeShellApplication {
       Create a workspace:  agentos workspace create <name> --from $workspace
       or run as yourself:  agentos spawn $agent --unsandboxed" ;;
         esac
-        need_sudo
+        # Pullrun mode talks to its own daemon and needs no sudo
+        [ "$isolation" = pullrun ] || need_sudo
       fi
 
       local max running
@@ -302,6 +420,11 @@ writeShellApplication {
         if [ "$isolation" = container ]; then
           agent_gateway="$CONTAINER_GATEWAY"
         fi
+        # A Pullrun container sits on the pullrun-br0 bridge
+        if [ "$isolation" = pullrun ]; then
+          [ -n "$PULLRUN_GATEWAY" ] || die "runtime.json has no pullrun gateway address"
+          agent_gateway="$PULLRUN_GATEWAY"
+        fi
         # The gateway only answers agents presenting the token registered
         # here, so an agent cannot use another agent's id or budget
         [ -w "$ADMIN_SOCKET" ] || die "spawning through the gateway needs membership in the agentos group"
@@ -329,6 +452,8 @@ writeShellApplication {
         fi
       elif [ -n "$budget" ]; then
         die "--budget needs the model gateway (agentos.networking.enable)"
+      elif [ "$isolation" = pullrun ]; then
+        die "--isolation pullrun needs the model gateway (agentos.networking.enable)"
       fi
       # Other provider credentials pass through, unmetered
       local var
@@ -362,6 +487,10 @@ writeShellApplication {
         unit="agentos-agent-$id.service"
         user="$AGENT_USER"
       fi
+      # Pullrun mode has no systemd unit: the daemon tracks this process
+      if [ "$isolation" = pullrun ]; then
+        unit=""
+      fi
       (umask 002; jq -n \
         --arg id "$id" --arg agent "$agent" --arg command "$command" \
         --arg workspace "$workspace" --arg branch "$branch" --arg user "$user" \
@@ -378,7 +507,9 @@ writeShellApplication {
       ok "Starting $agent as $id"
       info "Workspace: $workspace (branch $branch), isolation: $isolation"
 
-      if [ "$sandboxed" -eq 1 ]; then
+      if [ "$isolation" = pullrun ]; then
+        spawn_pullrun "$id" "$workspace" "$cmd_path" "''${env[@]}" -- "''${extra[@]}"
+      elif [ "$sandboxed" -eq 1 ]; then
         local ncpu mem cpu tasks
         ncpu=$(nproc)
         mem=$(conf '.limits.memory_mb // 4096')
@@ -537,6 +668,11 @@ writeShellApplication {
       f=$(find_state "$id")
       unit=$(jq -r '.unit // empty' "$f")
       workspace=$(jq -r .workspace "$f")
+      if [ "$(jq -r '.isolation // "sandbox"' "$f")" = pullrun ]; then
+        [ -n "$PULLRUN_BIN" ] || die "runtime.json has no pullrun settings"
+        # A shell as root inside the container (not as the agent user)
+        exec "$PULLRUN_BIN" --direct=false --socket "$PULLRUN_SOCKET" exec "$id" -- /run/current-system/sw/bin/bash
+      fi
       if [ -z "$unit" ]; then
         cd "$workspace"
         exec "''${SHELL:-bash}"
