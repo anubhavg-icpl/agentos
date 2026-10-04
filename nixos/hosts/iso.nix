@@ -48,6 +48,14 @@
     # Install tool
     agentos.installer
 
+    # AgentOS CLIs (small: shell scripts and a pure-Python package). The
+    # agents themselves are NOT on the ISO: all-agents is over 1 GB, see
+    # docs/ISO-SIZE.md. They are installed with the system.
+    agentos.cli
+    agentos.services # agentos-fleet, agentos-market, agentos-gpu, ...
+    agentos.task-cli
+    agentos.schedule-cli
+
     # Essential
     git
     vim

@@ -141,6 +141,13 @@
         in
         {
           services = self.packages.${system}.services;
+          # Eval-only: runtime agent map, agent packages and the host's
+          # systemPackages agree (see tests/agent-inclusion.nix).
+          agent-inclusion = import ./tests/agent-inclusion.nix {
+            inherit pkgs;
+            host = hostFor system "agentos";
+            agentPkgs = self.packages.${system};
+          };
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           # Boots a VM with the AgentOS service stack and drives an agent

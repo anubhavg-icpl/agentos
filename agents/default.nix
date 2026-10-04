@@ -39,6 +39,11 @@
 # │ Crush            │ crush        │ crush                 │ nixpkgs   │
 # │ Cursor CLI       │ cursor-agent │ cursor-cli            │ nixpkgs   │
 # │ Copilot CLI      │ copilot      │ github-copilot-cli    │ nixpkgs   │
+# │ Kilo Code        │ kilocode     │ kilocode-cli          │ nixpkgs   │
+# │ Mistral Vibe     │ vibe         │ mistral-vibe          │ nixpkgs   │
+# │ Kiro CLI         │ kiro-cli     │ kiro-cli              │ nixpkgs   │
+# │ Codebuff         │ codebuff     │ codebuff              │ nixpkgs   │
+# │ Pi               │ pi           │ pi-coding-agent       │ nixpkgs   │
 # │ Factory Droid    │ droid        │ factory-droid         │ npm       │
 # │ Cline            │ cline        │ cline                 │ npm       │
 # │ Continue         │ cn           │ continue-cli          │ npm       │
@@ -162,6 +167,14 @@ rec {
   crush = up.crush;
   cursor-cli = withAliases { pkg = up.cursor-cli; aliases = { cursor = "cursor-agent"; }; };
   github-copilot-cli = up.github-copilot-cli;
+  # nixpkgs-unstable currently marks kilocode-cli broken; the stable
+  # channel's package builds and is cached, so fall back to it.
+  kilocode-cli =
+    if up.kilocode-cli.meta.broken or false then pkgs.kilocode-cli else up.kilocode-cli;
+  mistral-vibe = up.mistral-vibe;
+  kiro-cli = up.kiro-cli;
+  codebuff = up.codebuff;
+  pi-coding-agent = up.pi-coding-agent;
 
 
   # ════════════════════════════════════════════════════════════════════
@@ -224,6 +237,7 @@ rec {
     paths = [
       claude-code codex aider gemini-cli qwen-code amp goose opencode
       crush cursor-cli github-copilot-cli
+      kilocode-cli mistral-vibe kiro-cli codebuff pi-coding-agent
       factory-droid cline continue-cli open-interpreter
     ];
     ignoreCollisions = true;
@@ -235,6 +249,7 @@ rec {
     paths = [
       claude-code codex aider gemini-cli qwen-code amp goose opencode
       crush cursor-cli github-copilot-cli
+      kilocode-cli mistral-vibe kiro-cli codebuff pi-coding-agent
     ];
     ignoreCollisions = true;
   };

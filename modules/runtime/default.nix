@@ -192,6 +192,17 @@ in
       cursor = "cursor-agent";
       cursor-agent = "cursor-agent";
       copilot = "copilot";
+      github-copilot-cli = "copilot";
+      kilocode = "kilocode";
+      kilocode-cli = "kilocode";
+      kilo-code = "kilocode";
+      vibe = "vibe";
+      mistral-vibe = "vibe";
+      kiro = "kiro-cli";
+      kiro-cli = "kiro-cli";
+      codebuff = "codebuff";
+      pi = "pi";
+      pi-coding-agent = "pi";
       interpreter = "interpreter";
       open-interpreter = "interpreter";
       droid = "droid";

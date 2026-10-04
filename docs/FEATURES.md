@@ -222,13 +222,13 @@ agentos-notify test "hello"
 
 ---
 
-## Pre-installed Agents (15 total)
+## Pre-installed Agents (20 total)
 
 See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 
 | Source | Agents |
 |------|--------|
-| nixpkgs (11) | Claude Code, Codex, Aider, Gemini, Qwen Code, Amp, Goose, OpenCode, Crush, Cursor CLI, GitHub Copilot CLI |
+| nixpkgs (16) | Claude Code, Codex, Aider, Gemini, Qwen Code, Amp, Goose, OpenCode, Crush, Cursor CLI, GitHub Copilot CLI, Kilo Code, Mistral Vibe, Kiro CLI, Codebuff, Pi |
 | npm launcher (3) | Factory Droid, Cline, Continue |
 | PyPI launcher (1) | Open Interpreter |
 
@@ -253,7 +253,7 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 | Provisioning | provisioning | `agentos-env` | ✅ (provisioner service planned) |
 | Orchestration | orchestration | — | Planned |
 | Scheduler | scheduler | — | Planned |
-| 15 coding agents | agents | `agentos agents` | ✅ |
+| 20 coding agents | agents | `agentos agents` | ✅ |
 
 ---
 

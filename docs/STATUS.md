@@ -20,7 +20,7 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 
 | Feature | Status | Notes |
 |:---|:---|:---|
-| 15 pre-installed agents | Working | 11 from nixpkgs, 3 pinned npm launchers, 1 pinned PyPI launcher. See [AGENTS.md](AGENTS.md). |
+| 20 pre-installed agents | Working | 16 from nixpkgs, 3 pinned npm launchers, 1 pinned PyPI launcher. See [AGENTS.md](AGENTS.md). |
 | `agentos spawn` sandbox | Working | Transient systemd unit as `agentos-agent`: read-only system, private /tmp, hidden homes, memory/CPU/process limits, workspace-only writes. |
 | Agent registry: `list`, `logs`, `kill`, `shell`, `status` | Working | |
 | Model gateway | Working | Anthropic Messages, OpenAI Chat Completions and Responses; JSON and streaming. |

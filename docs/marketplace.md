@@ -1,6 +1,6 @@
 # Agent marketplace
 
-A registry of community coding agents beyond the 15 built-ins, and `agentos-market` to install them.
+A registry of community coding agents beyond the 20 built-ins, and `agentos-market` to install them.
 
 ```
 agentos-market search kilo
