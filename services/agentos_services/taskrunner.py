@@ -39,6 +39,7 @@ import time
 import urllib.request
 
 from . import config as configmod
+from . import publish as P
 from . import tasks as T
 from .store import Store, connect
 from .unixapi import call
@@ -54,7 +55,7 @@ class RunnerError(Exception):
 
 class TaskRunner:
     def __init__(self, cfg, runtime, tasks, clock=time.time, systemd_run="systemd-run",
-                 systemctl="systemctl", drop_privileges=True):
+                 systemctl="systemctl", drop_privileges=True, publisher=None):
         self.cfg = cfg
         self.opts = T.settings(cfg, "orchestrator")
         self.runtime = runtime
@@ -66,6 +67,9 @@ class TaskRunner:
         self.state_dir = runtime.get("state_dir") or cfg["daemon"]["state_dir"]
         self.cancel = threading.Event()
         self.proc = None
+        self.base_sha = None
+        # publisher(publish_opts) -> P.Publisher; replaced in tests
+        self.publisher = publisher or self._make_publisher
 
     # ── helpers ────────────────────────────────────────────────────────
     def stop_unit(self, unit):
@@ -92,12 +96,15 @@ class TaskRunner:
         ws, branch = task["workspace"], "agent/" + task["id"]
         if self.git(["rev-parse", "--git-dir"], ws, check=False).returncode != 0:
             self.git(["init", "--quiet"], ws)
+        head = self.git(["rev-parse", "--verify", "--quiet", "HEAD"], ws, check=False)
+        self.base_sha = head.stdout.strip() if head.returncode == 0 else None
         if task.get("isolate"):
             # Concurrent agents cannot share one working tree: give this one
             # its own worktree (next to the workspace, so still under the root)
             if self.git(["rev-parse", "--verify", "--quiet", "HEAD"], ws, check=False).returncode != 0:
                 self.git(["-c", "user.name=AgentOS", "-c", "user.email=agentos@localhost",
                           "commit", "--quiet", "--allow-empty", "-m", "Initialize workspace"], ws)
+            self.base_sha = self.git(["rev-parse", "HEAD"], ws).stdout.strip()
             wt = os.path.join(os.path.dirname(ws), "%s.%s" % (os.path.basename(ws), task["id"]))
             if int(task.get("attempt") or 1) > 1:
                 # A retry (orchestrator `max_retries`): start clean, drop the failed attempt's worktree and branch
@@ -230,6 +237,73 @@ class TaskRunner:
                 return None
             time.sleep(0.25)
 
+    # ── publishing (publish.py) ────────────────────────────────────────
+    def _make_publisher(self, popts):
+        return P.Publisher(popts, P.load_token(popts),
+                           git=P.make_git(self._agent_ids(), {k: v for k, v in os.environ.items()
+                                                    if k in ("PATH", "SSL_CERT_FILE", "GIT_SSL_CAINFO")}))
+
+    def publish_marker(self, task_id):
+        """A publish request recorded by the trigger service (see triggers.py)."""
+        try:
+            raw = self.tasks.r.get(self.tasks._k("publish", task_id))
+            marker = json.loads(raw) if raw else None
+        except Exception:
+            return None
+        return marker if isinstance(marker, dict) else None
+
+    def try_publish(self, task, workdir, branch, base_sha):
+        """Returns (result fields, error). The error is set only when the publish
+        was asked for explicitly: such a task then fails, with the agent's output kept."""
+        popts = P.settings(self.cfg)
+        try:
+            spec = P.resolve_spec(task, popts, self.publish_marker(task["id"]))
+        except P.PublishError as exc:
+            return {"publish": {"status": "error", "error": str(exc)}}, str(exc)
+        if spec is None:
+            return {}, None
+        try:
+            info = self.publisher(popts).publish(spec, task["id"], workdir, branch, base_sha)
+        except P.PublishError as exc:
+            log.warning("task %s: publish %s: %s", task["id"], exc.code, exc)
+            status = "skipped" if exc.code == "empty" and not spec["explicit"] else "error"
+            fields = {"publish": {"status": status, "error": str(exc), "code": exc.code}}
+            return fields, (str(exc) if spec["explicit"] else None)
+        except Exception:  # never let a publish bug lose the agent's result
+            log.exception("task %s: publish crashed", task["id"])
+            return {"publish": {"status": "error", "error": "internal error"}}, "internal error"
+        return {"pr_url": info["pr_url"], "publish": dict(info, status="published")}, None
+
+    def run_publish_task(self, task):
+        """A task of kind "publish": publish the branch a dependency produced."""
+        task_id = task["id"]
+        try:
+            if not configmod.valid_agent_id(task_id):
+                raise P.PublishError("malformed task record")
+            workspace = T.resolve_workspace(task.get("workspace"), self.runtime["workspace_root"])
+            source = {}
+            for dep_id in task.get("depends_on") or task.get("after") or []:
+                dep = self.tasks.get(dep_id) or {}
+                if dep.get("status") == T.SUCCEEDED and (dep.get("result") or {}).get("branch"):
+                    source = dep
+                    break
+            res = source.get("result") or {}
+            if not res.get("branch"):
+                raise P.PublishError("no successful dependency produced a branch to publish")
+            popts = P.settings(self.cfg)
+            spec = P.resolve_spec(dict(task, kind="publish", workspace=workspace,
+                                       origin=task.get("origin") or source.get("origin")),
+                                  popts, self.publish_marker(task_id))
+            info = self.publisher(popts).publish(spec, task_id, res.get("worktree") or workspace, res["branch"],
+                                                 res.get("base_sha"))
+        except (P.PublishError, T.ValidationError) as exc:
+            self.tasks.finish(task_id, T.FAILED, error="publish refused: %s" % exc)
+            log.error("task %s: %s", task_id, exc)
+            return 1
+        self.tasks.finish(task_id, T.SUCCEEDED, pr_url=info["pr_url"], branch=info["branch"],
+                          publish=dict(info, status="published"), exit_code=0)
+        return 0
+
     # ── the run ────────────────────────────────────────────────────────
     def run(self, task_id):
         """Run one task to completion. Returns a process exit code."""
@@ -240,6 +314,8 @@ class TaskRunner:
         if task["status"] != T.RUNNING:
             log.error("task %s is %s, not running; refusing to start it", task_id, task["status"])
             return 3
+        if task.get("kind") == "publish":
+            return self.run_publish_task(task)
         try:
             task = T.validate_record(task, self.runtime, self.opts)
             template = T.task_command(self.opts, self.runtime, task["agent"])
@@ -340,9 +416,15 @@ class TaskRunner:
             "exit_code": rc, "output_tail": tail.decode(errors="replace"), "branch": branch, "log": log_path,
             "duration_sec": round(self.clock() - started, 1),
             "worktree": workdir if workdir != task["workspace"] else None,
+            "base_sha": self.base_sha,
         }
         if error:
             result["error"] = error
+        if outcome == T.SUCCEEDED:
+            fields, publish_error = self.try_publish(task, workdir, branch, self.base_sha)
+            result.update(fields)
+            if publish_error:
+                outcome, result["error"] = T.FAILED, "publish failed: %s" % publish_error
         self.tasks.finish(task_id, outcome, **result)
         try:
             self.tasks.store.publish({"type": "task_finished", "task": task_id, "agent": task_id,

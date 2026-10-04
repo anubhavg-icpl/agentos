@@ -6,7 +6,9 @@
 #   - Auto-create branches per agent session
 #   - Auto-commit after each meaningful change
 #   - Auto-generate commit messages from diffs
-#   - Create PRs when agent work is complete
+#   - Create PRs when agent work is complete: tasks of the orchestrator are
+#     published (branch pushed, PR opened through the GitHub REST API) by the
+#     root task runner, see `publish` below and docs/triggers.md
 #   - Merge conflict detection and notification
 #   - Git hooks for quality gates (tests must pass before commit)
 #   - Diff visualization for human review
@@ -41,7 +43,80 @@ in
     autoPR = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Automatically create a PR when agent work is done";
+      description = ''
+        Open a pull request for every orchestrator task that succeeds in a
+        workspace listed under `publish.repos` and leaves changes on its
+        `agent/<task-id>` branch. Without `publish.repos` it does nothing.
+        Tasks can also ask for a PR one by one (`agentos.triggers` rules with
+        `publish = true`), whatever this is set to.
+      '';
+    };
+
+    publish = {
+      repos = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.submodule {
+          options = {
+            url = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Push URL (default: https://github.com/<owner>/<name>.git); https or a local path";
+            };
+            base = lib.mkOption {
+              type = lib.types.str;
+              default = "main";
+              description = "Branch the pull request targets; it is never pushed to";
+            };
+            workspaces = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              description = "Workspaces whose tasks belong to this repository (for autoPR)";
+            };
+          };
+        });
+        default = { };
+        example = lib.literalExpression ''{ "acme/widgets" = { workspaces = [ "widgets" ]; }; }'';
+        description = ''
+          Repositories (owner/name) the root task runner may publish to. Only
+          `agent/<task-id>` branches are pushed, never a protected branch and
+          never with force. Needs `tokenFile`.
+        '';
+      };
+
+      tokenFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        example = "/run/secrets/agentos-github-token";
+        description = ''
+          GitHub token with contents:write and pull_requests:write on the
+          repositories above and nothing else (a fine-grained token). Passed
+          to the root task runner as a systemd credential; keep the file
+          root-only (0400). The agent sandbox never sees it.
+        '';
+      };
+
+      apiUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "https://api.github.com";
+        description = "GitHub REST API base URL (GitHub Enterprise: https://host/api/v3)";
+      };
+
+      protectedBranches = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "main" "master" "develop" "dev" "trunk" "release/*" "production" "prod" "stable" ];
+        description = "Branch name patterns that are never pushed (in addition to each repository's base)";
+      };
+
+      draft = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Open pull requests as drafts";
+      };
+
+      commitUncommitted = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Commit what the agent left uncommitted on its branch before pushing";
+      };
     };
 
     requireTestsPass = lib.mkOption {
@@ -58,6 +133,35 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.publish.repos == { } || cfg.publish.tokenFile != null;
+        message = "agentos.git-automation.publish.repos needs agentos.git-automation.publish.tokenFile";
+      }
+      {
+        assertion = cfg.publish.repos == { } || config.agentos.orchestration.enable;
+        message = "agentos.git-automation.publish publishes orchestrator tasks; set agentos.orchestration.enable = true";
+      }
+    ];
+
+    # Read by the root task runner (services/agentos_services/publish.py)
+    agentos.services.settings.publish = {
+      auto = cfg.autoPR;
+      api_url = cfg.publish.apiUrl;
+      protected_branches = cfg.publish.protectedBranches;
+      draft = cfg.publish.draft;
+      commit_uncommitted = cfg.publish.commitUncommitted;
+      repos = lib.mapAttrs
+        (_: r: { base = r.base; workspaces = r.workspaces; } // lib.optionalAttrs (r.url != null) { inherit (r) url; })
+        cfg.publish.repos;
+    };
+
+    # The token goes to the root helper only, as a credential
+    systemd.services."agentos-task-runner@" = lib.mkIf (cfg.publish.tokenFile != null) {
+      serviceConfig.LoadCredential = [ "github-token:${toString cfg.publish.tokenFile}" ];
+      environment.SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
+    };
+
     # ─ Global git config for agents ──────────────────────────────────
     programs.git = {
       enable = true;
@@ -220,7 +324,8 @@ in
             ;;
 
           pr)
-            # Create a PR (requires GitHub CLI)
+            # Manual PR from a shell (requires GitHub CLI and your own login).
+            # Orchestrator tasks are published by the task runner instead.
             TITLE="''${2:-Agent: automated changes}"
             BODY="## Summary
             Automated changes by AgentOS agent.

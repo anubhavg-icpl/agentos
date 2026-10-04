@@ -169,7 +169,7 @@ agentos-secrets check       # Show access mapping
 - **Branch per agent session:** `agentos spawn` creates `agent/<agent-id>` in the workspace.
 - **Hooks:** pre-commit checks for secrets, large files and failing tests (`agentos-git init`).
 - **Helpers** for commits, checkpoints and PRs via the GitHub CLI.
-- `autoCommit` / `autoPR` are not acted on yet.
+- `autoCommit` is not acted on yet. `autoPR` pushes `agent/<task-id>` and opens a PR for successful orchestrator tasks of workspaces listed in `publish.repos` (see docs/triggers.md).
 
 **CLI:**
 ```bash

@@ -150,6 +150,8 @@
           gateway-features = import ./tests/gateway-features.nix { inherit pkgs agentosModules; };
           # Task queue, orchestrator plans and cron-style schedules.
           orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
+          # GitHub webhooks -> tasks -> pushed branch and pull request.
+          triggers = import ./tests/triggers.nix { inherit pkgs agentosModules; };
           # Container-isolated agents in their own network namespace.
           container = import ./tests/container.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.

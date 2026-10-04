@@ -38,7 +38,7 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 | MCP server registry (`agentos-mcp`) | Working | 36 servers pointing at real npm/PyPI packages, fetched on first start. |
 | Secrets (sops-nix) | Working after setup | Create the encrypted file, then set `agentos.secrets-manager.sopsInitialized = true`. |
 | VIBE integration | Working, network-dependent | First boot runs `npx github:anubhavg-icpl/vibe`; pin `repoUrl` to a tag. |
-| Git automation | Partial | Branch per agent session and hooks work; `autoCommit` / `autoPR` are not acted on. |
+| Git automation | Partial | Branch per agent session and hooks work; `autoCommit` is not acted on; `autoPR` publishes finished tasks of configured repositories (docs/triggers.md). |
 | Gateway agent tokens | Working | `agentos spawn` registers a per-agent token; agents reach the gateway as `/agent/<id>:<token>/`. |
 | Container isolation | Working | `agentos spawn --isolation container`: own root, PID, IPC and network namespace on the `agentos0` bridge. See [containers.md](containers.md). |
 | GPU scheduling | Working | `agentos spawn --gpu N` with exclusive locks. See [gpu.md](gpu.md). |
