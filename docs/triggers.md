@@ -112,7 +112,7 @@ Code: `services/agentos_services/triggers.py` (listener), `publish.py` (push and
 | `budgetUSD`, `timeoutSec` | passed to the task |
 | `trustLabeler` | a `labeled` action on a rule with a `label` triggers even when the issue author is not trusted (default true) |
 
-A match submits a task with `origin = "gh:<repo>#<n>"` and `dedupe_key = "gh:<repo>#<n>:<event>"`. For pull request events `<n>` is the PR number; for check runs it is the PR the run belongs to (runs without a same-repository PR are ignored).
+A match submits a task with `origin = "gh:<repo>#<n>"` and `dedupe_key = "gh:" + sha256("<repo>#<n>:<event>")` (hex). For pull request events `<n>` is the PR number; for check runs it is the PR the run belongs to (runs without a same-repository PR are ignored).
 
 ## Security model
 
