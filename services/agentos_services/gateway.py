@@ -548,7 +548,7 @@ class Gateway:
         resv = self.reserve_budget(agent, 0.0 if free else self.estimate(request_model, payload, body, rest_path))
         resv.estimate = 0.0 if free else self.estimate(request_model, payload, body, rest_path)
         try:
-            self.forward(req, agent, provider, adapter, rest_path, query, started, body, orig_body,
+            self.forward(req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
                          request_model, route, resv)
         finally:
             resv.release()
@@ -572,23 +572,54 @@ class Gateway:
         cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)))
         return estimate_cost(self.pricing, model, len(body or b""), cap)
 
-    def forward(self, req, agent, provider, adapter, rest_path, query, started, body, orig_body,
-                request_model, route, resv):
-        prov = self.cfg["providers"][provider]
-        api = adapter.wire
-        record_seq = None
-        captured = bytearray()
-        capture_cap = int(self.cfg["recording"]["max_body_bytes"])
-        truncated = False
-        if self.cfg["recording"]["enabled"] or self.store.record_enabled(agent):
-            record_seq = self.recorder.next_seq(agent)
+    def fallbacks_for(self, provider):
+        """Usable fallbacks of a provider: [(name, adapter, model-or-None)].
 
+        Configured as providers.<name>.fallbacks = ["other"] or
+        [{provider = "other", model = "m"}]. A fallback must speak the same
+        wire format and be able to authenticate (a key, or a keyless local
+        server); others are skipped with a warning.
+        """
+        providers = self.cfg["providers"]
+        primary = adapter_for(providers[provider])
+        out = []
+        for item in providers[provider].get("fallbacks") or []:
+            name, model = (item, None) if isinstance(item, str) else (item.get("provider"), item.get("model"))
+            if name not in providers or name == provider:
+                log.warning("provider %s: ignoring unknown fallback %r", provider, name)
+                continue
+            ad = adapter_for(providers[name])
+            if ad.wire != primary.wire or (ad.model_in_path != primary.model_in_path):
+                log.warning("provider %s: fallback %s speaks another wire format; ignored", provider, name)
+                continue
+            if not (ad.zero_cost or self.provider_key(name)):
+                log.warning("provider %s: fallback %s has no key; ignored", provider, name)
+                continue
+            out.append((name, ad, model))
+        return out
+
+    def fallback_body(self, adapter, payload, rest, model, body):
+        """Request body and path for a fallback attempt."""
+        rest = list(rest)
+        if isinstance(payload, dict):
+            payload = json.loads(json.dumps(payload))
+            if model:
+                rest = adapter.set_model(payload, rest, model)
+            adapter.prepare(payload, "/".join(rest))
+            return json.dumps(payload).encode(), rest
+        if model:
+            rest = adapter.set_model(None, rest, model)
+        return body, rest
+
+    def open_upstream(self, req, provider, adapter, rest_path, query, body, strip=False):
+        """Send the request upstream; returns (connection, response) once the
+        status line and headers are in. Raises OSError/HTTPException."""
+        prov = self.cfg["providers"][provider]
         base = urllib.parse.urlsplit(prov["base_url"])
         target = base.path.rstrip("/") + "/" + rest_path
         query = adapter.query_for(query)
         if query:
             target += "?" + query
-
         headers = {}
         for name, value in req.headers.items():
             lname = name.lower()
@@ -599,22 +630,69 @@ class Gateway:
         headers["Accept-Encoding"] = "identity"
         if body is not None:
             headers["Content-Length"] = str(len(body))
-        if route and route.get("routed_provider"):
+        if strip:
             adapter.strip_credentials(headers)      # the client's key belongs to the original provider
         adapter.inject_key(headers, self.provider_key(provider))
-
         conn_cls = http.client.HTTPSConnection if base.scheme == "https" else http.client.HTTPConnection
-        conn = conn_cls(base.hostname, base.port, timeout=float(self.cfg["gateway"]["upstream_timeout_sec"]))
+        timeout = float(prov.get("timeout_sec") or self.cfg["gateway"]["upstream_timeout_sec"])
+        conn = conn_cls(base.hostname, base.port, timeout=timeout)
         try:
-            try:
-                conn.request(req.command, target, body=body, headers=headers)
-                resp = conn.getresponse()
-            except (OSError, http.client.HTTPException) as exc:
+            conn.request(req.command, target, body=body, headers=headers)
+            return conn, conn.getresponse()
+        except BaseException:
+            conn.close()
+            raise
+
+    def forward(self, req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
+                request_model, route, resv):
+        rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
+        record_seq = None
+        captured = bytearray()
+        capture_cap = int(self.cfg["recording"]["max_body_bytes"])
+        truncated = False
+        if self.cfg["recording"]["enabled"] or self.store.record_enabled(agent):
+            record_seq = self.recorder.next_seq(agent)
+
+        attempts = [(provider, adapter, None)] + self.fallbacks_for(provider)
+        failed = []
+        conn = None
+        try:
+            for i, (name, ad, fb_model) in enumerate(attempts):
+                last = i == len(attempts) - 1
+                if i == 0:
+                    att_body, att_rest = body, rest
+                else:
+                    att_body, att_rest = self.fallback_body(ad, payload, rest, fb_model, body)
+                att_rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in att_rest)
                 try:
-                    self.upstream_failed(agent)
-                except redis.RedisError as err:
-                    log.error("cannot update circuit breaker: %s", err)
-                raise HTTPError(502, "api_error", "AgentOS gateway could not reach %s: %s" % (provider, exc))
+                    conn, resp = self.open_upstream(req, name, ad, att_rest_path, query, att_body,
+                                                    strip=bool(i or (route and route.get("routed_provider"))))
+                except (OSError, http.client.HTTPException) as exc:
+                    if not last:
+                        failed.append({"provider": name, "error": str(exc)[:200]})
+                        log.warning("provider %s failed for agent %s (%s); trying %s", name, agent, exc,
+                                    attempts[i + 1][0])
+                        continue
+                    try:
+                        self.upstream_failed(agent)
+                    except redis.RedisError as err:
+                        log.error("cannot update circuit breaker: %s", err)
+                    raise HTTPError(502, "api_error", "AgentOS gateway could not reach %s: %s" % (name, exc))
+                if (resp.status == 429 or resp.status >= 500) and not last:
+                    failed.append({"provider": name, "status": resp.status})
+                    log.warning("provider %s answered %d for agent %s; trying %s", name, resp.status, agent,
+                                attempts[i + 1][0])
+                    conn.close()
+                    conn = None
+                    continue
+                break
+            if failed:
+                route = dict(route or {}, fallbacks_failed=failed)
+            provider, adapter = name, ad
+            if i:
+                route["fallback_provider"] = name
+                request_model = fb_model or request_model
+            rest_path, api = att_rest_path, adapter.wire
 
             try:
                 if resp.status >= 500:
@@ -659,7 +737,8 @@ class Gateway:
                     # generation; usage seen so far is still recorded.
                     break
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
         try:
             model, usage = parser.finish()

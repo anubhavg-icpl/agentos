@@ -238,3 +238,11 @@ class EventRecorder:
 @pytest.fixture
 def events(store):
     return EventRecorder(store)
+
+
+@pytest.fixture
+def upstream2():
+    srv = MockUpstream()
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv
+    srv.shutdown()

@@ -324,6 +324,31 @@ in
             example = "2024-10-21";
             description = "api-version query added to Azure OpenAI requests that lack one";
           };
+          fallbacks = lib.mkOption {
+            type = lib.types.listOf (lib.types.either lib.types.str (lib.types.submodule {
+              options = {
+                provider = lib.mkOption {
+                  type = lib.types.str;
+                  description = "Name of another entry of agentos.networking.providers";
+                };
+                model = lib.mkOption {
+                  type = lib.types.nullOr lib.types.str;
+                  default = null;
+                  description = "Model to request from the fallback (null: keep the requested one)";
+                };
+              };
+            }));
+            default = [ ];
+            example = [ "openai-backup" { provider = "local"; model = "llama3.1"; } ];
+            description = ''
+              Providers to try, in order, when this one answers 5xx or 429, times
+              out or cannot be reached before the first response byte. Each must
+              use the same wire format (same `api` family, so a request body can
+              be replayed) and have a key or be a local server. The client's own
+              credentials are never sent to a fallback; its configured key is
+              injected instead. Nothing is retried once a response has started.
+            '';
+          };
           timeoutSec = lib.mkOption {
             type = lib.types.nullOr lib.types.ints.positive;
             default = null;
@@ -385,7 +410,13 @@ in
       } // lib.optionalAttrs (p.keyFile != null) { key_file = p.keyFile; }
         // lib.optionalAttrs (p.zeroCost != null) { zero_cost = p.zeroCost; }
         // lib.optionalAttrs (p.apiVersion != null) { api_version = p.apiVersion; }
-        // lib.optionalAttrs (p.timeoutSec != null) { timeout_sec = p.timeoutSec; }) cfg.providers;
+        // lib.optionalAttrs (p.timeoutSec != null) { timeout_sec = p.timeoutSec; }
+        // lib.optionalAttrs (p.fallbacks != [ ]) {
+          fallbacks = map
+            (f: if builtins.isString f then { provider = f; }
+                else { inherit (f) provider; } // lib.optionalAttrs (f.model != null) { inherit (f) model; })
+            p.fallbacks;
+        }) cfg.providers;
     };
 
     environment.etc."agentos/pricing.json".source = lib.mkDefault ../budget-controller/pricing.json;
