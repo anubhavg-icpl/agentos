@@ -430,3 +430,16 @@ def test_http_server_end_to_end():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_deduplicated_200_is_a_duplicate_not_a_compat_fallback():
+    bodies = []
+
+    def submit(body):
+        bodies.append(body)
+        return 200, {"tasks": [{"id": "task-1"}], "deduplicated": True}
+
+    svc = TR.TriggerService(make_cfg(), SECRET, TR.MemoryState(), submit, lambda i: "running")
+    out = svc.submit(rule(name="fix", publish=False, gate=False), 7, {}, "issues")
+    assert out["status"] == "duplicate" and out["tasks"] == ["task-1"]
+    assert len(bodies) == 1

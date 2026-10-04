@@ -434,7 +434,7 @@ class TriggerService:
                     if rule["publish"]:
                         self.publish_state.put("publish:" + ids[0], json.dumps(block), ttl=T.TASK_TTL)
                 return {"rule": rule["name"], "status": "submitted", "style": style, "tasks": ids}
-            if status == 409 or (status == 200 and isinstance(obj, dict) and obj.get("duplicate")):
+            if status == 409 or (status == 200 and isinstance(obj, dict) and (obj.get("duplicate") or obj.get("deduplicated"))):
                 return {"rule": rule["name"], "status": "duplicate", "tasks": task_ids(obj)}
             if status >= 500:
                 raise Transient("orchestrator returned %d" % status)

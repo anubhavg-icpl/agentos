@@ -117,7 +117,7 @@ _PLACEHOLDER = re.compile(r"\{(prompt|workspace|task_id)\}")
 _PREV = re.compile(r"\{prev_result\}")
 NODE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
 _NODEREF = re.compile(r"\{nodes\.([A-Za-z0-9][A-Za-z0-9_-]{0,31})\.result\}")
-_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}")
+_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@#-]{0,99}")
 
 
 def resolve_workspace(workspace, root, must_exist=True):
