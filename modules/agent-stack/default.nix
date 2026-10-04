@@ -517,6 +517,13 @@ in
         apps;
     }
 
+    # Links in the AgentOS dashboard header (loopback; reach them over SSH)
+    (lib.mkIf (cfg.enable && enabledApps != { }) {
+      agentos.services.settings.dashboard.links = lib.mapAttrsToList
+        (name: a: { name = "stack: ${name}"; url = "http://${loopback}:${toString a.port}/"; })
+        enabledApps;
+    })
+
     (lib.mkIf (cfg.enable && enabledApps != { }) {
       assertions = [
         {
