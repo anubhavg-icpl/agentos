@@ -147,11 +147,12 @@ in
         }
       ];
 
-      # The contract with the gateway: an OpenAI-compatible upstream without a
-      # key. Usage of this provider must be priced at zero (docs/local-ai.md).
+      # An OpenAI-compatible upstream without a key, priced at zero by the
+      # gateway so cost routing can prefer it (docs/local-ai.md).
       agentos.networking.providers.local = {
         baseUrl = backendUrl;
-        api = lib.mkDefault "openai";
+        api = lib.mkDefault "openai-compatible";
+        zeroCost = lib.mkDefault true;
         keyFile = null;
       };
     }

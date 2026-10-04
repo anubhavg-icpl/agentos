@@ -49,32 +49,12 @@ $OPENAI_BASE_URL = http://127.0.0.1:8080/agent/<id>:<token>/local/v1
 
 and any key (the gateway injects none).
 
-### Pricing contract (needs the gateway side)
+### Pricing
 
-The gateway prices a model by name from `pricing.json`; unknown models are
-charged the high `default` and reported unpriced. Local model names are
-arbitrary, so without more work local calls would be billed as expensive.
-This module cannot fix that from configuration. The contract it relies on,
-for the `openai-compatible` provider type being added to the gateway:
-
-- `agentos.networking.providers.local.api` is overridable (the module sets
-  `lib.mkDefault "openai"`). With the new type, set
-  `agentos.networking.providers.local.api = "openai-compatible";` once the
-  `api` enum in modules/networking accepts it.
-- For a provider of that type the gateway prices every request at zero
-  (`input_per_1m = output_per_1m = 0`, `priced = true`) whatever the model
-  name, and a missing `key_file` means no key injection.
-- For `strategy = "cheapest"`, a model served by `local` must count as cost 0
-  and belong to provider `local`, so equivalence groups mixing it with a
-  hosted model are skipped (routing never crosses vendors) unless the group
-  consists of local models only.
-
-Until then, add zero-priced entries for the models you pull to your
-`agentos.budget-controller.pricingFile`:
-
-```json
-"qwen2.5-coder:7b": { "provider": "local", "input_per_1m": 0, "output_per_1m": 0 }
-```
+The module registers `local` with `api = "openai-compatible"` and
+`zeroCost = true` (`agentos.networking.providers.local.*`), so every request
+to it is metered at $0 and cost routing can send work there. See
+[gateway-features.md](gateway-features.md) for routing rules.
 
 ### Routing example
 

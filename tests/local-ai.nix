@@ -57,6 +57,7 @@ pkgs.testers.runNixOSTest {
         print(cfg)
         assert "providers.local" in cfg, cfg
         assert "http://127.0.0.1:11434" in cfg, cfg
+        assert "openai-compatible" in cfg and "zero_cost = true" in cfg, cfg
         machine.succeed("curl -sf http://127.0.0.1:8080/_agentos/health")
   '';
 }
