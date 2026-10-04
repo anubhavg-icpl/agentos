@@ -1,12 +1,12 @@
 # AgentOS — Pre-installed Coding Agents
 
-The 15 agents below are pre-installed on every AgentOS system through the
+The 20 agents below are pre-installed on every AgentOS system through the
 `all-agents` package (`agents/default.nix`). Each one has the same base tools
 (git, gh, ripgrep, fd, jq, …) on its `PATH`.
 
 Agents come in three flavours:
 
-- **Nix-packaged (11).** Built from nixpkgs-unstable and pinned by
+- **Nix-packaged (16).** Built from nixpkgs-unstable and pinned by
   `flake.lock`. Reproducible, available offline once installed.
 - **npm launchers (3).** Not in nixpkgs yet. The command runs
   `npx -y <package>@<pinned version>`, so the first run downloads the agent
@@ -30,16 +30,45 @@ Agents come in three flavours:
 | `crush` | Crush | Charm | `crush` | nixpkgs |
 | `cursor-agent` / `cursor` | Cursor CLI | Cursor | `cursor-cli` | nixpkgs |
 | `copilot` | GitHub Copilot CLI | GitHub | `github-copilot-cli` | nixpkgs |
+| `kilocode` | Kilo Code CLI | Kilo | `kilocode-cli` | nixpkgs |
+| `vibe` | Mistral Vibe | Mistral | `mistral-vibe` | nixpkgs |
+| `kiro-cli` | Kiro CLI | AWS | `kiro-cli` | nixpkgs |
+| `codebuff` | Codebuff | Codebuff | `codebuff` | nixpkgs |
+| `pi` | Pi coding agent | pi-mono | `pi-coding-agent` | nixpkgs |
 | `droid` | Factory Droid | Factory AI | `factory-droid` | npm `@factory/cli` |
 | `cline` | Cline | Open source | `cline` | npm `cline` |
 | `cn` / `continue` | Continue CLI | Open source | `continue-cli` | npm `@continuedev/cli` |
 | `interpreter` | Open Interpreter | Open source | `open-interpreter` | PyPI `open-interpreter` |
 
-Claude Code, Amp, Cursor CLI and Copilot CLI are unfree; the flake sets
+Claude Code, Amp, Cursor CLI, Copilot CLI and Kiro CLI are unfree; the flake sets
 `allowUnfree = true`.
 
 Upstream has deprecated Gemini CLI for unpaid and Google AI Pro/Ultra users
 in favour of Antigravity CLI (nixpkgs prints a warning when evaluating it).
+
+### Gateway routing per agent
+
+`agentos spawn` exports `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` (see
+`nixos/packages/cli.nix`); an agent is metered only if it honours one of them.
+
+| Agent | Base URL variable | Notes |
+|:---|:---|:---|
+| Claude Code, Aider, Open Interpreter | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` | metered |
+| Codex, OpenCode, Goose, Crush | `OPENAI_BASE_URL` (OpenAI-compatible providers) | metered |
+| Kilo Code, Pi | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` where the configured provider reads them; otherwise set the provider's base URL in its config file | not verified against the gateway |
+| Mistral Vibe | none: provider `api_base` is set in `~/.vibe/config.toml`; it speaks Mistral's API, which the gateway does not proxy | unmetered |
+| Kiro CLI, Codebuff | none: they use their own login and hosted backend | unmetered, not gateway-routable |
+
+The Kilo Code package comes from the stable channel because the unstable
+`kilocode-cli` is currently marked broken (`agents/default.nix` falls back
+automatically). Mistral Vibe and Kiro CLI are not in cache.nixos.org for the
+pinned revision (Kiro is an unfree binary fetch, Vibe builds from source), so
+the first build of `all-agents` compiles or fetches them.
+
+Considered and not added: `amazon-q-cli` (superseded by Kiro CLI), `aichat`,
+`llm`, `shell-gpt`, `mods`, `fabric-ai` (chat/prompt tools, not coding
+agents), `claude-code-router` (a proxy), `gptme`, `plandex` and `forge` (not in
+the pinned nixpkgs, or not evaluating).
 
 ### Removed agents
 
@@ -122,6 +151,6 @@ nix run github:anubhavg-icpl/agentos#codex
 # Every agent
 nix profile install github:anubhavg-icpl/agentos#all-agents
 
-# Only the 11 reproducible, Nix-built agents
+# Only the 16 reproducible, Nix-built agents
 nix profile install github:anubhavg-icpl/agentos#nix-agents
 ```

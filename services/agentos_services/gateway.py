@@ -57,13 +57,16 @@ import threading
 import time
 import urllib.parse
 
+import redis
+
 from . import config as configmod
 from .bus import Bus, BusError
-from .loops import fingerprint
+from .loops import alternation_run, fingerprint
+from .providers import adapter_for
 from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
-from .store import Store, connect
-from .usage import Pricing, UsageParser
+from .store import BudgetRefused, Store, connect
+from .usage import GENERATION_KEYS, Pricing, UsageParser, apply_output_cap, estimate_cost, output_cap
 
 log = logging.getLogger("agentos.gateway")
 
@@ -72,6 +75,15 @@ HOP_BY_HOP = {
     "te", "trailer", "trailers", "transfer-encoding", "upgrade",
 }
 UNMANAGED = "unmanaged"
+TOKEN_HEADER = "x-agentos-token"
+
+# "/agent/<id>:<token>/..." (the colon may be percent-encoded)
+_TOKEN_SEGMENT = re.compile(r"(/agent/[^/:%?#\s]*)(?::|%3[aA])[^/?#\s]*")
+
+
+def redact(text):
+    """Hide the agent token in a request path, URL or log line."""
+    return _TOKEN_SEGMENT.sub(lambda m: m.group(1) + ":***", text) if text else text
 
 
 class HTTPError(Exception):
@@ -92,9 +104,14 @@ class Gateway:
         self.clock = clock
         self.log_dir = cfg["gateway"]["log_dir"]
         self._log_lock = threading.Lock()
-        self.router = Router(cfg["routing"], pricing)
+        self.router = Router(cfg["routing"], pricing, cfg["providers"], self.can_switch)
         self.recorder = Recorder(cfg["recording"]["dir"], cfg["recording"]["max_body_bytes"])
         self.bus = Bus(cfg, store, clock)
+        for name, prov in cfg["providers"].items():
+            try:
+                adapter_for(prov)
+            except ValueError as exc:
+                raise ValueError("provider %r: %s" % (name, exc))
         self._replay_lock = threading.Lock()
 
     # ── helpers ────────────────────────────────────────────────────────
@@ -143,30 +160,66 @@ class Gateway:
                 "AgentOS rate limit: more than %d requests per minute for agent %s" % (rpm, agent),
                 {"Retry-After": str(max(1, 60 - int(now) % 60))},
             )
+
+    def reserve_budget(self, agent, usd):
+        """Hold `usd` against the agent's and the global budget, or refuse with 402."""
         limit = self.daily_limit(agent)
-        spent = self.store.spend(agent)
-        if spent >= limit:
-            self._budget_exceeded(agent, spent, limit)
-            raise HTTPError(
-                402, "budget_exceeded",
-                "AgentOS daily budget exhausted for agent %s: $%.4f of $%.2f" % (agent, spent, limit),
-            )
         global_limit = float(self.cfg["budget"]["global_daily_usd"])
-        global_spent = self.store.global_spend()
-        if global_spent >= global_limit:
-            if self.store.mark_alert("_global", "exceeded"):
-                self.store.publish({"type": "global_budget_exceeded", "usd": global_spent, "limit_usd": global_limit})
-            raise HTTPError(
-                402, "budget_exceeded",
-                "AgentOS global daily budget exhausted: $%.4f of $%.2f" % (global_spent, global_limit),
-            )
+        if not self.cfg["budget"].get("reserve", True):
+            usd = 0.0
+        try:
+            return self.store.reserve(agent, usd, limit, global_limit, self.lease_sec())
+        except BudgetRefused as exc:
+            if exc.scope == "agent":
+                if exc.spent >= exc.limit:
+                    self._budget_exceeded(agent, exc.spent, exc.limit)
+                    message = "AgentOS daily budget exhausted for agent %s: $%.4f of $%.2f" % (
+                        agent, exc.spent, exc.limit)
+                else:
+                    message = ("AgentOS daily budget for agent %s cannot cover this request: $%.4f spent, "
+                               "$%.4f reserved by requests in flight, ~$%.4f estimated, limit $%.2f" % (
+                                   agent, exc.spent, exc.reserved, usd, exc.limit))
+            else:
+                if exc.spent >= exc.limit and self.store.mark_alert("_global", "exceeded"):
+                    self.store.publish({"type": "global_budget_exceeded", "usd": exc.spent, "limit_usd": exc.limit})
+                if exc.spent >= exc.limit:
+                    message = "AgentOS global daily budget exhausted: $%.4f of $%.2f" % (exc.spent, exc.limit)
+                else:
+                    message = ("AgentOS global daily budget cannot cover this request: $%.4f spent, "
+                               "$%.4f reserved, ~$%.4f estimated, limit $%.2f" % (
+                                   exc.spent, exc.reserved, usd, exc.limit))
+            raise HTTPError(402, "budget_exceeded", message)
+
+    def lease_sec(self):
+        """How long a budget hold lasts without being renewed: the longest
+        upstream timeout plus a minute. Requests renew it while in flight."""
+        timeouts = [float(self.cfg["gateway"]["upstream_timeout_sec"])]
+        timeouts += [float(p.get("timeout_sec") or 0) for p in self.cfg["providers"].values()]
+        return max(timeouts) + 60
+
+    def grow_budget(self, agent, resv, usd):
+        """Raise a request's hold to `usd` before an attempt that may cost more
+        than what is held. False (nothing changed) if the budget cannot cover it."""
+        if not self.cfg["budget"].get("reserve", True) or usd <= resv.usd:
+            return True
+        try:
+            self.store.grow(resv, usd, self.daily_limit(agent), float(self.cfg["budget"]["global_daily_usd"]))
+            return True
+        except BudgetRefused:
+            return False
+        except redis.RedisError as exc:
+            log.error("cannot grow budget reservation for agent %s: %s", agent, exc)
+            return False
 
     def _budget_exceeded(self, agent, spent, limit):
         if self.store.mark_alert(agent, "exceeded"):
             self.store.publish({"type": "budget_exceeded", "agent": agent, "usd": spent, "limit_usd": limit})
 
-    def after_usage(self, agent, model, usage):
-        usd, priced = self.pricing.cost(model, usage)
+    def after_usage(self, agent, model, usage, zero_cost=False, fixed_usd=None):
+        if fixed_usd is not None:
+            usd, priced = fixed_usd, False
+        else:
+            usd, priced = (0.0, True) if zero_cost else self.pricing.cost(model, usage)
         agent_total, _ = self.store.record(agent, model, usd, usage)
         limit = self.daily_limit(agent)
         if limit > 0:
@@ -181,6 +234,11 @@ class Gateway:
             self._budget_exceeded(agent, agent_total, limit)
         return usd, priced
 
+    def after_estimate(self, agent, provider, model, usd):
+        log.warning("no usage in the %s response for agent %s; charging the estimate $%.4f", provider, agent, usd)
+        self.store.count_unparsed(provider)
+        return self.after_usage(agent, model, None, False, usd)
+
     def check_loop(self, agent, payload):
         """Refuse an agent that keeps sending the same request."""
         limits = self.cfg["limits"]
@@ -190,7 +248,21 @@ class Gateway:
         if fp is None:
             return
         threshold = int(limits["loop_repeat_threshold"])
-        count = self.store.loop_hit(agent, fp, float(limits["loop_window_sec"]))
+        window = float(limits["loop_window_sec"])
+        count = self.store.loop_hit(agent, fp, window)
+        alt = int(limits.get("loop_alternation_length", 0))
+        if alt >= 4:
+            run = alternation_run(self.store.loop_history(agent, fp, window, alt * 2))
+            if run >= alt:
+                if run == alt:
+                    self.store.publish({"type": "loop_detected", "agent": agent, "count": run,
+                                        "kind": "alternation", "window_sec": limits["loop_window_sec"]})
+                raise HTTPError(
+                    429, "loop_detected",
+                    "AgentOS loop detection: agent %s has alternated between two requests %d times; "
+                    "change the request or ask an operator to reset it" % (agent, run),
+                    {"Retry-After": "30"},
+                )
         if count >= threshold:
             if count == threshold:
                 self.store.publish({"type": "loop_detected", "agent": agent, "count": count,
@@ -215,14 +287,21 @@ class Gateway:
             self.store.publish({"type": "circuit_open", "agent": agent, "failures": failures, "until": until})
 
     # ── request handling ───────────────────────────────────────────────
-    def authenticate(self, segment, admin):
-        """Resolve an "/agent/<id>:<token>" path segment to an agent id.
+    def authenticate(self, segment, admin, header_token=None, client=None):
+        """Resolve an "/agent/<id>[:<token>]" path segment to an agent id.
 
         Tokens are registered by `agentos spawn` through the admin socket,
         so an agent cannot act as another agent or invent new ids to get a
-        fresh budget. Operators on the admin socket may omit the token.
+        fresh budget. The token is taken from the segment, or else from the
+        x-agentos-token header (which keeps it out of URLs and logs).
+        Operators on the admin socket may omit it.
+
+        Failed attempts are counted per client address; once an address has
+        failed more than limits.max_auth_failures_per_minute times in a
+        minute, further failures answer 429 instead of 401.
         """
         agent, _, token = segment.partition(":")
+        token = token or header_token or ""
         if not configmod.valid_agent_id(agent):
             raise HTTPError(400, "invalid_request_error", "invalid agent id")
         if admin or not self.cfg["gateway"].get("require_agent_tokens", True):
@@ -230,6 +309,13 @@ class Gateway:
         expected = self.store.agent_token(agent)
         given = hashlib.sha256(token.encode()).hexdigest()
         if not token or not expected or not hmac.compare_digest(given, expected):
+            max_fail = int(self.cfg["limits"].get("max_auth_failures_per_minute", 0))
+            if max_fail > 0 and self.store.auth_failure(client or "?") > max_fail:
+                raise HTTPError(
+                    429, "rate_limited",
+                    "AgentOS: too many failed authentications from this address; retry later",
+                    {"Retry-After": str(max(1, 60 - int(self.clock()) % 60))},
+                )
             raise HTTPError(401, "authentication_error", "unknown agent or wrong agent token")
         return agent
 
@@ -242,10 +328,10 @@ class Gateway:
             if parts[:1] == ["_agentos"]:
                 return self.api(req, parts[1:], urllib.parse.parse_qs(path.query), admin)
             if len(parts) >= 3 and parts[0] == "agent" and parts[2] == "bus":
-                authed = self.authenticate(parts[1], admin)
+                authed = self.authenticate(parts[1], admin, req.headers.get(TOKEN_HEADER), client_of(req))
                 return self.bus_request(req, authed, parts[3:], urllib.parse.parse_qs(path.query), False)
             if len(parts) >= 3 and parts[0] == "agent":
-                authed = self.authenticate(parts[1], admin)
+                authed = self.authenticate(parts[1], admin, req.headers.get(TOKEN_HEADER), client_of(req))
                 agent, provider, rest = authed, parts[2], parts[3:]
             elif parts and parts[0] in self.cfg["providers"]:
                 if not admin and self.cfg["gateway"].get("require_agent_tokens", True):
@@ -258,6 +344,14 @@ class Gateway:
             if provider not in self.cfg["providers"]:
                 raise HTTPError(404, "not_found", "unknown provider %r" % provider)
             self.proxy(req, agent, provider, rest, path.query, started)
+        except redis.RedisError as exc:
+            # Fail closed: without the store nothing can be authenticated,
+            # rate limited or metered, so nothing is forwarded.
+            log.error("state store unavailable: %s", exc)
+            send_json(req, 503, {"type": "error", "error": {
+                "type": "store_unavailable",
+                "message": "AgentOS state store (Redis) is unavailable; refusing to proxy unmetered traffic"}},
+                {"Retry-After": "5"})
         except HTTPError as exc:
             error = {"type": exc.error_type, "message": exc.message}
             if exc.details:
@@ -265,8 +359,11 @@ class Gateway:
             send_json(req, exc.status, {"type": "error", "error": error}, exc.headers)
             # Only account errors to agents that proved who they are
             if authed:
-                self.store.count_request(authed, exc.status)
-                self.write_log(authed, {"method": req.command, "path": path.path, "status": exc.status, "error": exc.error_type})
+                try:
+                    self.store.count_request(authed, exc.status)
+                except redis.RedisError as err:
+                    log.error("cannot count request: %s", err)
+                self.write_log(authed, {"method": req.command, "path": redact(path.path), "status": exc.status, "error": exc.error_type})
 
     def api(self, req, parts, query, admin):
         if req.command == "GET" and parts == ["health"]:
@@ -442,42 +539,164 @@ class Gateway:
         write_chunk(req, data)
 
     def proxy(self, req, agent, provider, rest, query, started):
-        prov = self.cfg["providers"][provider]
-        api = prov.get("api", "openai")
         replaying = self.store.replay_state(agent) is not None
         if not replaying:
-            self.admit(agent)
+            self.admit(agent)           # circuit breaker and rate limit
 
         body = read_body(req, int(self.cfg["gateway"]["max_request_bytes"]))
         orig_body = body
-        request_model = None
         route = None
-        rest_path = "/".join(urllib.parse.quote(p, safe="") for p in rest)
         if replaying:
-            return self.serve_replay(req, agent, rest_path, orig_body, started)
+            return self.serve_replay(req, agent, "/".join(urllib.parse.quote(p, safe=":") for p in rest),
+                                     orig_body, started)
+        adapter = adapter_for(self.cfg["providers"][provider])
         payload = None
         if body and "json" in (req.headers.get("Content-Type") or "json"):
             try:
                 payload = json.loads(body)
             except ValueError:
                 payload = None
+        rest = list(rest)
+        request_model = adapter.request_model(payload, rest)
+        edited = False
         if isinstance(payload, dict):
             self.check_loop(agent, payload)
-            request_model = payload.get("model")
-            edited = False
+        if isinstance(payload, dict) or request_model:
             routed, reason = self.router.route(agent, provider, request_model, self._route_pct(agent))
             if reason:
                 route = {"original_model": request_model, "routed_model": routed, "route_reason": reason}
-                payload["model"] = request_model = routed
-                edited = True
-            # Ask for usage on streamed Chat Completions so it can be priced
-            if (api == "openai" and payload.get("stream") is True
-                    and rest_path.endswith("chat/completions")
-                    and "stream_options" not in payload):
-                payload["stream_options"] = {"include_usage": True}
-                edited = True
-            if edited:
-                body = json.dumps(payload).encode()
+                rest = adapter.set_model(payload, rest, routed)
+                request_model = routed
+                edited = edited or (isinstance(payload, dict) and not adapter.model_in_path)
+                target = self.router.provider_for(routed)
+                if target and target != provider and self.can_switch(provider, target):
+                    route["routed_provider"] = target
+                    provider = target
+                    adapter = adapter_for(self.cfg["providers"][provider])
+        rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
+        if isinstance(payload, dict) and adapter.prepare(payload, rest_path):
+            edited = True
+        free = adapter.zero_cost
+        if not free and self.cfg["budget"].get("reserve", True) and self.cap_output(adapter, payload, rest_path):
+            edited = True
+        if edited:
+            body = json.dumps(payload).encode()
+        estimate = 0.0 if free else self.estimate(request_model, payload, body, rest_path)
+        resv = self.reserve_budget(agent, estimate)
+        resv.estimate = estimate
+        try:
+            self.forward(req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
+                         request_model, route, resv)
+        finally:
+            resv.release()
+
+    def cap_output(self, adapter, payload, rest_path):
+        """Set the provider's output limit on a paid request that has none, to
+        the amount the budget reservation assumes (budget.default_max_tokens)."""
+        version = adapter.prov.get("api_version") if adapter.name == "azure-openai" else None
+        return apply_output_cap(payload, adapter.wire, rest_path,
+                                int(self.cfg["budget"].get("default_max_tokens", 4096)), version)
+
+    def can_switch(self, source, target):
+        """Cost routing may move a request to another provider only when it
+        speaks the same wire format and can authenticate."""
+        providers = self.cfg["providers"]
+        if source not in providers or target not in providers:
+            return False
+        a, b = adapter_for(providers[source]), adapter_for(providers[target])
+        return a.wire == b.wire and not a.model_in_path and not b.model_in_path and (
+            b.zero_cost or self.provider_key(target) is not None)
+
+    def estimate(self, model, payload, body, rest_path):
+        """Estimated USD of a request, held against the budget while it runs."""
+        if not isinstance(payload, dict) or not any(k in payload for k in GENERATION_KEYS):
+            return 0.0
+        if rest_path.endswith("embeddings"):
+            return estimate_cost(self.pricing, model, len(body or b""), 0)
+        cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)))
+        return estimate_cost(self.pricing, model, len(body or b""), cap)
+
+    def fallbacks_for(self, provider):
+        """Usable fallbacks of a provider: [(name, adapter, model-or-None)].
+
+        Configured as providers.<name>.fallbacks = ["other"] or
+        [{provider = "other", model = "m"}]. A fallback must speak the same
+        wire format and be able to authenticate (a key, or a keyless local
+        server); others are skipped with a warning.
+        """
+        providers = self.cfg["providers"]
+        primary = adapter_for(providers[provider])
+        out = []
+        for item in providers[provider].get("fallbacks") or []:
+            name, model = (item, None) if isinstance(item, str) else (item.get("provider"), item.get("model"))
+            if name not in providers or name == provider:
+                log.warning("provider %s: ignoring unknown fallback %r", provider, name)
+                continue
+            ad = adapter_for(providers[name])
+            if ad.wire != primary.wire or (ad.model_in_path != primary.model_in_path):
+                log.warning("provider %s: fallback %s speaks another wire format; ignored", provider, name)
+                continue
+            if not (ad.zero_cost or self.provider_key(name)):
+                log.warning("provider %s: fallback %s has no key; ignored", provider, name)
+                continue
+            out.append((name, ad, model))
+        return out
+
+    def fallback_body(self, adapter, payload, rest, model, body):
+        """Request body, path and payload for a fallback attempt."""
+        rest = list(rest)
+        if isinstance(payload, dict):
+            payload = json.loads(json.dumps(payload))
+            if model:
+                rest = adapter.set_model(payload, rest, model)
+            path = "/".join(rest)
+            adapter.prepare(payload, path)
+            if not adapter.zero_cost and self.cfg["budget"].get("reserve", True):
+                self.cap_output(adapter, payload, path)      # a free primary left it uncapped
+            return json.dumps(payload).encode(), rest, payload
+        if model:
+            rest = adapter.set_model(None, rest, model)
+        return body, rest, payload
+
+    def open_upstream(self, req, provider, adapter, rest_path, query, body, strip=False):
+        """Send the request upstream; returns (connection, response) once the
+        status line and headers are in. Raises OSError/HTTPException."""
+        prov = self.cfg["providers"][provider]
+        base = urllib.parse.urlsplit(prov["base_url"])
+        target = base.path.rstrip("/") + "/" + rest_path
+        if strip and query:
+            # a ?key= belongs to the provider the client addressed, not this one
+            query = urllib.parse.urlencode([(k, v) for k, v in urllib.parse.parse_qsl(query, keep_blank_values=True)
+                                            if k != "key"])
+        query = adapter.query_for(query)
+        if query:
+            target += "?" + query
+        headers = {}
+        for name, value in req.headers.items():
+            lname = name.lower()
+            if lname in HOP_BY_HOP or lname in ("host", "content-length", "accept-encoding", TOKEN_HEADER):
+                continue
+            headers[name] = value
+        headers["Host"] = base.netloc
+        headers["Accept-Encoding"] = "identity"
+        if body is not None:
+            headers["Content-Length"] = str(len(body))
+        if strip:
+            adapter.strip_credentials(headers)      # the client's key belongs to the original provider
+        adapter.inject_key(headers, self.provider_key(provider))
+        conn_cls = http.client.HTTPSConnection if base.scheme == "https" else http.client.HTTPConnection
+        timeout = float(prov.get("timeout_sec") or self.cfg["gateway"]["upstream_timeout_sec"])
+        conn = conn_cls(base.hostname, base.port, timeout=timeout)
+        try:
+            conn.request(req.command, target, body=body, headers=headers)
+            return conn, conn.getresponse()
+        except BaseException:
+            conn.close()
+            raise
+
+    def forward(self, req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
+                request_model, route, resv):
+        rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
         record_seq = None
         captured = bytearray()
         capture_cap = int(self.cfg["recording"]["max_body_bytes"])
@@ -485,37 +704,77 @@ class Gateway:
         if self.cfg["recording"]["enabled"] or self.store.record_enabled(agent):
             record_seq = self.recorder.next_seq(agent)
 
-        base = urllib.parse.urlsplit(prov["base_url"])
-        target = base.path.rstrip("/") + "/" + rest_path
-        if query:
-            target += "?" + query
+        attempts = [(provider, adapter, None)] + self.fallbacks_for(provider)
+        failed = []
+        conn = None
 
-        headers = {}
-        for name, value in req.headers.items():
-            lname = name.lower()
-            if lname in HOP_BY_HOP or lname in ("host", "content-length", "accept-encoding"):
-                continue
-            headers[name] = value
-        headers["Host"] = base.netloc
-        headers["Accept-Encoding"] = "identity"
-        if body is not None:
-            headers["Content-Length"] = str(len(body))
-        self.inject_key(provider, api, headers)
+        def next_attempt(after, entry):
+            """First attempt past `after` whose cost the budget can cover (its
+            hold is grown first), or None. A fallback may be pricier than the
+            primary, which is all that was reserved."""
+            if after + 1 < len(attempts):
+                failed.append(entry)
+            for j in range(after + 1, len(attempts)):
+                name, ad, fb_model = attempts[j]
+                att_body, att_rest, att_payload = self.fallback_body(ad, payload, rest, fb_model, body)
+                att_path = "/".join(urllib.parse.quote(p, safe=":") for p in att_rest)
+                est = 0.0 if ad.zero_cost else self.estimate(fb_model or request_model, att_payload, att_body, att_path)
+                if not self.grow_budget(agent, resv, est):
+                    failed.append({"provider": name, "error": "budget cannot cover this fallback"})
+                    log.warning("agent %s: budget cannot cover fallback %s (~$%.4f); skipping", agent, name, est)
+                    continue
+                resv.renew()
+                return j, att_body, att_rest, att_path, est
+            return None
 
-        conn_cls = http.client.HTTPSConnection if base.scheme == "https" else http.client.HTTPConnection
-        conn = conn_cls(base.hostname, base.port, timeout=float(self.cfg["gateway"]["upstream_timeout_sec"]))
+        plan = (0, body, rest, rest_path, resv.estimate)
+        last_renew = self.clock()
+        renew_every = max(1.0, resv.hold_sec / 3)
         try:
-            try:
-                conn.request(req.command, target, body=body, headers=headers)
-                resp = conn.getresponse()
-            except (OSError, http.client.HTTPException) as exc:
-                self.upstream_failed(agent)
-                raise HTTPError(502, "api_error", "AgentOS gateway could not reach %s: %s" % (provider, exc))
+            while True:
+                i, att_body, att_rest, att_rest_path, att_estimate = plan
+                name, ad, fb_model = attempts[i]
+                try:
+                    conn, resp = self.open_upstream(req, name, ad, att_rest_path, query, att_body,
+                                                    strip=bool(i or (route and route.get("routed_provider"))))
+                except (OSError, http.client.HTTPException) as exc:
+                    nxt = next_attempt(i, {"provider": name, "error": str(exc)[:200]})
+                    if nxt:
+                        log.warning("provider %s failed for agent %s (%s); trying %s", name, agent, exc,
+                                    attempts[nxt[0]][0])
+                        plan = nxt
+                        continue
+                    try:
+                        self.upstream_failed(agent)
+                    except redis.RedisError as err:
+                        log.error("cannot update circuit breaker: %s", err)
+                    raise HTTPError(502, "api_error", "AgentOS gateway could not reach %s: %s" % (name, exc))
+                if resp.status == 429 or resp.status >= 500:
+                    nxt = next_attempt(i, {"provider": name, "status": resp.status})
+                    if nxt:
+                        log.warning("provider %s answered %d for agent %s; trying %s", name, resp.status, agent,
+                                    attempts[nxt[0]][0])
+                        conn.close()
+                        conn = None
+                        plan = nxt
+                        continue
+                break
+            resv.estimate = att_estimate
+            if failed:
+                route = dict(route or {}, fallbacks_failed=failed)
+            provider, adapter = name, ad
+            if i:
+                route["fallback_provider"] = name
+                request_model = fb_model or request_model
+            rest_path, api = att_rest_path, adapter.wire
 
-            if resp.status >= 500:
-                self.upstream_failed(agent)
-            else:
-                self.store.record_success(agent)
+            try:
+                if resp.status >= 500:
+                    self.upstream_failed(agent)
+                else:
+                    self.store.record_success(agent)
+            except redis.RedisError as exc:
+                log.error("cannot update circuit breaker: %s", exc)     # response is already in hand
 
             parser = UsageParser(api, resp.getheader("Content-Type", ""), request_model)
             req.send_response(resp.status)
@@ -539,6 +798,9 @@ class Gateway:
                 if not chunk:
                     break
                 parser.feed(chunk)
+                if self.clock() - last_renew >= renew_every:
+                    resv.renew()            # a long stream must not outlive its hold
+                    last_renew = self.clock()
                 if record_seq is not None:
                     if len(captured) + len(chunk) <= capture_cap:
                         captured += chunk
@@ -552,7 +814,8 @@ class Gateway:
                     # generation; usage seen so far is still recorded.
                     break
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
         try:
             model, usage = parser.finish()
@@ -575,13 +838,20 @@ class Gateway:
                 if self.recorder.write(agent, record_seq, rec):
                     entry["recorded"] = record_seq
             if usage:
-                usd, priced = self.after_usage(agent, model, usage)
+                usd, priced = self.after_usage(agent, model, usage, adapter.zero_cost)
                 entry.update(usage=usage, cost_usd=round(usd, 6), priced=priced)
+            elif req.command == "POST" and 200 <= resp.status < 300 and resv.estimate > 0:
+                # A successful generation whose usage we could not read: it
+                # was billed, so count the conservative estimate, not $0
+                usd, priced = self.after_estimate(agent, provider, model, resv.estimate)
+                entry.update(cost_usd=round(usd, 6), priced=False, usage_estimated=True)
             self.store.count_request(agent, resp.status)
             self.write_log(agent, entry)
         except Exception:
             log.exception("accounting failed for agent %s", agent)
         finally:
+            # Spend is recorded; drop the hold before the client sees the end
+            resv.release()
             if pending and not client_gone:
                 write_chunk(req, pending)
 
@@ -590,22 +860,6 @@ class Gateway:
         if float((self.cfg["routing"].get("downgrade") or {}).get("threshold_pct") or 0) <= 0:
             return 0.0
         return self.used_pct(agent)
-
-    def inject_key(self, provider, api, headers):
-        key = self.provider_key(provider)
-        if not key:
-            return
-        lower = {k.lower(): k for k in headers}
-        if api == "anthropic":
-            current = headers.get(lower.get("x-api-key", ""), "")
-            has_bearer = "authorization" in lower
-            if current == configmod.MANAGED_KEY or (not current and not has_bearer):
-                headers[lower.get("x-api-key", "x-api-key")] = key
-        else:
-            auth_name = lower.get("authorization", "Authorization")
-            current = headers.get(auth_name, "")
-            if current in ("", "Bearer " + configmod.MANAGED_KEY):
-                headers[auth_name] = "Bearer " + key
 
 
 # ── HTTP plumbing ─────────────────────────────────────────────────────────
@@ -633,6 +887,11 @@ def read_body(req, limit):
     if length > limit:
         raise HTTPError(413, "request_too_large", "request body too large")
     return req.rfile.read(length)
+
+
+def client_of(req):
+    addr = req.client_address
+    return addr[0] if isinstance(addr, tuple) else "unix"
 
 
 def write_chunk(req, data):
@@ -665,7 +924,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             self.server.gateway.dispatch(self, self.server.admin)
         except Exception:  # never let one request kill the server
-            log.exception("error handling %s %s", self.command, self.path)
+            log.exception("error handling %s %s", self.command, redact(self.path))
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _dispatch
 
@@ -673,7 +932,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.client_address[0] if isinstance(self.client_address, tuple) else "unix"
 
     def log_message(self, fmt, *args):
-        log.debug("%s %s", self.address_string(), fmt % args)
+        log.debug("%s %s", self.address_string(), redact(fmt % args))
 
 
 class TCPServer(http.server.ThreadingHTTPServer):

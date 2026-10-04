@@ -192,15 +192,22 @@ in
         iptables -I FORWARD 1 -i agentos0 -j agentos-fwd
         iptables -A agentos-fwd -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
         iptables -A agentos-fwd -m set --match-set agentos-llm dst -j REJECT
+        # Default deny: nothing back onto the bridge (other containers), the
+        # cloud metadata service, the LAN or any non-public range, whatever
+        # an allowlisted name resolves to. Gateway and DNS are INPUT traffic
+        # (agentos-in) and never reach this chain.
+        iptables -A agentos-fwd -o agentos0 -j REJECT
+        iptables -A agentos-fwd -d 169.254.169.254 -j REJECT
         iptables -A agentos-fwd -d ${config.agentos.networking.agentNetCIDR} -j REJECT
+        for net in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
+                   172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/3; do
+          iptables -A agentos-fwd -d $net -j REJECT
+        done
       '' + lib.optionalString (containers && deny) ''
         iptables -A agentos-fwd -m set --match-set agentos-egress dst -j RETURN
         iptables -A agentos-fwd -m limit --limit 5/min -j LOG --log-prefix "agentos-fwd-deny: "
         iptables -A agentos-fwd -j REJECT
       '' + lib.optionalString (containers && !deny) ''
-        for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
-          iptables -A agentos-fwd -d $net -j REJECT
-        done
         iptables -A agentos-fwd -j RETURN
       '' + lib.optionalString containers ''
         ip6tables -D FORWARD -i agentos0 -j REJECT 2>/dev/null || true

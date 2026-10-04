@@ -2,6 +2,7 @@ import ipaddress
 import os
 import pwd
 import subprocess
+import threading
 
 import pytest
 
@@ -79,3 +80,100 @@ def test_setup_failure_rolls_back(tmp_path):
 
 def test_main_rejects_bad_id():
     assert netns.main(["setup", "../x"]) == 2
+
+
+def test_sweep_removes_only_stale(tmp_path):
+    rec = Recorder()
+    ns = make(tmp_path, rec)
+    ns.netns_dir = str(tmp_path / "netns")
+    os.makedirs(ns.netns_dir)
+    for i in ("live", "dead", "mine"):
+        (tmp_path / "netns" / ("agentos-" + i)).write_text("")
+        os.makedirs(tmp_path / "net" / i)
+    os.makedirs(tmp_path / "net" / "orphan")
+    ns.is_live = lambda i: i == "live"
+    ns.list_veths = lambda: [names("live")["host_if"], names("dead")["host_if"], "avhdeadbeef"]
+    removed = ns.sweep(keep=("mine",))
+    assert "live" not in removed and "mine" not in removed
+    assert {"dead", "orphan", "avhdeadbeef"} <= set(removed)
+    assert not (tmp_path / "net" / "dead").exists()
+    assert (tmp_path / "net" / "live").exists() and (tmp_path / "net" / "mine").exists()
+    assert ["ip", "link", "del", "avhdeadbeef"] in rec.calls
+    assert ["ip", "netns", "del", "agentos-dead"] in rec.calls
+
+
+def test_sweep_cannot_delete_a_veth_created_during_discovery(tmp_path):
+    discovered = threading.Event()
+    resume_sweep = threading.Event()
+    veth_added = threading.Event()
+    interfaces = set()
+    deleted_active_veth = threading.Event()
+    active_if = names("active")["host_if"]
+
+    class CoordinatedRunner(Recorder):
+        def __call__(self, cmd, check=True):
+            super().__call__(cmd, check)
+            if cmd[:3] == ["ip", "link", "add"]:
+                interfaces.add(cmd[3])
+                veth_added.set()
+            elif cmd[:3] == ["ip", "link", "del"]:
+                if cmd[3] == active_if and active_if in interfaces:
+                    deleted_active_veth.set()
+                interfaces.discard(cmd[3])
+
+    ns = make(tmp_path, CoordinatedRunner())
+    (tmp_path / "net/stale").mkdir(parents=True)
+
+    def is_live(agent_id):
+        if agent_id == "stale":
+            discovered.set()
+            resume_sweep.wait(2)
+        return False
+
+    ns.is_live = is_live
+    ns.list_veths = lambda: list(interfaces)
+    sweep_result = []
+    sweep_thread = threading.Thread(target=lambda: sweep_result.extend(ns.sweep()))
+    sweep_thread.start()
+    assert discovered.wait(2)
+
+    setup_thread = threading.Thread(target=lambda: ns.setup("active"))
+    setup_thread.start()
+    veth_added.wait(0.2)
+    resume_sweep.set()
+    setup_thread.join(2)
+    sweep_thread.join(2)
+
+    assert not setup_thread.is_alive() and not sweep_thread.is_alive()
+    assert active_if in interfaces
+    assert not deleted_active_veth.is_set()
+
+
+def test_sweep_waits_for_a_setup_in_progress(tmp_path):
+    import threading
+    order = []
+    started = threading.Event()
+    other = {}
+
+    def runner(cmd, check=True):
+        if cmd[:3] == ["ip", "link", "add"]:
+            started.set()
+            t = threading.Thread(target=lambda: (other["ns"].sweep(), order.append("sweep")))
+            other["t"] = t
+            t.start()
+            t.join(0.5)                     # the sweep must still be blocked on the lock
+            order.append("setup-step")
+
+    ns = make(tmp_path, runner)
+    other["ns"] = make(tmp_path, lambda cmd, check=True: None)
+    other["ns"].list_veths = lambda: [names("agent-a")["host_if"]]
+    other["ns"].is_live = lambda i: False
+    ns.setup("agent-a")
+    other["t"].join(5)
+    assert order == ["setup-step", "sweep"]
+
+
+def test_setup_with_sweep_does_not_deadlock(tmp_path):
+    ns = make(tmp_path)
+    ns.list_veths = lambda: []
+    assert str(ns.setup("agent-a", sweep=True)) == "10.200.0.2"

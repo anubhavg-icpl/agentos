@@ -83,7 +83,7 @@ in
     (lib.mkRemovedOptionModule [ "agentos" "scheduler" "maxConcurrent" ]
       "Concurrency is limited by agentos.orchestration.maxWorkers.")
     (lib.mkRemovedOptionModule [ "agentos" "scheduler" "enablePriorityQueues" ]
-      "Tasks run in submission order; there are no priority queues.")
+      "Schedules have no priority queues. Tasks take a priority of their own: `agentos-task submit --priority`.")
     (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursOnly" ]
       "Put the window in the schedule's calendar expression instead, e.g. \"*-*-* 22..23,00..05:00/30:00\".")
     (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursStart" ] "See offHoursOnly.")

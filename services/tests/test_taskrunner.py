@@ -237,3 +237,84 @@ def test_task_budget_needs_the_gateway(env, orch):
     env.runner.run(tid)
     task = orch.tasks.get(tid)
     assert task["status"] == "failed" and "gateway" in task["result"]["error"]
+
+
+# ── verify contract ────────────────────────────────────────────────────
+def test_verify_passed_runs_in_its_own_sandbox_unit(env, orch):
+    tid = queue(orch, prompt="ok", verify={"cmd": ["fake-agent", "check one"]})
+    assert env.runner.run(tid) == 0
+    task = orch.tasks.get(tid)
+    v = task["result"]["verify"]
+    assert task["status"] == "succeeded"
+    assert v["status"] == "passed" and v["exit_code"] == 0 and "check one" in v["output_tail"]
+    assert "cwd " + env.ws in v["output_tail"]
+    seen = json.load(open(env.log))  # the last systemd-run call is the verification
+    assert seen["unit"] == ["--unit=agentos-verify-" + tid]
+    assert "NoNewPrivileges=yes" in seen["props"] and "ProtectSystem=strict" in seen["props"]
+    assert seen["argv"][1:] == ["check one"] and os.path.isabs(seen["argv"][0])
+
+
+def test_verify_failed_keeps_status_and_skips_publish(env, orch, cfg):
+    calls = []
+
+    class Publisher:
+        def publish(self, *a):
+            calls.append(a)
+            return {"pr_url": "u"}
+
+    env.runner.publisher = lambda popts: Publisher()
+    env.runner.cfg["publish"] = {"repos": {"acme/widgets": {"workspaces": ["demo"]}}}
+    tid = queue(orch, prompt="ok", verify={"cmd": ["fake-agent", "fail"]}, publish={"repo": "acme/widgets"})
+    assert env.runner.run(tid) == 0
+    task = orch.tasks.get(tid)
+    assert task["status"] == "succeeded" and task["result"].get("error") is None
+    v = task["result"]["verify"]
+    assert v["status"] == "failed" and v["exit_code"] == 3 and "boom" in v["output_tail"]
+    assert task["result"]["publish"] == {"status": "skipped", "error": "verify failed"}
+    assert calls == []
+
+
+def test_verify_timeout_is_an_error(env, orch):
+    tid = queue(orch, prompt="ok", verify={"cmd": ["fake-agent", "sleep"], "timeout_sec": 1})
+    started = time.time()
+    env.runner.run(tid)
+    assert time.time() - started < 30
+    task = orch.tasks.get(tid)
+    v = task["result"]["verify"]
+    assert task["status"] == "succeeded" and v["status"] == "error" and v["exit_code"] is None
+    assert "timed out" in v["output_tail"]
+
+
+def test_verify_missing_binary_is_an_error(env, orch):
+    tid = queue(orch, prompt="ok", verify={"cmd": ["no-such-verifier", "x"]})
+    env.runner.run(tid)
+    task = orch.tasks.get(tid)
+    v = task["result"]["verify"]
+    assert task["status"] == "succeeded" and v["status"] == "error" and v["exit_code"] is None
+    assert "not installed" in v["output_tail"]
+
+
+def test_no_verify_for_failed_agent_or_when_unset(env, orch):
+    tid = queue(orch, prompt="fail", verify={"cmd": ["fake-agent"]})
+    env.runner.run(tid)
+    assert "verify" not in orch.tasks.get(tid)["result"]
+    tid = queue(orch, prompt="ok")
+    env.runner.run(tid)
+    assert "verify" not in orch.tasks.get(tid)["result"]
+
+
+def test_judge_sees_the_runner_verify_status(env, orch):
+    tid = queue(orch, prompt="ok", verify={"cmd": ["fake-agent", "fail"]})
+    env.runner.run(tid)
+    assert "verify: failed" in orch._judge_results([orch.tasks.get(tid)])
+
+
+def test_retry_of_a_plain_task_reuses_its_existing_branch(env, orch):
+    tid = queue(orch, prompt="x")
+    subprocess.run(["git", "-C", env.ws, "branch", "agent/" + tid], check=True)
+    subprocess.run(["git", "-C", env.ws, "branch", "agent/other"], check=True)
+    subprocess.run(["git", "-C", env.ws, "checkout", "-q", "agent/other"], check=True)
+    _, branch, _ = env.runner.prepare_workspace(orch.tasks.get(tid))
+    assert branch == "agent/" + tid
+    current = subprocess.run(["git", "-C", env.ws, "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+    assert current == "agent/" + tid

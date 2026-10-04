@@ -141,6 +141,13 @@
         in
         {
           services = self.packages.${system}.services;
+          # Eval-only: runtime agent map, agent packages and the host's
+          # systemPackages agree (see tests/agent-inclusion.nix).
+          agent-inclusion = import ./tests/agent-inclusion.nix {
+            inherit pkgs;
+            host = hostFor system "agentos";
+            agentPkgs = self.packages.${system};
+          };
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           # Boots a VM with the AgentOS service stack and drives an agent
@@ -150,12 +157,22 @@
           gateway-features = import ./tests/gateway-features.nix { inherit pkgs agentosModules; };
           # Task queue, orchestrator plans and cron-style schedules.
           orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
+          # GitHub webhooks -> tasks -> pushed branch and pull request.
+          triggers = import ./tests/triggers.nix { inherit pkgs agentosModules; };
           # Container-isolated agents in their own network namespace.
           container = import ./tests/container.nix { inherit pkgs agentosModules; };
+          # Pullrun daemon: operators-only socket, agents in Pullrun containers.
+          pullrun = import ./tests/pullrun.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
+          # OpenClaw chat gateway wired to the model gateway and orchestrator.
+          openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
+          # Local inference backend registered as a gateway provider.
+          local-ai = import ./tests/local-ai.nix { inherit pkgs agentosModules; };
+          # Eval-only: key-only sshd on the live ISO, no fixed VM password.
+          hardening = import ./tests/hardening.nix { inherit pkgs self; };
         });
 
       # ── Dev shell for working on AgentOS itself ───────────────────────

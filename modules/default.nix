@@ -1,19 +1,13 @@
 # AgentOS system modules — all submodules
 { lib, ... }:
 {
-  # Services that are designed but not implemented yet: MCP gateway, MCP
-  # registry service, provisioner and memory manager (nixos/packages/*.nix
-  # holds build stubs with no source). Their systemd units are gated behind
-  # this switch; enabling it before they exist makes the system fail to
-  # build. The model gateway, the agent daemon, the orchestrator and the
-  # scheduler are implemented (services/) and are not affected by it.
-  options.agentos.plannedServices.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = false;
-    description = "Run the planned (not yet implemented) AgentOS services.";
-  };
-
+  # The planned services (MCP gateway, MCP registry service, provisioner,
+  # memory manager) were stubs with no source and are removed; they come
+  # back when implemented (docs/ROADMAP.md).
   imports = [
+    (lib.mkRemovedOptionModule [ "agentos" "plannedServices" "enable" ]
+      "The planned (unimplemented) services were removed; see docs/ROADMAP.md.")
+
     # Core infrastructure
     ./runtime
     ./security
@@ -27,10 +21,12 @@
     # Agent intelligence
     ./context
     ./orchestration
+    ./openclaw
 
     # Tool ecosystem
     ./mcp-registry
     ./mcp-servers
+    ./pullrun
 
     # Safety & control
     ./budget-controller
@@ -45,6 +41,7 @@
 
     # Automation
     ./scheduler
+    ./triggers
     ./notifications
 
     # Pre-installed toolchains
@@ -60,6 +57,7 @@
     # AI/ML
     ./ai-ml
     ./gpu
+    ./local-ai
 
     # VIBE integration (853 modes, 5340 skills)
     ./vibe-integration

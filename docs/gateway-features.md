@@ -1,6 +1,6 @@
 # Model gateway features
 
-Four features of the model gateway (`agentos-model-gateway`), all applied to
+Features of the model gateway (`agentos-model-gateway`), all applied to
 requests that agents send through `http://127.0.0.1:8080/agent/<id>/<provider>/...`.
 
 | Feature | Where it is configured | Admin endpoint / CLI |
@@ -9,6 +9,12 @@ requests that agents send through `http://127.0.0.1:8080/agent/<id>/<provider>/.
 | [Model routing](#model-routing) | `agentos.budget-controller.routing` | `agentos budget routing [<agent> <provider> <model>]` |
 | [Record and replay](#record-and-replay) | `agentos.networking.recordSessions` | `agentos-replay` |
 | [Message bus](#message-bus) | always on | `agentos-msg`, MCP server `agentos-bus` |
+| [Budget reservation](#budget-reservation) | `agentos.budget-controller` | |
+| [Agent tokens and the 401 throttle](#agent-tokens-and-the-401-throttle) | `agentos.circuit-breaker` | |
+| [Failing closed](#failing-closed) | always on | |
+| [Providers](#providers) | `agentos.networking.providers` | |
+| [Cache pricing and unreadable usage](#cache-pricing-and-unreadable-usage) | `pricing.json` | |
+| [Fallbacks](#fallbacks) | `agentos.networking.providers.<name>.fallbacks` | |
 
 The gateway reads its settings from `/etc/agentos/services.toml`; the NixOS
 options below generate the `[limits]`, `[routing]`, `[recording]` and `[bus]`
@@ -28,11 +34,26 @@ contact the provider. The first refusal publishes a `loop_detected` event; the
 notifications module reports it in the `agent-error` group. A different
 request ends the run, and so does the window expiring.
 
+Ids and times that change on every retry do not hide a loop. Before hashing,
+the gateway replaces `tool_use_id`, `call_id`, `request_id` and timestamp
+fields, and inside text: UUIDs, ISO timestamps, clock times (`10:00:01`),
+Unix epochs, long hex strings and ids such as `toolu_...`, `call_...`,
+`msg_...`, with placeholders. Other differences (an issue number, a file
+name) still make requests distinct. Gemini `contents` are fingerprinted too.
+
+A second shape is caught as well: two requests alternating A, B, A, B, ...
+`loopAlternationLength` consecutive requests of that pattern within
+`loopWindowSec` (a sliding window of the last requests) get the same `429
+loop_detected`, and the first refusal publishes a `loop_detected` event with
+`kind = "alternation"`. A third distinct request breaks the pattern. 0
+disables it; values below 4 are treated as 0.
+
 ```nix
 agentos.circuit-breaker = {
   enableLoopDetection = true;   # default
   loopRepeatThreshold = 5;      # default
   loopWindowSec = 600;          # default
+  loopAlternationLength = 8;    # default; 0 disables A/B detection
 };
 ```
 
@@ -156,9 +177,121 @@ address from the environment `agentos spawn` sets (`ANTHROPIC_BASE_URL` has the
 shape `http://127.0.0.1:8080/agent/<id>/anthropic`; `AGENTOS_GATEWAY_URL`
 overrides it).
 
+## Budget reservation
+
+Before forwarding, the gateway holds an estimated cost against the agent's
+and the global daily budget: the input size (about 4 bytes per token) plus
+`max_tokens` (or `defaultMaxTokens` when the request sets none) at the
+model's output price. If the hold does not fit, the request is refused with
+`402` and never reaches the provider. When the response ends, the hold is
+replaced by the actual cost, so concurrent requests cannot overshoot a
+budget. Requests to a zero-cost provider reserve nothing.
+
+```nix
+agentos.budget-controller = {
+  reserveBudget = true;      # default
+  defaultMaxTokens = 4096;   # default
+};
+```
+
+## Agent tokens and the 401 throttle
+
+Agents authenticate with the token `agentos spawn` registers. It can be sent
+in the URL (`/agent/<id>:<token>/...`) or in the `x-agentos-token` header.
+The header is preferred: the token then stays out of URLs, access logs and
+the request log, and the gateway never logs a token. Operators on the admin
+socket may omit it.
+
+Failed authentications are counted per client address and minute. Beyond
+`maxAuthFailuresPerMinute` (default 20; 0 disables) further failures answer
+`429 rate_limited` with `Retry-After` instead of `401`, which stops token
+guessing.
+
+```nix
+agentos.circuit-breaker.maxAuthFailuresPerMinute = 20;
+```
+
+## Failing closed
+
+If the state store (Redis) is unavailable, the gateway answers `503` with
+error type `store_unavailable` and `Retry-After: 5`. Without the store it
+cannot authenticate, rate limit or meter, so it forwards nothing rather than
+proxying unmetered traffic.
+
+## Providers
+
+Each entry of `agentos.networking.providers` names an adapter with `api`:
+
+| `api` | Provider | Key header |
+|:---|:---|:---|
+| `anthropic` | Messages API | `x-api-key` |
+| `openai` | Chat Completions and Responses | `Authorization: Bearer` |
+| `openai-compatible` | Local server in the OpenAI format (ollama, llama.cpp, vLLM) | none needed |
+| `azure-openai` | Azure OpenAI, deployments in the path; set `apiVersion` | `api-key` |
+| `gemini` | Google Generative Language API | `x-goog-api-key` |
+
+AWS Bedrock and Google Vertex AI are not supported (they need request signing
+or OAuth tokens). A provider without `keyFile` works: no key is injected and
+the client's own credentials are passed through (for `openai-compatible`
+nothing is sent). Usage is read per adapter, so token metering and pricing work
+for each.
+
+### Zero-cost providers
+
+`zeroCost = true` makes every model on that provider cost $0 (local
+inference, a flat-rate gateway on your LAN). Tokens are still counted, nothing
+is reserved, and the log shows `cost_usd = 0`. The default is `true` for
+`openai-compatible` and `false` otherwise; `zeroCost = false` prices a
+compatible server from `pricing.json`. A model that is not in `pricing.json`
+and not on a zero-cost provider keeps the conservative default price.
+
+Cost routing can send requests to such a provider: map a model to it with
+`routing.targets` and put it in an equivalence group with `strategy =
+"cheapest"`. Its unit cost is 0, so it wins, the user's key for the original
+provider is not sent to it, and routing never crosses wire formats.
+
+```nix
+agentos.networking.providers.local = {
+  baseUrl = "http://127.0.0.1:11434";
+  api = "openai-compatible";      # zeroCost defaults to true
+};
+agentos.networking.providers.lan = {
+  baseUrl = "http://10.0.0.5:8000";
+  api = "openai";
+  zeroCost = true;
+};
+```
+
+## Cache pricing and unreadable usage
+
+Anthropic cache writes with the 1 hour TTL are priced separately from 5
+minute writes, at `cache_write_1h_per_1m` in `pricing.json` (default: twice
+the input price). If a successful response carries no readable usage (a
+format the gateway does not parse), the gateway charges the reservation
+estimate instead of $0, logs a warning, and marks the log entry
+`usage_estimated`.
+
+## Fallbacks
+
+`fallbacks` on a provider lists other providers to try, in order, when it
+answers 5xx or 429, times out or cannot be reached before the first response
+byte. A fallback is a provider name or `{ provider; model; }` to request
+another model. Fallbacks must use the same wire format, and need a key or be
+a local server; others are ignored with a warning. The client's credentials
+are never sent to a fallback, its configured key is injected. Nothing is
+retried once a response has started. The log records `fallback_provider` or
+`fallbacks_failed`.
+
+```nix
+agentos.networking.providers.openai.fallbacks =
+  [ "azure" { provider = "local"; model = "llama3.1"; } ];
+```
+
 ## Testing
 
 - `services/tests/`: `test_loops.py`, `test_routing.py`, `test_replay.py`,
-  `test_bus.py`, `test_mcp_bus.py` (run by `nix build .#services`).
+  `test_bus.py`, `test_mcp_bus.py`, `test_reservation.py`, `test_auth.py`,
+  `test_failclosed.py`, `test_providers.py`, `test_usage.py`,
+  `test_unparsed.py`, `test_fallbacks.py` (run by `nix build .#services`).
 - `tests/gateway-features.nix`: a VM test covering all four features against a
   mock provider.

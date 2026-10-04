@@ -257,7 +257,8 @@
     ╚══════════════════════════════════════════════╝
 
     Agents: claude codex aider gemini qwen amp goose opencode crush
-            cursor-agent copilot droid cline cn interpreter
+            cursor-agent copilot kilocode vibe kiro-cli codebuff pi
+            droid cline cn interpreter
 
     Quick start:
       agentos workspace create demo            Shared workspace

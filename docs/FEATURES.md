@@ -83,11 +83,11 @@ agentos-memory search       # Browse collections
 agentos-memory forget       # Clear all memories
 ```
 
-### 7. Multi-Agent Orchestration (`modules/orchestration`) — planned
-Design for coordinating multiple agents (planner-worker, swarm, pipeline). The
-orchestrator service is not implemented; its unit and CLI are only installed
-with `agentos.plannedServices.enable`. Today, run several agents side by side
-with `agentos spawn` in separate workspaces.
+### 7. Multi-Agent Orchestration (`modules/orchestration`)
+Queued tasks, pipelines, swarms with verify and judge steps, DAG workflows,
+approval gates, retries and priorities, driven by `agentos-task`. GitHub
+webhooks can create tasks and publish pull requests. See
+[orchestration.md](orchestration.md) and [triggers.md](triggers.md).
 
 ---
 
@@ -169,7 +169,7 @@ agentos-secrets check       # Show access mapping
 - **Branch per agent session:** `agentos spawn` creates `agent/<agent-id>` in the workspace.
 - **Hooks:** pre-commit checks for secrets, large files and failing tests (`agentos-git init`).
 - **Helpers** for commits, checkpoints and PRs via the GitHub CLI.
-- `autoCommit` / `autoPR` are not acted on yet.
+- `autoCommit` is not acted on yet. `autoPR` pushes `agent/<task-id>` and opens a PR for successful orchestrator tasks of workspaces listed in `publish.repos` (see docs/triggers.md).
 
 **CLI:**
 ```bash
@@ -203,10 +203,9 @@ agentos-env prebuild        # Pre-build environments
 
 ## Automation
 
-### 14. Scheduler (`modules/scheduler`) — planned
-Cron-like scheduling for recurring agent tasks. The scheduler service is not
-implemented; its unit and CLI are only installed with
-`agentos.plannedServices.enable`.
+### 14. Scheduler (`modules/scheduler`)
+Recurring tasks on systemd `OnCalendar` schedules, managed with
+`agentos-schedule` or declared in Nix. See [orchestration.md](orchestration.md).
 
 ### 15. Notifications (`modules/notifications`)
 The agent daemon forwards events to Slack, Discord or a generic JSON webhook.
@@ -222,13 +221,13 @@ agentos-notify test "hello"
 
 ---
 
-## Pre-installed Agents (15 total)
+## Pre-installed Agents (20 total)
 
 See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 
 | Source | Agents |
 |------|--------|
-| nixpkgs (11) | Claude Code, Codex, Aider, Gemini, Qwen Code, Amp, Goose, OpenCode, Crush, Cursor CLI, GitHub Copilot CLI |
+| nixpkgs (16) | Claude Code, Codex, Aider, Gemini, Qwen Code, Amp, Goose, OpenCode, Crush, Cursor CLI, GitHub Copilot CLI, Kilo Code, Mistral Vibe, Kiro CLI, Codebuff, Pi |
 | npm launcher (3) | Factory Droid, Cline, Continue |
 | PyPI launcher (1) | Open Interpreter |
 
@@ -247,13 +246,13 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 | Storage & snapshots | storage | `agentos snapshot` | ✅ |
 | Observability | observability | Grafana | ✅ |
 | Secrets manager | secrets-manager | `agentos-secrets` | ✅ (after sops setup) |
-| Git automation | git-automation | `agentos-git` | Helpers ✅, auto-commit/PR planned |
+| Git automation | git-automation | `agentos-git` | Helpers ✅, auto-PR for orchestrator tasks ✅, auto-commit planned |
 | Context & memory | context | `agentos-memory` | Qdrant ✅, memory manager planned |
 | MCP servers | mcp-servers | `agentos-mcp` | ✅ (config) |
 | Provisioning | provisioning | `agentos-env` | ✅ (provisioner service planned) |
-| Orchestration | orchestration | — | Planned |
-| Scheduler | scheduler | — | Planned |
-| 15 coding agents | agents | `agentos agents` | ✅ |
+| Orchestration | orchestration | `agentos-task` | ✅ |
+| Scheduler | scheduler | `agentos-schedule` | ✅ |
+| 20 coding agents | agents | `agentos agents` | ✅ |
 
 ---
 

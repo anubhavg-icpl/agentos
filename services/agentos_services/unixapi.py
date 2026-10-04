@@ -16,12 +16,29 @@ import logging
 import os
 import socket
 import socketserver
+import struct
 import threading
 import urllib.parse
 
 log = logging.getLogger("agentos.unixapi")
 
 MAX_BODY = 1024 * 1024
+
+_local = threading.local()
+
+
+def peer_credentials():
+    """{pid, uid, gid} of the client of the request being handled (SO_PEERCRED,
+    set by the kernel and not forgeable by the client), or None."""
+    return getattr(_local, "peer", None)
+
+
+def _read_peer(sock):
+    try:
+        pid, uid, gid = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
+        return {"pid": pid, "uid": uid, "gid": gid}
+    except (OSError, AttributeError, struct.error):
+        return None
 
 
 class ApiError(Exception):
@@ -37,6 +54,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _serve(self):
         self.close_connection = True
+        _local.peer = _read_peer(self.connection)
         url = urllib.parse.urlsplit(self.path)
         parts = [urllib.parse.unquote(p) for p in url.path.split("/") if p]
         try:

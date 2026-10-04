@@ -11,7 +11,7 @@
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License"></a>
   <a href="modules/"><img src="https://img.shields.io/badge/Modules-27-blue?style=flat-square" alt="Modules"></a>
-  <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/Agents-15-green?style=flat-square" alt="Agents"></a>
+  <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/Agents-20-green?style=flat-square" alt="Agents"></a>
   <a href="docs/FEATURES.md"><img src="https://img.shields.io/badge/MCP%20Servers-35-purple?style=flat-square" alt="MCP"></a>
   <a href="https://github.com/anubhavg-icpl/vibe"><img src="https://img.shields.io/badge/VIBE%20Skills-5340-orange?style=flat-square" alt="VIBE"></a>
   <a href="https://nixos.org"><img src="https://img.shields.io/badge/Platform-NixOS-7E2F8E?style=flat-square" alt="NixOS"></a>
@@ -32,7 +32,7 @@
 
 ## Overview
 
-AgentOS is a minimal, NixOS-based operating system where the primary users are **AI coding agents**, not humans. It ships with 15 coding agents pre-installed, 36 MCP tool servers configured, 20+ language toolchains, the VIBE skills library installed on first boot, and a hardened, observable base system.
+AgentOS is a minimal, NixOS-based operating system where the primary users are **AI coding agents**, not humans. It ships with 20 coding agents pre-installed, 36 MCP tool servers configured, 20+ language toolchains, the VIBE skills library installed on first boot, and a hardened, observable base system.
 
 > [!NOTE]
 > **Status (v0.3.0).** The core loop works and is covered by an end-to-end VM test (`nix build .#checks.x86_64-linux.e2e`):
@@ -47,7 +47,7 @@ AgentOS is a minimal, NixOS-based operating system where the primary users are *
 <div align="center">
 <table>
 <tr>
-<td align="center"><h3>15</h3><p>Coding Agents</p></td>
+<td align="center"><h3>20</h3><p>Coding Agents</p></td>
 <td align="center"><h3>5,340</h3><p>VIBE Skills</p></td>
 <td align="center"><h3>35</h3><p>MCP Servers</p></td>
 <td align="center"><h3>27</h3><p>NixOS Modules</p></td>
@@ -100,7 +100,7 @@ agentos workspace create api --from https://github.com/me/api.git
 agentos spawn claude --workspace api --budget 5
 agentos list            # agents, status, spend today
 agentos logs <id>       # every model call with tokens and cost
-agentos agents          # all 15 agents
+agentos agents          # all 20 agents
 ```
 
 <div align="center">
@@ -119,7 +119,7 @@ agentos agents          # all 15 agents
 
 <br/>
 
-15 coding agents ship pre-installed, and each gets the same base tools (git, ripgrep, fd, gh). Eleven are built from nixpkgs and pinned by `flake.lock`. Four that nixpkgs doesn't package yet are pinned npm/PyPI launchers, which download the agent on first run.
+20 coding agents ship pre-installed, and each gets the same base tools (git, ripgrep, fd, gh). Sixteen are built from nixpkgs and pinned by `flake.lock`. Four that nixpkgs doesn't package yet are pinned npm/PyPI launchers, which download the agent on first run.
 
 | Command | Agent | Provider | Source |
 |:---|:---|:---|:---|
@@ -134,6 +134,11 @@ agentos agents          # all 15 agents
 | `crush` | Crush | Charm | nixpkgs |
 | `cursor-agent` | Cursor CLI | Cursor | nixpkgs |
 | `copilot` | GitHub Copilot CLI | GitHub | nixpkgs |
+| `kilocode` | Kilo Code CLI | Kilo | nixpkgs |
+| `vibe` | Mistral Vibe | Mistral | nixpkgs |
+| `kiro-cli` | Kiro CLI | AWS | nixpkgs |
+| `codebuff` | Codebuff | Codebuff | nixpkgs |
+| `pi` | Pi coding agent | pi-mono | nixpkgs |
 | `droid` | Factory Droid | Factory AI | npm launcher |
 | `cline` | Cline | Open Source | npm launcher |
 | `cn` | Continue CLI | Open Source | npm launcher |
@@ -455,7 +460,7 @@ agentos/
 │   ├── language-toolchains/        #   20+ language runtimes
 │   ├── databases/                  #   Postgres, Redis, SQLite, DuckDB
 │   └── ...                         #   17 more modules
-├── agents/                         # 15 coding agent packages
+├── agents/                         # 20 coding agent packages
 ├── nixos/
 │   ├── hosts/                      # Host configs (bare metal + ISO)
 │   └── packages/                   # CLI, installer, daemon stubs
@@ -471,11 +476,12 @@ agentos/
 | Document | Description |
 |:---|:---|
 | [docs/STATUS.md](docs/STATUS.md) | What works today and what is still planned |
-| [docs/AGENTS.md](docs/AGENTS.md) | All 15 agents with usage examples and API key setup |
+| [docs/AGENTS.md](docs/AGENTS.md) | All 20 agents with usage examples and API key setup |
 | [docs/FEATURES.md](docs/FEATURES.md) | Detailed documentation of all 27 modules |
 | [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
 | [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
 | [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
+| [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
 | [docs/desktop.md](docs/desktop.md) / [docs/aarch64.md](docs/aarch64.md) | Desktop edition and ARM64 |
@@ -502,8 +508,12 @@ agentos/
 - [x] Inter-agent message bus, HTTP and MCP ([docs](docs/gateway-features.md))
 - [x] Cost routing to cheaper models ([docs](docs/gateway-features.md))
 - [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
-- [ ] Container and GPU options for orchestrator tasks
-- [ ] Agents emitting OpenTelemetry traces
+- [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
+- [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
+- [x] OpenClaw chat front end, opt-in ([docs](docs/openclaw.md))
+- [x] Pullrun packaged, experimental `--isolation pullrun` ([docs](docs/pullrun.md))
+
+What comes next, release by release: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 

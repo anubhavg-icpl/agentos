@@ -39,6 +39,7 @@ import time
 import urllib.request
 
 from . import config as configmod
+from . import publish as P
 from . import tasks as T
 from .store import Store, connect
 from .unixapi import call
@@ -48,13 +49,36 @@ log = logging.getLogger("agentos.taskrunner")
 KILL_LOOKUP_SEC = 3
 
 
+# Keep in step with HARDEN_PROPS in nixos/packages/cli.nix (see the comment there
+# for what is left out on purpose: MemoryDenyWriteExecute, ProcSubset=pid).
+HARDEN_PROPS = (
+    "SystemCallFilter=@system-service",
+    "SystemCallFilter=~@privileged @mount @module @raw-io @reboot @swap @obsolete @cpu-emulation @debug",
+    "SystemCallErrorNumber=EPERM",
+    "SystemCallArchitectures=native",
+    "RestrictNamespaces=yes",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+    "ProtectProc=invisible",
+    "LockPersonality=yes",
+    "RestrictRealtime=yes",
+    "RestrictSUIDSGID=yes",
+    "ProtectClock=yes",
+    "ProtectControlGroups=yes",
+    "ProtectKernelLogs=yes",
+    "ProtectHostname=yes",
+    "CapabilityBoundingSet=",
+    "AmbientCapabilities=",
+    "MemorySwapMax=0",
+)
+
+
 class RunnerError(Exception):
     pass
 
 
 class TaskRunner:
     def __init__(self, cfg, runtime, tasks, clock=time.time, systemd_run="systemd-run",
-                 systemctl="systemctl", drop_privileges=True):
+                 systemctl="systemctl", drop_privileges=True, publisher=None):
         self.cfg = cfg
         self.opts = T.settings(cfg, "orchestrator")
         self.runtime = runtime
@@ -66,6 +90,9 @@ class TaskRunner:
         self.state_dir = runtime.get("state_dir") or cfg["daemon"]["state_dir"]
         self.cancel = threading.Event()
         self.proc = None
+        self.base_sha = None
+        # publisher(publish_opts) -> P.Publisher; replaced in tests
+        self.publisher = publisher or self._make_publisher
 
     # ── helpers ────────────────────────────────────────────────────────
     def stop_unit(self, unit):
@@ -92,16 +119,25 @@ class TaskRunner:
         ws, branch = task["workspace"], "agent/" + task["id"]
         if self.git(["rev-parse", "--git-dir"], ws, check=False).returncode != 0:
             self.git(["init", "--quiet"], ws)
+        head = self.git(["rev-parse", "--verify", "--quiet", "HEAD"], ws, check=False)
+        self.base_sha = head.stdout.strip() if head.returncode == 0 else None
         if task.get("isolate"):
             # Concurrent agents cannot share one working tree: give this one
             # its own worktree (next to the workspace, so still under the root)
             if self.git(["rev-parse", "--verify", "--quiet", "HEAD"], ws, check=False).returncode != 0:
                 self.git(["-c", "user.name=AgentOS", "-c", "user.email=agentos@localhost",
                           "commit", "--quiet", "--allow-empty", "-m", "Initialize workspace"], ws)
+            self.base_sha = self.git(["rev-parse", "HEAD"], ws).stdout.strip()
             wt = os.path.join(os.path.dirname(ws), "%s.%s" % (os.path.basename(ws), task["id"]))
+            if int(task.get("attempt") or 1) > 1:
+                # A retry (orchestrator `max_retries`): start clean, drop the failed attempt's worktree and branch
+                self.git(["worktree", "remove", "--force", wt], ws, check=False)
+                self.git(["branch", "-D", branch], ws, check=False)
             self.git(["worktree", "add", "--quiet", "-b", branch, wt], ws)
             return wt, branch, [wt, os.path.join(ws, ".git")]
-        if self.git(["checkout", "--quiet", "-b", branch], ws, check=False).returncode != 0:
+        exists = self.git(["rev-parse", "--verify", "--quiet", "refs/heads/" + branch], ws, check=False).returncode == 0
+        args = ["checkout", "--quiet", branch] if exists else ["checkout", "--quiet", "-b", branch]
+        if self.git(args, ws, check=False).returncode != 0:
             current = self.git(["branch", "--show-current"], ws, check=False).stdout.strip()
             log.warning("could not create %s; staying on %r", branch, current)
             branch = current
@@ -194,9 +230,6 @@ class TaskRunner:
             "-p", "ReadWritePaths=%s %s" % (" ".join(writable), home),
             "-p", "ProtectKernelTunables=yes",
             "-p", "ProtectKernelModules=yes",
-            "-p", "ProtectControlGroups=yes",
-            "-p", "RestrictSUIDSGID=yes",
-            "-p", "LockPersonality=yes",
             "-p", "UMask=0002",
             # Backstop in case this helper dies before enforcing the timeout
             "-p", "RuntimeMaxSec=%d" % (timeout + 60),
@@ -206,6 +239,8 @@ class TaskRunner:
             "--setenv=TERM=dumb",
             "--setenv=LANG=C.UTF-8",
         ]
+        for prop in HARDEN_PROPS:
+            args += ["-p", prop]
         args += ["--setenv=%s=%s" % kv for kv in env.items()]
         return args
 
@@ -226,6 +261,146 @@ class TaskRunner:
                 return None
             time.sleep(0.25)
 
+    # ── publishing (publish.py) ────────────────────────────────────────
+    def _make_publisher(self, popts):
+        return P.Publisher(popts, P.load_token(popts),
+                           git=P.make_git(self._agent_ids(), {k: v for k, v in os.environ.items()
+                                                    if k in ("PATH", "SSL_CERT_FILE", "GIT_SSL_CAINFO")}))
+
+    def publish_marker(self, task_id):
+        """A publish request recorded by the trigger service (see triggers.py)."""
+        try:
+            raw = self.tasks.r.get(self.tasks._k("publish", task_id))
+            marker = json.loads(raw) if raw else None
+        except Exception:
+            return None
+        return marker if isinstance(marker, dict) else None
+
+    def try_publish(self, task, workdir, branch, base_sha, skip_reason=None):
+        """Returns (result fields, error). The error is set only when the publish
+        was asked for explicitly: such a task then fails, with the agent's output kept.
+        With skip_reason (a failed verification) a requested publish is not attempted
+        and the task keeps the agent's status."""
+        popts = P.settings(self.cfg)
+        try:
+            spec = P.resolve_spec(task, popts, self.publish_marker(task["id"]))
+        except P.PublishError as exc:
+            return {"publish": {"status": "error", "error": str(exc)}}, str(exc)
+        if spec is None:
+            return {}, None
+        if skip_reason:
+            return {"publish": {"status": "skipped", "error": skip_reason}}, None
+        if branch != "agent/" + task["id"]:
+            msg = "task is not on its own branch"
+            return {"publish": {"status": "skipped", "error": msg}}, (msg if spec["explicit"] else None)
+        try:
+            info = self.publisher(popts).publish(spec, task["id"], workdir, branch, base_sha)
+        except P.PublishError as exc:
+            log.warning("task %s: publish %s: %s", task["id"], exc.code, exc)
+            status = "skipped" if exc.code == "empty" and not spec["explicit"] else "error"
+            fields = {"publish": {"status": status, "error": str(exc), "code": exc.code}}
+            return fields, (str(exc) if spec["explicit"] else None)
+        except Exception:  # never let a publish bug lose the agent's result
+            log.exception("task %s: publish crashed", task["id"])
+            return {"publish": {"status": "error", "error": "internal error"}}, "internal error"
+        return {"pr_url": info["pr_url"], "publish": dict(info, status="published")}, None
+
+    def run_publish_task(self, task):
+        """A task of kind "publish": publish the branch a dependency produced."""
+        task_id = task["id"]
+        try:
+            if not configmod.valid_agent_id(task_id):
+                raise P.PublishError("malformed task record")
+            workspace = T.resolve_workspace(task.get("workspace"), self.runtime["workspace_root"])
+            source = {}
+            for dep_id in task.get("depends_on") or task.get("after") or []:
+                dep = self.tasks.get(dep_id) or {}
+                if dep.get("status") == T.SUCCEEDED and (dep.get("result") or {}).get("branch"):
+                    source = dep
+                    break
+            res = source.get("result") or {}
+            if not res.get("branch"):
+                raise P.PublishError("no successful dependency produced a branch to publish")
+            popts = P.settings(self.cfg)
+            spec = P.resolve_spec(dict(task, kind="publish", workspace=workspace,
+                                       origin=task.get("origin") or source.get("origin")),
+                                  popts, self.publish_marker(task_id))
+            info = self.publisher(popts).publish(spec, task_id, res.get("worktree") or workspace, res["branch"],
+                                                 res.get("base_sha"))
+        except (P.PublishError, T.ValidationError) as exc:
+            self.tasks.finish(task_id, T.FAILED, error="publish refused: %s" % exc)
+            log.error("task %s: %s", task_id, exc)
+            return 1
+        self.tasks.finish(task_id, T.SUCCEEDED, pr_url=info["pr_url"], branch=info["branch"],
+                          publish=dict(info, status="published"), exit_code=0)
+        return 0
+
+    # ── verify contract (docs/orchestration.md) ────────────────────────
+    GATEWAY_ENV = ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
+
+    def run_verify(self, task, workdir, writable, env):
+        """Run task["verify"]["cmd"] as an argv (never a shell) in the agent's sandbox
+        and user, in workdir, without the gateway credentials. Never raises."""
+        verify = task["verify"]
+        cmd0, timeout = verify["cmd"][0], verify["timeout_sec"]
+        started = self.clock()
+
+        def outcome(status, code, tail=""):
+            return {"status": status, "exit_code": code, "output_tail": tail,
+                    "duration_sec": round(self.clock() - started, 1)}
+
+        if "/" in cmd0:
+            exe = cmd0 if os.path.isabs(cmd0) else os.path.join(workdir, cmd0)
+            exe = exe if os.path.isfile(exe) and os.access(exe, os.X_OK) else None
+        else:
+            exe = shutil.which(cmd0, path=self.opts["agent_path"])
+        if not exe:
+            return outcome("error", None, "%s is not installed" % cmd0)
+        venv = {k: v for k, v in env.items() if k not in self.GATEWAY_ENV}
+        unit = "agentos-verify-%s.service" % task["id"]
+        cmd = [self.systemd_run] + self.sandbox_args(unit, workdir, writable, venv, timeout) + ["--", exe] + verify["cmd"][1:]
+        tail_max = int(self.opts["result_tail_kb"]) * 1024
+        tail = bytearray()
+        try:
+            self.proc = proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except OSError as exc:
+            return outcome("error", None, "could not start the sandbox: %s" % exc)
+
+        def pump():
+            while True:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                tail.extend(chunk)
+                if len(tail) > tail_max:
+                    del tail[:len(tail) - tail_max]
+
+        pumper = threading.Thread(target=pump, daemon=True)
+        pumper.start()
+        reason = None
+        while True:
+            try:
+                rc = proc.wait(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                if self.cancel.is_set():
+                    reason = "cancelled"
+                elif self.clock() - started > timeout:
+                    reason = "timed out after %ds" % timeout
+                if reason:
+                    self.stop_unit(unit)
+                    try:
+                        rc = proc.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        rc = proc.wait()
+                    break
+        pumper.join(timeout=10)
+        text = tail.decode(errors="replace")
+        if reason:
+            return outcome("error", None, (text + "\n[agentos: verify %s]" % reason).strip()[-tail_max:])
+        return outcome("passed" if rc == 0 else "failed", rc, text)
+
     # ── the run ────────────────────────────────────────────────────────
     def run(self, task_id):
         """Run one task to completion. Returns a process exit code."""
@@ -236,6 +411,8 @@ class TaskRunner:
         if task["status"] != T.RUNNING:
             log.error("task %s is %s, not running; refusing to start it", task_id, task["status"])
             return 3
+        if task.get("kind") == "publish":
+            return self.run_publish_task(task)
         try:
             task = T.validate_record(task, self.runtime, self.opts)
             template = T.task_command(self.opts, self.runtime, task["agent"])
@@ -336,9 +513,20 @@ class TaskRunner:
             "exit_code": rc, "output_tail": tail.decode(errors="replace"), "branch": branch, "log": log_path,
             "duration_sec": round(self.clock() - started, 1),
             "worktree": workdir if workdir != task["workspace"] else None,
+            "base_sha": self.base_sha,
         }
         if error:
             result["error"] = error
+        skip = None
+        if outcome == T.SUCCEEDED and task.get("verify"):
+            result["verify"] = self.run_verify(task, workdir, writable, env)
+            if result["verify"]["status"] != "passed":
+                skip = "verify failed"
+        if outcome == T.SUCCEEDED:
+            fields, publish_error = self.try_publish(task, workdir, branch, self.base_sha, skip_reason=skip)
+            result.update(fields)
+            if publish_error:
+                outcome, result["error"] = T.FAILED, "publish failed: %s" % publish_error
         self.tasks.finish(task_id, outcome, **result)
         try:
             self.tasks.store.publish({"type": "task_finished", "task": task_id, "agent": task_id,

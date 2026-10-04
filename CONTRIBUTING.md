@@ -89,7 +89,7 @@ nix build .#cli .#installer
 nix build -L .#checks.x86_64-linux.e2e
 ```
 
-The CI workflow (`ci/github-workflows/ci.yml`) runs the same commands.
+The CI workflow (`.github/workflows/ci.yml`) runs the same commands.
 
 ## License
 

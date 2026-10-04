@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentos_services.usage import Pricing, UsageParser
+from agentos_services.usage import Pricing, UsageParser, output_cap
 
 from conftest import PRICING
 
@@ -102,6 +102,11 @@ def test_pricing_longest_prefix_wins():
     assert pricing.rates("gpt-4o-2024-08-06")[0]["input_per_1m"] == 2.5
 
 
+def test_output_cap_counts_requested_candidates():
+    assert output_cap({"max_tokens": 100, "n": 3}) == 300
+    assert output_cap({"generationConfig": {"maxOutputTokens": 100, "candidateCount": 2}}) == 200
+
+
 def test_cost_all_token_kinds():
     usd, priced = Pricing(PRICING).cost("claude-test", {
         "input_tokens": 1_000_000, "output_tokens": 1_000_000,
@@ -115,3 +120,37 @@ def test_cost_defaults_for_missing_cache_rates():
     usd, _ = pricing.cost("m", {"input_tokens": 0, "output_tokens": 0,
                                 "cache_read_tokens": 1_000_000, "cache_write_tokens": 1_000_000})
     assert usd == pytest.approx(4.0 + 5.0)
+
+
+def test_anthropic_one_hour_cache_writes_are_priced_separately():
+    p = UsageParser("anthropic", "application/json")
+    p.feed(json.dumps({"type": "message", "model": "claude-test", "usage": {
+        "input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 3_000_000,
+        "cache_creation": {"ephemeral_5m_input_tokens": 1_000_000, "ephemeral_1h_input_tokens": 2_000_000}}}).encode())
+    _, usage = p.finish()
+    assert usage["cache_write_tokens"] == 1_000_000 and usage["cache_write_1h_tokens"] == 2_000_000
+    # 5m writes at the listed $3.75, 1h writes default to twice the input price ($6)
+    assert Pricing(PRICING).cost("claude-test", usage)[0] == pytest.approx(3.75 + 12.0)
+    explicit = Pricing({"models": {"m": {"input_per_1m": 3.0, "cache_write_1h_per_1m": 7.0}}})
+    assert explicit.cost("m", dict(usage, input_tokens=0))[0] == pytest.approx(3.75 + 14.0)
+
+
+def test_openai_cached_tokens_are_priced_at_the_cache_rate():
+    usage = {"prompt_tokens": 1_000_000, "completion_tokens": 0,
+             "prompt_tokens_details": {"cached_tokens": 600_000}}
+    p = UsageParser("openai", "application/json")
+    p.feed(json.dumps({"model": "gpt-test", "usage": usage}).encode())
+    _, got = p.finish()
+    assert got["input_tokens"] == 400_000 and got["cache_read_tokens"] == 600_000
+    assert Pricing(PRICING).cost("gpt-test", got)[0] == pytest.approx(0.4 * 1.0 + 0.6 * 0.5)
+
+
+def test_responses_stream_variants_carry_usage():
+    usage = {"input_tokens": 50, "output_tokens": 9, "input_tokens_details": {"cached_tokens": 10}}
+    for kind in ("response.completed", "response.incomplete"):
+        data = sse({"type": "response.created", "response": {"model": "gpt-test", "usage": None}},
+                   {"type": "response.output_text.delta", "delta": "x"},
+                   {"type": kind, "response": {"model": "gpt-test", "usage": usage}})
+        model, got = feed_bytewise(UsageParser("openai", "text/event-stream"), data)
+        assert model == "gpt-test"
+        assert got == {"input_tokens": 40, "output_tokens": 9, "cache_read_tokens": 10, "cache_write_tokens": 0}

@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Event triggers and issue-to-PR** (`agentos.triggers`, `agentos-triggers`, docs/triggers.md): signed GitHub webhooks (issues, comments, check runs, review comments) start tasks by declarative rules; a `publish` step pushes `agent/<task-id>` and opens a PR with a token the agent never sees. `agentos.git-automation.autoPR` now publishes finished tasks of configured repositories. VM test `triggers`.
 - **Per-agent gateway tokens.** `agentos spawn` generates a token and registers its hash through the admin socket; agents call `/agent/<id>:<token>/<provider>/`. An agent can no longer spend under another agent's id, get a fresh budget by inventing ids, or impersonate others on the message bus. Tokens are revoked when the agent is reaped.
 - **Container isolation** (`agentos spawn --isolation container`): own root filesystem, PID/IPC/UTS namespaces and a network namespace on the `agentos0` bridge that can only reach the gateway.
 - **GPU scheduling** (`agentos spawn --gpu N`, `agentos-gpu`) with exclusive per-device locks, released by the daemon when an agent dies.
@@ -16,7 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **ARM64**: `-aarch64` variants of the server, VM, ISO and desktop hosts, and `packages.aarch64-linux.{iso,vm}-image`.
 - VM tests `gateway-features`, `orchestration`, `container`, `platform` and `desktop`.
 
+- **Sandbox hardening**: syscall filter, no new namespaces, restricted address families, no capabilities, no swap for agent units; default-deny forwarding from the agent bridge to private ranges and cloud metadata; stale namespace sweep.
+- **Local AI** (`agentos.localAI`): Ollama or llama.cpp (CUDA, ROCm or CPU) and Open WebUI on loopback, registered as the gateway provider `local`.
+- **Five more agents** (20 in total): Kilo Code, Mistral Vibe, Kiro CLI, Codebuff, Pi; `checks.<system>.agent-inclusion` keeps the runtime map and installed packages in step.
+- **Installer**: SSH key validation, typed device confirmation, `--encrypt` (LUKS2). Desktop VM image gets a random first-boot password; the live ISO enforces key-only SSH.
+
 ### Changed
+- The unbuilt MCP gateway, MCP registry service, provisioner and memory manager stubs and `agentos.plannedServices` were removed.
 - Unmanaged `/<provider>/` requests are only accepted on the gateway's admin socket.
 - The orchestration and scheduler modules were rewritten; `agentos.orchestration.mode`, `resultStrategy` and several `agentos.scheduler.*` options were removed (setting them fails with a pointer to the replacement).
 

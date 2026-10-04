@@ -98,6 +98,25 @@ in
       description = "CPU quota per agent, as a percentage of all CPUs";
     };
 
+    loopAlternationLength = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 8;
+      description = ''
+        Refuse an agent that alternates between two requests (A, B, A, B, ...)
+        for this many requests within `loopWindowSec`. Needs enableLoopDetection;
+        0 disables it (values below 4 are treated as 0).
+      '';
+    };
+
+    maxAuthFailuresPerMinute = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 20;
+      description = ''
+        Failed agent authentications per client address and minute; further
+        failures answer 429 instead of 401. 0 disables the throttle.
+      '';
+    };
+
     maxMemoryMB = lib.mkOption {
       type = lib.types.int;
       default = 4096;
@@ -119,6 +138,8 @@ in
       loop_detection = cfg.enableLoopDetection;
       loop_repeat_threshold = cfg.loopRepeatThreshold;
       loop_window_sec = cfg.loopWindowSec;
+      loop_alternation_length = cfg.loopAlternationLength;
+      max_auth_failures_per_minute = cfg.maxAuthFailuresPerMinute;
     };
 
     agentos.runtime.agentLimits = {

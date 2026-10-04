@@ -22,6 +22,7 @@ PRICING = {
         # $3 / $15 per million input / output tokens
         "claude-test": {"input_per_1m": 3.0, "output_per_1m": 15.0, "cache_read_per_1m": 0.3, "cache_write_per_1m": 3.75},
         "gpt-test": {"input_per_1m": 1.0, "output_per_1m": 2.0, "cache_read_per_1m": 0.5},
+        "gemini-test": {"input_per_1m": 1.0, "output_per_1m": 4.0, "cache_read_per_1m": 0.25},
         # models with a vendor, for routing tests
         "claude-cheap": {"provider": "anthropic", "input_per_1m": 1.0, "output_per_1m": 5.0},
         "claude-mid": {"provider": "anthropic", "input_per_1m": 2.0, "output_per_1m": 10.0},
@@ -39,6 +40,7 @@ class MockUpstream(http.server.ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), MockHandler)
         self.requests = []
         self.fail_status = None
+        self.delay = 0.0
 
     @property
     def url(self):
@@ -55,9 +57,28 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
         self.server.requests.append({"path": self.path, "headers": dict(self.headers), "body": body})
+        if self.server.delay:
+            time.sleep(self.server.delay)
         if self.server.fail_status:
             return self._json(self.server.fail_status, {"type": "error", "error": {"type": "api_error"}})
         model = body.get("model", "claude-test")
+        route = self.path.split("?")[0]
+        if "/models/" in route and ":" in route.rsplit("/", 1)[-1]:
+            return self._gemini(route, body)
+        if route.startswith("/openai/deployments/") and route.endswith("/chat/completions"):
+            deployment = route.split("/")[3]
+            return self._json(200, {"model": body.get("model", "gpt-test"), "deployment": deployment, "choices": [],
+                                    "usage": {"prompt_tokens": 1000, "completion_tokens": 500,
+                                              "prompt_tokens_details": {"cached_tokens": 200}}})
+        if route == "/v1/responses" and body.get("stream"):
+            usage = {"input_tokens": 400, "output_tokens": 100, "input_tokens_details": {"cached_tokens": 100}}
+            return self._sse([
+                ("response.created", {"type": "response.created", "response": {"model": model, "usage": None}}),
+                ("response.output_text.delta", {"type": "response.output_text.delta", "delta": "hi"}),
+                ("response.completed", {"type": "response.completed", "response": {"model": model, "usage": usage}}),
+            ])
+        if route == "/v1/nousage":
+            return self._json(200, {"model": model, "result": "no usage block here"})
         if self.path == "/v1/messages":
             if body.get("stream"):
                 return self._sse([
@@ -86,6 +107,18 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
                 ])
             return self._json(200, {"model": model, "choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
         self._json(404, {"error": "no route"})
+
+    def _gemini(self, route, body):
+        name = route.rsplit("/", 1)[-1]
+        model, _, method = name.partition(":")
+        usage = {"promptTokenCount": 1000, "cachedContentTokenCount": 400,
+                 "candidatesTokenCount": 300, "thoughtsTokenCount": 100, "totalTokenCount": 1400}
+        chunk = {"candidates": [{"content": {"parts": [{"text": "hi"}]}}], "modelVersion": model}
+        if method == "streamGenerateContent":
+            # usage is cumulative: partial on the first chunk, final on the last
+            first = dict(chunk, usageMetadata={"promptTokenCount": 1000, "cachedContentTokenCount": 400})
+            return self._sse([(None, first), (None, dict(chunk, usageMetadata=usage))])
+        return self._json(200, dict(chunk, usageMetadata=usage))
 
     def _json(self, status, obj):
         data = json.dumps(obj).encode()
@@ -205,3 +238,11 @@ class EventRecorder:
 @pytest.fixture
 def events(store):
     return EventRecorder(store)
+
+
+@pytest.fixture
+def upstream2():
+    srv = MockUpstream()
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv
+    srv.shutdown()

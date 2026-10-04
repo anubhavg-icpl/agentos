@@ -17,7 +17,7 @@ let
 
   servicesToml = toml.generate "agentos-services.toml" config.agentos.services.settings;
 
-  runtimeJson = pkgs.writeText "agentos-runtime.json" (builtins.toJSON {
+  runtimeJson = pkgs.writeText "agentos-runtime.json" (builtins.toJSON ({
     agents = cfg.agents;
     max_agents = cfg.maxAgents;
     workspace_root = cfg.workspaceRoot;
@@ -45,7 +45,18 @@ let
       enabled = config.agentos.gpu.enable;
       helper = "${pkgs.agentos.services}/bin/agentos-gpu";
     };
-  });
+  } // lib.optionalAttrs config.agentos.pullrun.enable {
+    # `agentos spawn --isolation pullrun` (experimental)
+    pullrun = {
+      enabled = config.agentos.pullrun.agentContainers.enable;
+      bin = "${config.agentos.pullrun.package}/bin/pullrun";
+      socket = config.agentos.pullrun.socket;
+      image = config.agentos.pullrun.agentContainers.image;
+      log_dir = "/var/lib/agentos/pullrun-logs";
+      # Pullrun's shared bridge; the gateway listens on it
+      gateway_url = "http://10.42.0.1:${toString config.agentos.networking.modelGatewayPort}";
+    };
+  }));
 in
 {
   # ── Options ─────────────────────────────────────────────────────────
@@ -58,6 +69,13 @@ in
       services/agentos_services/config.py for all keys.
     '';
   };
+
+  imports = [
+    (lib.mkRemovedOptionModule [ "agentos" "runtime" "enableMCPGateway" ]
+      "The MCP gateway was a stub with no implementation and is removed; see docs/ROADMAP.md.")
+    (lib.mkRemovedOptionModule [ "agentos" "runtime" "mcpGatewayPort" ]
+      "The MCP gateway was a stub with no implementation and is removed; see docs/ROADMAP.md.")
+  ];
 
   options.agentos.runtime = {
     enable = lib.mkEnableOption "AgentOS runtime";
@@ -120,18 +138,6 @@ in
       default = { };
       description = "Per-agent resource limits applied by `agentos spawn` (set by the circuit-breaker module)";
     };
-
-    enableMCPGateway = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Run the MCP gateway (planned; needs agentos.plannedServices.enable)";
-    };
-
-    mcpGatewayPort = lib.mkOption {
-      type = lib.types.port;
-      default = 9944;
-      description = "Port for the MCP gateway";
-    };
   };
 
   # ── Configuration ───────────────────────────────────────────────────
@@ -192,6 +198,17 @@ in
       cursor = "cursor-agent";
       cursor-agent = "cursor-agent";
       copilot = "copilot";
+      github-copilot-cli = "copilot";
+      kilocode = "kilocode";
+      kilocode-cli = "kilocode";
+      kilo-code = "kilocode";
+      vibe = "vibe";
+      mistral-vibe = "vibe";
+      kiro = "kiro-cli";
+      kiro-cli = "kiro-cli";
+      codebuff = "codebuff";
+      pi = "pi";
+      pi-coding-agent = "pi";
       interpreter = "interpreter";
       open-interpreter = "interpreter";
       droid = "droid";
@@ -306,21 +323,6 @@ in
         }
       });
     '';
-
-    # ─ MCP gateway (planned) ──────────────────────────────────────────
-    systemd.services.agentos-mcp-gateway = lib.mkIf (cfg.enableMCPGateway && config.agentos.plannedServices.enable) {
-      description = "AgentOS MCP Gateway";
-      after = [ "network.target" "agentos-daemon.service" ];
-      wants = [ "agentos-daemon.service" ];
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "simple";
-        User = "agentos";
-        Group = "agentos";
-        ExecStart = "${pkgs.agentos.mcp-gateway}/bin/agentos-mcp-gateway --port ${toString cfg.mcpGatewayPort}";
-        Restart = "on-failure";
-      };
-    };
 
     environment.systemPackages = with pkgs; [
       agentos.cli

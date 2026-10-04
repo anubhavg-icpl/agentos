@@ -134,6 +134,24 @@ in
       description = "Stop sandboxed agents that exceed their budget";
     };
 
+    reserveBudget = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Before forwarding a request, hold an estimated cost (max_tokens times
+        the output price, plus the input size) against the agent's and the
+        global budget, and refuse with 402 if it does not fit. Concurrent
+        requests then cannot overshoot a budget. The hold is replaced by the
+        actual cost when the response ends.
+      '';
+    };
+
+    defaultMaxTokens = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 4096;
+      description = "Output allowance reserved for a request that sets no output limit. The gateway also forwards it as the request's limit (max_tokens, max_completion_tokens or generationConfig.maxOutputTokens), so a client that needs longer replies must set its own.";
+    };
+
     pricingFile = lib.mkOption {
       type = lib.types.path;
       default = ./pricing.json;
@@ -186,6 +204,18 @@ in
         };
       };
 
+      targets = lib.mkOption {
+        type = lib.types.attrsOf lib.types.str;
+        default = { };
+        example = { "llama3.1" = "local"; };
+        description = ''
+          Model name to the gateway provider that serves it. When a routing
+          rule picks such a model the request moves to that provider (same wire
+          format only). Models of a zero-cost provider rank as $0 for
+          strategy = "cheapest" and the budget downgrade.
+        '';
+      };
+
       equivalenceGroups = lib.mkOption {
         type = lib.types.listOf (lib.types.listOf lib.types.str);
         default = [ ];
@@ -208,6 +238,8 @@ in
       global_daily_usd = cfg.globalDailyBudgetUSD;
       alert_thresholds = cfg.alertThresholds;
       auto_shutdown = cfg.autoShutdown;
+      reserve = cfg.reserveBudget;
+      default_max_tokens = cfg.defaultMaxTokens;
     };
 
     # Routing never crosses providers: the gateway refuses a rewrite whose
@@ -216,6 +248,7 @@ in
       inherit (cfg.routing) strategy rewrites;
       agents = cfg.routing.agentRewrites;
       groups = cfg.routing.equivalenceGroups;
+      inherit (cfg.routing) targets;
       downgrade = {
         threshold_pct = cfg.routing.downgrade.thresholdPercent;
         inherit (cfg.routing.downgrade) models;

@@ -6,9 +6,11 @@
 # headless agent calls the (mock) model API through the gateway, and tasks
 # are submitted as an operator who has no sudo:
 #
-#   single task -> 2-step pipeline ({prev_result}) -> swarm of 2 (own
-#   worktree and branch each) -> timeout / cancel / failed dependency ->
-#   a schedule firing -> what the orchestrator user may and may not do
+#   single task -> 2-step pipeline ({prev_result}) -> a gated task that
+#   only runs once approved from the CLI -> a 3-node DAG with fan-in
+#   ({nodes.<name>.result}) -> swarm of 2 (own worktree and branch each) ->
+#   timeout / cancel / failed dependency -> a schedule firing -> what the
+#   orchestrator user may and may not do
 { pkgs, agentosModules }:
 
 let
@@ -186,6 +188,68 @@ pkgs.testers.runNixOSTest {
         assert "TOKEN=xyzzy-42" in b["resolved_prompt"], b
         assert "TOKEN=xyzzy-42" in b["result"]["output_tail"], b
         assert b["started_at"] >= a["finished_at"], (a, b)
+
+    with subtest("approval gate: nothing runs until the task is approved from the CLI"):
+        (gated,) = submit("--workspace demo --prompt 'EMIT gated' --gate")
+        (rejected,) = submit("--workspace demo --prompt 'EMIT never' --gate")
+        (child,) = submit("--workspace demo --after", rejected, "--prompt 'never: {prev_result}'")
+        machine.sleep(5)
+        t = show(gated)
+        assert t["status"] == "awaiting_approval" and t["started_at"] is None, t
+        machine.fail(f"systemctl is-active agentos-task-runner@{gated}.service")
+        machine.fail(f"test -e /var/lib/agentos/tasks/{gated}.log")
+        # a task awaiting approval holds no worker slot: both slots stay free for other work
+        (free_a,) = submit("--workspace swarm --isolate --prompt 'EMIT slot a'")
+        (free_b,) = submit("--workspace swarm --isolate --prompt 'EMIT slot b'")
+        for i in (free_a, free_b):
+            assert wait_for(i, ["succeeded", "failed"])["status"] == "succeeded"
+        assert show(gated)["status"] == "awaiting_approval"
+        # approving something that is not gated, or a task that does not exist, is refused
+        machine.fail(f"su - ops -c 'agentos-task approve {free_a}'")
+        machine.fail("su - ops -c 'agentos-task approve task-nosuch'")
+        ops(f"agentos-task approve {gated} --note 'looks fine'")
+        t = wait_for(gated, ["succeeded", "failed"])
+        assert t["status"] == "succeeded", t
+        # the approver is the kernel-reported caller, with the time and the note
+        assert t["approval"]["decision"] == "approved" and t["approval"]["by"] == "ops", t
+        assert t["approval"]["note"] == "looks fine" and t["approval"]["at"] <= t["started_at"], t
+        machine.fail(f"su - ops -c 'agentos-task approve {gated}'")
+        # rejecting cancels the task and what depends on it
+        ops(f"agentos-task reject {rejected} --note 'not today'")
+        assert show(rejected)["status"] == "cancelled" and show(rejected)["approval"]["decision"] == "rejected"
+        assert wait_for(child, ["cancelled"])["status"] == "cancelled"
+        machine.fail(f"test -e /var/lib/agentos/tasks/{rejected}.log")
+
+    with subtest("workflow: a 3-node DAG whose last node waits for both parents"):
+        wf = {"nodes": {
+            "left": {"agent": "fake", "workspace": "swarm", "isolate": True, "prompt": "EMIT left"},
+            "right": {"agent": "fake", "workspace": "swarm", "isolate": True, "prompt": "EMIT right"},
+            "join": {"agent": "fake", "workspace": "swarm", "isolate": True, "depends_on": ["left", "right"],
+                     "prompt": "joined: {nodes.left.result} || {nodes.right.result}"},
+            "cleanup": {"agent": "fake", "workspace": "swarm", "isolate": True, "depends_on": ["join"],
+                        "when": "any_failed", "prompt": "only after a failure"},
+        }}
+        machine.succeed("printf '%s' " + json.dumps(json.dumps(wf)) + " > /tmp/wf.json && chmod 644 /tmp/wf.json")
+        out = ops("agentos-task workflow submit /tmp/wf.json 2>/dev/null").split()
+        group = out[0]
+        assert group.startswith("wf-"), out
+        machine.wait_until_succeeds(
+            f"su - ops -c 'agentos-task workflow status {group} --json' | "
+            "jq -e '.tasks | (length == 4) and all(.[]; if .node == \"cleanup\" then .status == \"skipped\" else .status == \"succeeded\" end)'",
+            timeout=240,
+        )
+        wfs = json.loads(ops(f"agentos-task workflow status {group} --json"))
+        by = {n: json.loads(ops(f"agentos-task show {i} --json")) for n, i in wfs["nodes"].items()}
+        assert set(by) == {"left", "right", "join", "cleanup"}, by.keys()
+        assert by["join"]["started_at"] >= max(by["left"]["finished_at"], by["right"]["finished_at"]), by
+        assert by["join"]["resolved_prompt"].count("TOKEN=xyzzy-42") == 2, by["join"]["resolved_prompt"]
+        # `when: any_failed` is false when everything succeeded
+        assert by["cleanup"]["status"] == "skipped" and "condition not met" in by["cleanup"]["result"]["error"], by["cleanup"]
+        # a cyclic or unknown-dependency workflow is refused and creates nothing
+        bad = {"nodes": {"x": {"agent": "fake", "workspace": "swarm", "prompt": "x", "depends_on": ["y"]},
+                         "y": {"agent": "fake", "workspace": "swarm", "prompt": "y", "depends_on": ["x"]}}}
+        machine.succeed("printf '%s' " + json.dumps(json.dumps(bad)) + " > /tmp/bad.json && chmod 644 /tmp/bad.json")
+        machine.fail("su - ops -c 'agentos-task workflow submit /tmp/bad.json'")
 
     with subtest("swarm: two agents on one prompt, each in its own worktree and branch"):
         ids = submit("--workspace swarm --swarm 2 --prompt 'same prompt for all'")
