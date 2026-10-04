@@ -154,6 +154,8 @@
           triggers = import ./tests/triggers.nix { inherit pkgs agentosModules; };
           # Container-isolated agents in their own network namespace.
           container = import ./tests/container.nix { inherit pkgs agentosModules; };
+          # Pullrun daemon: operators-only socket, agents in Pullrun containers.
+          pullrun = import ./tests/pullrun.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
           # OpenClaw chat gateway wired to the model gateway and orchestrator.

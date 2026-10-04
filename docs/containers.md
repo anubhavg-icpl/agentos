@@ -68,3 +68,6 @@ Firewall (security and networking modules):
 - The mount layout depends on systemd's handling of `RootDirectory` with
   `TemporaryFileSystem=/:ro` and `PrivatePIDs` (systemd 257 or newer);
   `tests/container.nix` checks it in a VM.
+
+For agents in Pullrun (OCI) containers, `--isolation pullrun`, and the Pullrun
+runtime itself, see [pullrun.md](pullrun.md).

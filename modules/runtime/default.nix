@@ -17,7 +17,7 @@ let
 
   servicesToml = toml.generate "agentos-services.toml" config.agentos.services.settings;
 
-  runtimeJson = pkgs.writeText "agentos-runtime.json" (builtins.toJSON {
+  runtimeJson = pkgs.writeText "agentos-runtime.json" (builtins.toJSON ({
     agents = cfg.agents;
     max_agents = cfg.maxAgents;
     workspace_root = cfg.workspaceRoot;
@@ -45,7 +45,18 @@ let
       enabled = config.agentos.gpu.enable;
       helper = "${pkgs.agentos.services}/bin/agentos-gpu";
     };
-  });
+  } // lib.optionalAttrs config.agentos.pullrun.enable {
+    # `agentos spawn --isolation pullrun` (experimental)
+    pullrun = {
+      enabled = config.agentos.pullrun.agentContainers.enable;
+      bin = "${config.agentos.pullrun.package}/bin/pullrun";
+      socket = config.agentos.pullrun.socket;
+      image = config.agentos.pullrun.agentContainers.image;
+      log_dir = "/var/lib/agentos/pullrun-logs";
+      # Pullrun's shared bridge; the gateway listens on it
+      gateway_url = "http://10.42.0.1:${toString config.agentos.networking.modelGatewayPort}";
+    };
+  }));
 in
 {
   # ── Options ─────────────────────────────────────────────────────────

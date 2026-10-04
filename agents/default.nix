@@ -248,6 +248,8 @@ rec {
   # Client CLIs of the orchestrator and scheduler services (in `services`)
   task-cli = pkgs.callPackage ../nixos/packages/task-cli.nix { };
   schedule-cli = pkgs.callPackage ../nixos/packages/schedule-cli.nix { };
+  # OCI runtime: containers and Firecracker microVMs from one image
+  pullrun = pkgs.callPackage ../nixos/packages/pullrun.nix { };
 
   # Service daemons. These are placeholders with no source code yet;
   # they are only referenced when agentos.daemons.enable = true.
