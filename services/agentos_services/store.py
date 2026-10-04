@@ -13,6 +13,7 @@ Keys (all prefixed with "agentos:"):
   requests:<date>:agent:<id>   hash    responses by status class (2xx, 4xx...)
   budget:agent:<id>            float   per-agent daily budget override
   alerts:<date>:agent:<id>     set     thresholds already alerted today
+  authfail:<addr>:<minute>     int     failed agent authentications from one address
   rate:<id>:<minute>           int     requests in the current minute
   cb:failures:<id>             int     consecutive upstream failures
   cb:open:<id>                 float   unix time until which the circuit is open
@@ -200,6 +201,15 @@ class Store:
 
     def delete_agent_token(self, agent):
         self.r.delete(self._k("auth", "agent", agent))
+
+    def auth_failure(self, client):
+        """Count a failed authentication from `client` this minute."""
+        key = self._k("authfail", client, int(self.clock() // 60))
+        p = self.r.pipeline()
+        p.incr(key)
+        p.expire(key, 120)
+        count, _ = p.execute()
+        return int(count)
 
     # ── rate limit & circuit breaker ───────────────────────────────────
     def rate_hit(self, agent):

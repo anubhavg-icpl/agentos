@@ -43,6 +43,9 @@ DEFAULTS = {
         "max_requests_per_minute": 60,
         "max_consecutive_failures": 5,
         "cooldown_sec": 300,
+        # Failed agent authentications per client address and minute before
+        # further failures answer 429 instead of 401; 0 disables
+        "max_auth_failures_per_minute": 20,
         # Loop detection: the same request fingerprint K times in a row
         "loop_detection": True,
         "loop_repeat_threshold": 5,

@@ -72,6 +72,15 @@ HOP_BY_HOP = {
     "te", "trailer", "trailers", "transfer-encoding", "upgrade",
 }
 UNMANAGED = "unmanaged"
+TOKEN_HEADER = "x-agentos-token"
+
+# "/agent/<id>:<token>/..." (the colon may be percent-encoded)
+_TOKEN_SEGMENT = re.compile(r"(/agent/[^/:%?#\s]*)(?::|%3[aA])[^/?#\s]*")
+
+
+def redact(text):
+    """Hide the agent token in a request path, URL or log line."""
+    return _TOKEN_SEGMENT.sub(lambda m: m.group(1) + ":***", text) if text else text
 
 
 class HTTPError(Exception):
@@ -228,14 +237,21 @@ class Gateway:
             self.store.publish({"type": "circuit_open", "agent": agent, "failures": failures, "until": until})
 
     # ── request handling ───────────────────────────────────────────────
-    def authenticate(self, segment, admin):
-        """Resolve an "/agent/<id>:<token>" path segment to an agent id.
+    def authenticate(self, segment, admin, header_token=None, client=None):
+        """Resolve an "/agent/<id>[:<token>]" path segment to an agent id.
 
         Tokens are registered by `agentos spawn` through the admin socket,
         so an agent cannot act as another agent or invent new ids to get a
-        fresh budget. Operators on the admin socket may omit the token.
+        fresh budget. The token is taken from the segment, or else from the
+        x-agentos-token header (which keeps it out of URLs and logs).
+        Operators on the admin socket may omit it.
+
+        Failed attempts are counted per client address; once an address has
+        failed more than limits.max_auth_failures_per_minute times in a
+        minute, further failures answer 429 instead of 401.
         """
         agent, _, token = segment.partition(":")
+        token = token or header_token or ""
         if not configmod.valid_agent_id(agent):
             raise HTTPError(400, "invalid_request_error", "invalid agent id")
         if admin or not self.cfg["gateway"].get("require_agent_tokens", True):
@@ -243,6 +259,13 @@ class Gateway:
         expected = self.store.agent_token(agent)
         given = hashlib.sha256(token.encode()).hexdigest()
         if not token or not expected or not hmac.compare_digest(given, expected):
+            max_fail = int(self.cfg["limits"].get("max_auth_failures_per_minute", 0))
+            if max_fail > 0 and self.store.auth_failure(client or "?") > max_fail:
+                raise HTTPError(
+                    429, "rate_limited",
+                    "AgentOS: too many failed authentications from this address; retry later",
+                    {"Retry-After": str(max(1, 60 - int(self.clock()) % 60))},
+                )
             raise HTTPError(401, "authentication_error", "unknown agent or wrong agent token")
         return agent
 
@@ -255,10 +278,10 @@ class Gateway:
             if parts[:1] == ["_agentos"]:
                 return self.api(req, parts[1:], urllib.parse.parse_qs(path.query), admin)
             if len(parts) >= 3 and parts[0] == "agent" and parts[2] == "bus":
-                authed = self.authenticate(parts[1], admin)
+                authed = self.authenticate(parts[1], admin, req.headers.get(TOKEN_HEADER), client_of(req))
                 return self.bus_request(req, authed, parts[3:], urllib.parse.parse_qs(path.query), False)
             if len(parts) >= 3 and parts[0] == "agent":
-                authed = self.authenticate(parts[1], admin)
+                authed = self.authenticate(parts[1], admin, req.headers.get(TOKEN_HEADER), client_of(req))
                 agent, provider, rest = authed, parts[2], parts[3:]
             elif parts and parts[0] in self.cfg["providers"]:
                 if not admin and self.cfg["gateway"].get("require_agent_tokens", True):
@@ -279,7 +302,7 @@ class Gateway:
             # Only account errors to agents that proved who they are
             if authed:
                 self.store.count_request(authed, exc.status)
-                self.write_log(authed, {"method": req.command, "path": path.path, "status": exc.status, "error": exc.error_type})
+                self.write_log(authed, {"method": req.command, "path": redact(path.path), "status": exc.status, "error": exc.error_type})
 
     def api(self, req, parts, query, admin):
         if req.command == "GET" and parts == ["health"]:
@@ -525,7 +548,7 @@ class Gateway:
         headers = {}
         for name, value in req.headers.items():
             lname = name.lower()
-            if lname in HOP_BY_HOP or lname in ("host", "content-length", "accept-encoding"):
+            if lname in HOP_BY_HOP or lname in ("host", "content-length", "accept-encoding", TOKEN_HEADER):
                 continue
             headers[name] = value
         headers["Host"] = base.netloc
@@ -669,6 +692,11 @@ def read_body(req, limit):
     return req.rfile.read(length)
 
 
+def client_of(req):
+    addr = req.client_address
+    return addr[0] if isinstance(addr, tuple) else "unix"
+
+
 def write_chunk(req, data):
     try:
         req.wfile.write(data)
@@ -699,7 +727,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             self.server.gateway.dispatch(self, self.server.admin)
         except Exception:  # never let one request kill the server
-            log.exception("error handling %s %s", self.command, self.path)
+            log.exception("error handling %s %s", self.command, redact(self.path))
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _dispatch
 
@@ -707,7 +735,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.client_address[0] if isinstance(self.client_address, tuple) else "unix"
 
     def log_message(self, fmt, *args):
-        log.debug("%s %s", self.address_string(), fmt % args)
+        log.debug("%s %s", self.address_string(), redact(fmt % args))
 
 
 class TCPServer(http.server.ThreadingHTTPServer):
