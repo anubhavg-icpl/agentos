@@ -62,6 +62,7 @@ import redis
 from . import config as configmod
 from .bus import Bus, BusError
 from .loops import fingerprint
+from .providers import adapter_for
 from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
 from .store import BudgetRefused, Store, connect
@@ -103,9 +104,14 @@ class Gateway:
         self.clock = clock
         self.log_dir = cfg["gateway"]["log_dir"]
         self._log_lock = threading.Lock()
-        self.router = Router(cfg["routing"], pricing)
+        self.router = Router(cfg["routing"], pricing, cfg["providers"])
         self.recorder = Recorder(cfg["recording"]["dir"], cfg["recording"]["max_body_bytes"])
         self.bus = Bus(cfg, store, clock)
+        for name, prov in cfg["providers"].items():
+            try:
+                adapter_for(prov)
+            except ValueError as exc:
+                raise ValueError("provider %r: %s" % (name, exc))
         self._replay_lock = threading.Lock()
 
     # ── helpers ────────────────────────────────────────────────────────
@@ -189,8 +195,8 @@ class Gateway:
         if self.store.mark_alert(agent, "exceeded"):
             self.store.publish({"type": "budget_exceeded", "agent": agent, "usd": spent, "limit_usd": limit})
 
-    def after_usage(self, agent, model, usage):
-        usd, priced = self.pricing.cost(model, usage)
+    def after_usage(self, agent, model, usage, zero_cost=False):
+        usd, priced = (0.0, True) if zero_cost else self.pricing.cost(model, usage)
         agent_total, _ = self.store.record(agent, model, usd, usage)
         limit = self.daily_limit(agent)
         if limit > 0:
@@ -491,48 +497,62 @@ class Gateway:
         write_chunk(req, data)
 
     def proxy(self, req, agent, provider, rest, query, started):
-        prov = self.cfg["providers"][provider]
-        api = prov.get("api", "openai")
         replaying = self.store.replay_state(agent) is not None
         if not replaying:
             self.admit(agent)           # circuit breaker and rate limit
 
         body = read_body(req, int(self.cfg["gateway"]["max_request_bytes"]))
         orig_body = body
-        request_model = None
         route = None
-        rest_path = "/".join(urllib.parse.quote(p, safe="") for p in rest)
         if replaying:
-            return self.serve_replay(req, agent, rest_path, orig_body, started)
+            return self.serve_replay(req, agent, "/".join(urllib.parse.quote(p, safe=":") for p in rest),
+                                     orig_body, started)
+        adapter = adapter_for(self.cfg["providers"][provider])
         payload = None
         if body and "json" in (req.headers.get("Content-Type") or "json"):
             try:
                 payload = json.loads(body)
             except ValueError:
                 payload = None
+        rest = list(rest)
+        request_model = adapter.request_model(payload, rest)
+        edited = False
         if isinstance(payload, dict):
             self.check_loop(agent, payload)
-            request_model = payload.get("model")
-            edited = False
+        if isinstance(payload, dict) or request_model:
             routed, reason = self.router.route(agent, provider, request_model, self._route_pct(agent))
             if reason:
                 route = {"original_model": request_model, "routed_model": routed, "route_reason": reason}
-                payload["model"] = request_model = routed
-                edited = True
-            # Ask for usage on streamed Chat Completions so it can be priced
-            if (api == "openai" and payload.get("stream") is True
-                    and rest_path.endswith("chat/completions")
-                    and "stream_options" not in payload):
-                payload["stream_options"] = {"include_usage": True}
-                edited = True
-            if edited:
-                body = json.dumps(payload).encode()
-        resv = self.reserve_budget(agent, self.estimate(request_model, payload, body, rest_path))
+                rest = adapter.set_model(payload, rest, routed)
+                request_model = routed
+                edited = edited or (isinstance(payload, dict) and not adapter.model_in_path)
+                target = self.router.provider_for(routed)
+                if target and target != provider and self.can_switch(provider, target):
+                    route["routed_provider"] = target
+                    provider = target
+                    adapter = adapter_for(self.cfg["providers"][provider])
+        rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
+        if isinstance(payload, dict) and adapter.prepare(payload, rest_path):
+            edited = True
+        if edited:
+            body = json.dumps(payload).encode()
+        free = adapter.zero_cost
+        resv = self.reserve_budget(agent, 0.0 if free else self.estimate(request_model, payload, body, rest_path))
         try:
-            self.forward(req, agent, provider, api, rest_path, query, started, body, orig_body,
+            self.forward(req, agent, provider, adapter, rest_path, query, started, body, orig_body,
                          request_model, route, resv)
         finally:
             resv.release()
+
+    def can_switch(self, source, target):
+        """Cost routing may move a request to another provider only when it
+        speaks the same wire format and can authenticate."""
+        providers = self.cfg["providers"]
+        if target not in providers:
+            return False
+        a, b = adapter_for(providers[source]), adapter_for(providers[target])
+        return a.wire == b.wire and not a.model_in_path and not b.model_in_path and (
+            b.zero_cost or self.provider_key(target) is not None)
 
     def estimate(self, model, payload, body, rest_path):
         """Estimated USD of a request, held against the budget while it runs."""
@@ -543,9 +563,10 @@ class Gateway:
         cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)))
         return estimate_cost(self.pricing, model, len(body or b""), cap)
 
-    def forward(self, req, agent, provider, api, rest_path, query, started, body, orig_body,
+    def forward(self, req, agent, provider, adapter, rest_path, query, started, body, orig_body,
                 request_model, route, resv):
         prov = self.cfg["providers"][provider]
+        api = adapter.wire
         record_seq = None
         captured = bytearray()
         capture_cap = int(self.cfg["recording"]["max_body_bytes"])
@@ -555,6 +576,7 @@ class Gateway:
 
         base = urllib.parse.urlsplit(prov["base_url"])
         target = base.path.rstrip("/") + "/" + rest_path
+        query = adapter.query_for(query)
         if query:
             target += "?" + query
 
@@ -568,7 +590,9 @@ class Gateway:
         headers["Accept-Encoding"] = "identity"
         if body is not None:
             headers["Content-Length"] = str(len(body))
-        self.inject_key(provider, api, headers)
+        if route and route.get("routed_provider"):
+            adapter.strip_credentials(headers)      # the client's key belongs to the original provider
+        adapter.inject_key(headers, self.provider_key(provider))
 
         conn_cls = http.client.HTTPSConnection if base.scheme == "https" else http.client.HTTPConnection
         conn = conn_cls(base.hostname, base.port, timeout=float(self.cfg["gateway"]["upstream_timeout_sec"]))
@@ -649,7 +673,7 @@ class Gateway:
                 if self.recorder.write(agent, record_seq, rec):
                     entry["recorded"] = record_seq
             if usage:
-                usd, priced = self.after_usage(agent, model, usage)
+                usd, priced = self.after_usage(agent, model, usage, adapter.zero_cost)
                 entry.update(usage=usage, cost_usd=round(usd, 6), priced=priced)
             self.store.count_request(agent, resp.status)
             self.write_log(agent, entry)
@@ -666,22 +690,6 @@ class Gateway:
         if float((self.cfg["routing"].get("downgrade") or {}).get("threshold_pct") or 0) <= 0:
             return 0.0
         return self.used_pct(agent)
-
-    def inject_key(self, provider, api, headers):
-        key = self.provider_key(provider)
-        if not key:
-            return
-        lower = {k.lower(): k for k in headers}
-        if api == "anthropic":
-            current = headers.get(lower.get("x-api-key", ""), "")
-            has_bearer = "authorization" in lower
-            if current == configmod.MANAGED_KEY or (not current and not has_bearer):
-                headers[lower.get("x-api-key", "x-api-key")] = key
-        else:
-            auth_name = lower.get("authorization", "Authorization")
-            current = headers.get(auth_name, "")
-            if current in ("", "Bearer " + configmod.MANAGED_KEY):
-                headers[auth_name] = "Bearer " + key
 
 
 # ── HTTP plumbing ─────────────────────────────────────────────────────────

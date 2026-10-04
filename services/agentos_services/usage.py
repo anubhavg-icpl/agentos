@@ -10,6 +10,11 @@ understands:
     carries usage when stream_options.include_usage is set, which the gateway
     adds).
   * OpenAI Responses API: JSON responses and the response.completed event.
+  * Gemini generateContent: usageMetadata on JSON responses, on every SSE
+    chunk (alt=sse) and on the elements of a streamed JSON array.
+
+Provider kinds that share a wire format (azure-openai, openai-compatible)
+are parsed as the format they speak.
 
 Usage is normalised to four counters: input, output, cache_read and
 cache_write tokens, where input excludes cached tokens.
@@ -34,10 +39,32 @@ def _int(value):
         return 0
 
 
+WIRE = {"azure-openai": "openai", "openai-compatible": "openai"}
+
+
+def wire_format(api):
+    return WIRE.get(api, api)
+
+
+def _normalise_gemini(raw):
+    cached = _int(raw.get("cachedContentTokenCount"))
+    prompt = _int(raw.get("promptTokenCount")) + _int(raw.get("toolUsePromptTokenCount"))
+    return {
+        "input_tokens": max(0, prompt - cached),
+        # thinking tokens are billed as output
+        "output_tokens": _int(raw.get("candidatesTokenCount")) + _int(raw.get("thoughtsTokenCount")),
+        "cache_read_tokens": cached,
+        "cache_write_tokens": 0,
+    }
+
+
 def normalise(raw, api):
     """Map a provider usage object onto FIELDS."""
     if not isinstance(raw, dict):
         return None
+    api = wire_format(api)
+    if api == "gemini":
+        return _normalise_gemini(raw)
     if api == "anthropic":
         return {
             "input_tokens": _int(raw.get("input_tokens")),
@@ -70,6 +97,10 @@ def extract(obj, api):
     """Return (model, usage) found in one JSON object or SSE event payload."""
     if not isinstance(obj, dict):
         return None, None
+    api = wire_format(api)
+    if api == "gemini":
+        meta = obj.get("usageMetadata")
+        return obj.get("modelVersion"), (_normalise_gemini(meta) if isinstance(meta, dict) else None)
     if api == "anthropic":
         kind = obj.get("type")
         if kind == "message_start":
@@ -143,6 +174,10 @@ class UsageParser:
             obj = json.loads(payload)
         except (ValueError, UnicodeDecodeError):
             return
+        for item in (obj if isinstance(obj, list) else [obj]):
+            self._absorb_obj(item)
+
+    def _absorb_obj(self, obj):
         model, usage = extract(obj, self.api)
         if model and not self.model:
             self.model = model

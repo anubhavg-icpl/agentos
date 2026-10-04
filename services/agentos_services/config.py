@@ -62,6 +62,8 @@ DEFAULTS = {
         "agents": {},
         # Equivalence groups for strategy = "cheapest": [["model-a", "model-b"]]
         "groups": [],
+        # Model -> provider that serves it, e.g. {"llama3.1": "local"}
+        "targets": {},
         # Budget-aware downgrade: at >= threshold_pct of the agent's daily
         # budget, rewrite to models[<provider>]. 0 disables.
         "downgrade": {"threshold_pct": 0, "models": {}},
@@ -79,6 +81,11 @@ DEFAULTS = {
     "providers": {
         "anthropic": {"base_url": "https://api.anthropic.com", "api": "anthropic"},
         "openai": {"base_url": "https://api.openai.com", "api": "openai"},
+        # Other providers are added in services.toml, e.g.
+        #   [providers.gemini]  base_url = "https://generativelanguage.googleapis.com"  api = "gemini"
+        # Optional per provider: key_file, zero_cost (every model costs $0;
+        # the default for api = "openai-compatible"), api_version (Azure),
+        # timeout_sec, fallbacks (see docs/gateway-features.md).
     },
     "daemon": {
         "state_dir": "/var/lib/agentos/state",
@@ -98,6 +105,9 @@ DEFAULTS = {
         "targets": [],
     },
 }
+
+# Provider api kinds the gateway has an adapter for (providers.py)
+API_KINDS = ("anthropic", "openai", "openai-compatible", "azure-openai", "gemini")
 
 # Placeholder credential that tells the gateway to inject its own key
 MANAGED_KEY = "agentos-managed"
@@ -134,4 +144,6 @@ def load(path=None):
     # Providers added in the file may omit the api kind
     for name, prov in cfg["providers"].items():
         prov.setdefault("api", "anthropic" if name == "anthropic" else "openai")
+        if prov["api"] not in API_KINDS:
+            raise ValueError("provider %r: unknown api %r (known: %s)" % (name, prov["api"], ", ".join(API_KINDS)))
     return cfg
