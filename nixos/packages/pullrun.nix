@@ -32,7 +32,7 @@ let
   runtime = rustPlatform.buildRustPackage {
     pname = "pullrun-runtime";
     inherit version src;
-    cargoLock.lockFile = "${src}/Cargo.lock";
+    cargoHash = "sha256-b7uGiLcOJhylwfL+FfM9WIpZuMxmNXuFNf6AhKlYnFw=";
     cargoBuildFlags = [ "-p" "pullrun-runtime" ];
     nativeBuildInputs = [ protobuf pkg-config ];
     # The test suite needs /dev/kvm, runc and network access.
