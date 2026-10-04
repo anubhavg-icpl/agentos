@@ -16,7 +16,7 @@ def big(out_tokens=100_000):
 
 
 def test_concurrent_requests_cannot_overshoot_the_budget(make_gateway, upstream, store):
-    gw = make_gateway(limits={"max_requests_per_minute": 0}, budget={"default_daily_usd": 5.0})
+    gw = make_gateway(limits={"max_requests_per_minute": 0, "loop_detection": False}, budget={"default_daily_usd": 5.0})
     upstream.delay = 0.4          # every request is in flight at once
     results = []
 
@@ -36,7 +36,7 @@ def test_concurrent_requests_cannot_overshoot_the_budget(make_gateway, upstream,
 
 
 def test_global_budget_is_reserved_across_agents(make_gateway, upstream, store):
-    gw = make_gateway(limits={"max_requests_per_minute": 0}, budget={"global_daily_usd": 4.0})
+    gw = make_gateway(limits={"max_requests_per_minute": 0, "loop_detection": False}, budget={"global_daily_usd": 4.0})
     upstream.delay = 0.4
     results = []
 
