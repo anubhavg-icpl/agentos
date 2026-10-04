@@ -162,6 +162,8 @@
           openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
+          # Local inference backend registered as a gateway provider.
+          local-ai = import ./tests/local-ai.nix { inherit pkgs agentosModules; };
         });
 
       # ── Dev shell for working on AgentOS itself ───────────────────────
