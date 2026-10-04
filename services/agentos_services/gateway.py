@@ -61,7 +61,7 @@ import redis
 
 from . import config as configmod
 from .bus import Bus, BusError
-from .loops import fingerprint
+from .loops import alternation_run, fingerprint
 from .providers import adapter_for
 from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
@@ -228,7 +228,21 @@ class Gateway:
         if fp is None:
             return
         threshold = int(limits["loop_repeat_threshold"])
-        count = self.store.loop_hit(agent, fp, float(limits["loop_window_sec"]))
+        window = float(limits["loop_window_sec"])
+        count = self.store.loop_hit(agent, fp, window)
+        alt = int(limits.get("loop_alternation_length", 0))
+        if alt >= 4:
+            run = alternation_run(self.store.loop_history(agent, fp, window, alt * 2))
+            if run >= alt:
+                if run == alt:
+                    self.store.publish({"type": "loop_detected", "agent": agent, "count": run,
+                                        "kind": "alternation", "window_sec": limits["loop_window_sec"]})
+                raise HTTPError(
+                    429, "loop_detected",
+                    "AgentOS loop detection: agent %s has alternated between two requests %d times; "
+                    "change the request or ask an operator to reset it" % (agent, run),
+                    {"Retry-After": "30"},
+                )
         if count >= threshold:
             if count == threshold:
                 self.store.publish({"type": "loop_detected", "agent": agent, "count": count,

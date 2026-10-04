@@ -51,6 +51,9 @@ DEFAULTS = {
         "loop_repeat_threshold": 5,
         "loop_window_sec": 600,
         "loop_fingerprint_messages": 4,
+        # ... or two requests alternating A, B, A, B this many times in a row
+        # (counted in requests; 0 disables)
+        "loop_alternation_length": 8,
     },
     "routing": {
         # "static" applies rewrites only; "cheapest" also picks the cheapest

@@ -19,6 +19,7 @@ Keys (all prefixed with "agentos:"):
   cb:failures:<id>             int     consecutive upstream failures
   cb:open:<id>                 float   unix time until which the circuit is open
   loop:<id>                    hash    fingerprint of the last request + run length
+  loophist:<id>                list    recent request fingerprints "<ts>|<fp>", for A/B alternation
   record:<id>                  "1"     record this agent's requests (in addition to the global flag)
   replay:<id>                  hash    recording being replayed, position, total
   bus:<topic>                  stream  inter-agent messages (bounded length)
@@ -322,8 +323,27 @@ class Store:
         self.r.expire(key, max(60, int(window) * 2))
         return count
 
+    def loop_history(self, agent, fingerprint, window, keep):
+        """Append a fingerprint to the agent's sliding window; returns the
+        fingerprints (oldest first) of the last `keep` requests that arrived
+        within `window` seconds."""
+        key = self._k("loophist", agent)
+        now = self.clock()
+        p = self.r.pipeline()
+        p.rpush(key, "%r|%s" % (now, fingerprint))
+        p.ltrim(key, -int(keep), -1)
+        p.expire(key, max(60, int(window) * 2))
+        p.lrange(key, 0, -1)
+        entries = p.execute()[-1]
+        out = []
+        for entry in entries:
+            ts, _, fp = entry.partition("|")
+            if now - float(ts) <= window:
+                out.append(fp)
+        return out
+
     def loop_reset(self, agent):
-        self.r.delete(self._k("loop", agent))
+        self.r.delete(self._k("loop", agent), self._k("loophist", agent))
 
     # ── recording & replay ─────────────────────────────────────────────
     def set_record(self, agent, enabled):
