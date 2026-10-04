@@ -77,6 +77,8 @@ DEFAULTS = {
         "log_cap_mb": 64,
         "tick_sec": 1.0,
         "start_grace_sec": 30,
+        # the only socket peer allowed to submit tasks with origin "openclaw"
+        "bridge_user": "openclaw-bridge",
         "runner_unit_prefix": "agentos-task-runner@",
         "agent_path": "/run/current-system/sw/bin",
         # agent name (or its command) -> argv template with {prompt},
@@ -115,6 +117,7 @@ SUBMIT_FIELDS = {
 }
 _PLACEHOLDER = re.compile(r"\{(prompt|workspace|task_id)\}")
 _PREV = re.compile(r"\{prev_result\}")
+RESERVED_ORIGIN = "openclaw"
 NODE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
 _NODEREF = re.compile(r"\{nodes\.([A-Za-z0-9][A-Za-z0-9_-]{0,31})\.result\}")
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@#-]{0,99}")

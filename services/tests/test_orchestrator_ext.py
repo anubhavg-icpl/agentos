@@ -1070,3 +1070,26 @@ def test_old_task_documents_with_missing_fields_are_scheduled(orch, systemctl):
     orch.tick()
     assert get(orch, "task-legacy-2")["status"] == "running"
     T.validate_record(get(orch, "task-legacy-2"), orch.runtime(), orch.opts)
+
+
+def test_openclaw_origin_is_reserved_for_the_bridge_user(orch, monkeypatch):
+    from agentos_services import orchestrator as O
+    from agentos_services.unixapi import ApiError
+    body = {"agent": "fake", "workspace": "demo", "prompt": "p", "origin": "openclaw"}
+    wf = {"origin": "openclaw", "nodes": {"a": {"agent": "fake", "workspace": "demo", "prompt": "p"}}}
+    wf_node = {"nodes": {"a": {"agent": "fake", "workspace": "demo", "prompt": "p", "origin": "openclaw"}}}
+    names = {1001: "openclaw-bridge", 1002: "mallory"}
+    monkeypatch.setattr(O.pwd, "getpwuid", lambda uid: type("P", (), {"pw_name": names[uid]})())
+    bridge, other = {"uid": 1001}, {"uid": 1002}
+    for peer in (None, other):
+        with pytest.raises(ApiError) as exc:
+            orch.submit(dict(body), peer)
+        assert exc.value.status == 403
+        for w in (wf, wf_node):
+            with pytest.raises(ApiError):
+                orch.submit_workflow(dict(w), peer)
+    assert orch.submit(dict(body), bridge)[0]["origin"] == "openclaw"
+    assert orch.submit_workflow(dict(wf), bridge)[1]["a"]["origin"] == "openclaw"
+    # other origins are not affected
+    assert orch.submit(dict(body, origin="gh:acme/widgets#7"), other)[0]["origin"] == "gh:acme/widgets#7"
+    assert orch.submit(dict(body, origin="schedule:nightly"))[0]["origin"] == "schedule:nightly"
