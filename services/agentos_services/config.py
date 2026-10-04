@@ -33,16 +33,27 @@ DEFAULTS = {
         "global_daily_usd": 500.0,
         "alert_thresholds": [50, 80, 95, 100],
         "auto_shutdown": True,
+        # Hold an estimated cost (max output tokens + input size) before
+        # forwarding, so concurrent requests cannot overshoot a budget
+        "reserve": True,
+        # Output allowance assumed when a request sets no max_tokens
+        "default_max_tokens": 4096,
     },
     "limits": {
         "max_requests_per_minute": 60,
         "max_consecutive_failures": 5,
         "cooldown_sec": 300,
+        # Failed agent authentications per client address and minute before
+        # further failures answer 429 instead of 401; 0 disables
+        "max_auth_failures_per_minute": 20,
         # Loop detection: the same request fingerprint K times in a row
         "loop_detection": True,
         "loop_repeat_threshold": 5,
         "loop_window_sec": 600,
         "loop_fingerprint_messages": 4,
+        # ... or two requests alternating A, B, A, B this many times in a row
+        # (counted in requests; 0 disables)
+        "loop_alternation_length": 8,
     },
     "routing": {
         # "static" applies rewrites only; "cheapest" also picks the cheapest
@@ -54,6 +65,8 @@ DEFAULTS = {
         "agents": {},
         # Equivalence groups for strategy = "cheapest": [["model-a", "model-b"]]
         "groups": [],
+        # Model -> provider that serves it, e.g. {"llama3.1": "local"}
+        "targets": {},
         # Budget-aware downgrade: at >= threshold_pct of the agent's daily
         # budget, rewrite to models[<provider>]. 0 disables.
         "downgrade": {"threshold_pct": 0, "models": {}},
@@ -71,6 +84,11 @@ DEFAULTS = {
     "providers": {
         "anthropic": {"base_url": "https://api.anthropic.com", "api": "anthropic"},
         "openai": {"base_url": "https://api.openai.com", "api": "openai"},
+        # Other providers are added in services.toml, e.g.
+        #   [providers.gemini]  base_url = "https://generativelanguage.googleapis.com"  api = "gemini"
+        # Optional per provider: key_file, zero_cost (every model costs $0;
+        # the default for api = "openai-compatible"), api_version (Azure),
+        # timeout_sec, fallbacks (see docs/gateway-features.md).
     },
     "daemon": {
         "state_dir": "/var/lib/agentos/state",
@@ -90,6 +108,9 @@ DEFAULTS = {
         "targets": [],
     },
 }
+
+# Provider api kinds the gateway has an adapter for (providers.py)
+API_KINDS = ("anthropic", "openai", "openai-compatible", "azure-openai", "gemini")
 
 # Placeholder credential that tells the gateway to inject its own key
 MANAGED_KEY = "agentos-managed"
@@ -126,4 +147,6 @@ def load(path=None):
     # Providers added in the file may omit the api kind
     for name, prov in cfg["providers"].items():
         prov.setdefault("api", "anthropic" if name == "anthropic" else "openai")
+        if prov["api"] not in API_KINDS:
+            raise ValueError("provider %r: unknown api %r (known: %s)" % (name, prov["api"], ", ".join(API_KINDS)))
     return cfg

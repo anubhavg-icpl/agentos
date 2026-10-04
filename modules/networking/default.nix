@@ -292,8 +292,67 @@ in
             description = "Upstream API base URL";
           };
           api = lib.mkOption {
-            type = lib.types.enum [ "anthropic" "openai" ];
-            description = "Wire format, used to read token usage from responses";
+            type = lib.types.enum [ "anthropic" "openai" "openai-compatible" "azure-openai" "gemini" ];
+            description = ''
+              Kind of API: how the key is sent and how token usage is read.
+
+              - anthropic: Messages API (x-api-key)
+              - openai: OpenAI Chat Completions and Responses (Bearer)
+              - openai-compatible: a local server speaking the OpenAI format
+                (ollama, llama.cpp, vLLM). No key needed; every model costs $0
+                unless `zeroCost = false`.
+              - azure-openai: Azure OpenAI (api-key header, deployments in the
+                path; set `apiVersion`)
+              - gemini: Google Generative Language API (x-goog-api-key)
+
+              AWS Bedrock and Google Vertex AI are not supported yet (they need
+              request signing / OAuth tokens).
+            '';
+          };
+          zeroCost = lib.mkOption {
+            type = lib.types.nullOr lib.types.bool;
+            default = null;
+            description = ''
+              Count every model of this provider as $0 (local inference) instead
+              of using pricing.json, and reserve no budget for its requests.
+              null: true for api = "openai-compatible", false otherwise.
+            '';
+          };
+          apiVersion = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            example = "2024-10-21";
+            description = "api-version query added to Azure OpenAI requests that lack one";
+          };
+          fallbacks = lib.mkOption {
+            type = lib.types.listOf (lib.types.either lib.types.str (lib.types.submodule {
+              options = {
+                provider = lib.mkOption {
+                  type = lib.types.str;
+                  description = "Name of another entry of agentos.networking.providers";
+                };
+                model = lib.mkOption {
+                  type = lib.types.nullOr lib.types.str;
+                  default = null;
+                  description = "Model to request from the fallback (null: keep the requested one)";
+                };
+              };
+            }));
+            default = [ ];
+            example = [ "openai-backup" { provider = "local"; model = "llama3.1"; } ];
+            description = ''
+              Providers to try, in order, when this one answers 5xx or 429, times
+              out or cannot be reached before the first response byte. Each must
+              use the same wire format (same `api` family, so a request body can
+              be replayed) and have a key or be a local server. The client's own
+              credentials are never sent to a fallback; its configured key is
+              injected instead. Nothing is retried once a response has started.
+            '';
+          };
+          timeoutSec = lib.mkOption {
+            type = lib.types.nullOr lib.types.ints.positive;
+            default = null;
+            description = "Upstream timeout for this provider (null: the gateway default)";
           };
           keyFile = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
@@ -348,7 +407,16 @@ in
       providers = lib.mapAttrs (_: p: {
         base_url = p.baseUrl;
         inherit (p) api;
-      } // lib.optionalAttrs (p.keyFile != null) { key_file = p.keyFile; }) cfg.providers;
+      } // lib.optionalAttrs (p.keyFile != null) { key_file = p.keyFile; }
+        // lib.optionalAttrs (p.zeroCost != null) { zero_cost = p.zeroCost; }
+        // lib.optionalAttrs (p.apiVersion != null) { api_version = p.apiVersion; }
+        // lib.optionalAttrs (p.timeoutSec != null) { timeout_sec = p.timeoutSec; }
+        // lib.optionalAttrs (p.fallbacks != [ ]) {
+          fallbacks = map
+            (f: if builtins.isString f then { provider = f; }
+                else { inherit (f) provider; } // lib.optionalAttrs (f.model != null) { inherit (f) model; })
+            p.fallbacks;
+        }) cfg.providers;
     };
 
     environment.etc."agentos/pricing.json".source = lib.mkDefault ../budget-controller/pricing.json;

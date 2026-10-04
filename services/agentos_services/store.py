@@ -7,14 +7,19 @@ Keys (all prefixed with "agentos:"):
   spend:<date>:agent:<id>      float   USD spent by one agent
   spend:<date>:global          float   USD spent by all agents
   spend:<date>:model:<model>   float   USD spent per model
+  resv:<date>:agent:<id>       hash    in-flight budget reservations: <rid> -> "<usd>:<deadline>"
+  resv:<date>:global           hash    the same, for all agents
   tokens:<date>:agent:<id>     hash    token counters + request count
   requests:<date>:agent:<id>   hash    responses by status class (2xx, 4xx...)
   budget:agent:<id>            float   per-agent daily budget override
+  unparsed:<date>              hash    responses billed at an estimate because no usage could be read, by provider
   alerts:<date>:agent:<id>     set     thresholds already alerted today
+  authfail:<addr>:<minute>     int     failed agent authentications from one address
   rate:<id>:<minute>           int     requests in the current minute
   cb:failures:<id>             int     consecutive upstream failures
   cb:open:<id>                 float   unix time until which the circuit is open
   loop:<id>                    hash    fingerprint of the last request + run length
+  loophist:<id>                list    recent request fingerprints "<ts>|<fp>", for A/B alternation
   record:<id>                  "1"     record this agent's requests (in addition to the global flag)
   replay:<id>                  hash    recording being replayed, position, total
   bus:<topic>                  stream  inter-agent messages (bounded length)
@@ -22,9 +27,13 @@ Events are published on the "agentos:events" channel as JSON.
 """
 
 import json
+import logging
 import time
+import uuid
 
 import redis
+
+log = logging.getLogger("agentos.store")
 
 PREFIX = "agentos:"
 EVENTS_CHANNEL = PREFIX + "events"
@@ -37,6 +46,38 @@ def utc_date(ts=None):
 
 def connect(url):
     return redis.Redis.from_url(url, decode_responses=True)
+
+
+class Reservation:
+    """An amount of budget held for one in-flight request.
+
+    `release()` is idempotent and never raises: a reservation that cannot be
+    released (Redis down) expires on its own at its deadline.
+    """
+
+    def __init__(self, store=None, keys=(), rid=None, usd=0.0):
+        self.store = store
+        self.keys = keys
+        self.rid = rid
+        self.usd = usd
+        self.released = store is None
+        self.estimate = usd
+
+    def release(self):
+        if self.released:
+            return
+        self.released = True
+        try:
+            self.store.r.hdel(self.keys[0], self.rid)
+            self.store.r.hdel(self.keys[1], self.rid)
+        except redis.RedisError as exc:
+            log.warning("cannot release budget reservation %s: %s", self.rid, exc)
+
+
+class BudgetRefused(Exception):
+    def __init__(self, scope, spent, reserved, limit):
+        super().__init__(scope)
+        self.scope, self.spent, self.reserved, self.limit = scope, spent, reserved, limit
 
 
 class Store:
@@ -64,6 +105,61 @@ class Store:
     def clear_limit(self, agent):
         self.r.delete(self._k("budget", "agent", agent))
 
+    @staticmethod
+    def _live(entries, now):
+        """Split a reservation hash into (live total, expired ids)."""
+        total, dead = 0.0, []
+        for rid, value in entries.items():
+            usd, _, deadline = value.partition(":")
+            if float(deadline or 0) < now:
+                dead.append(rid)
+            else:
+                total += float(usd)
+        return total, dead
+
+    def reserve(self, agent, usd, agent_limit, global_limit, hold_sec=900):
+        """Atomically hold `usd` against the agent's and the global daily budget.
+
+        The check and the hold happen in one WATCH/MULTI transaction, so
+        concurrent requests cannot all pass a check that only one of them
+        fits. Refuses (BudgetRefused) when spend + holds + usd would exceed a
+        limit; a request that needs no budget (usd == 0) is refused only when
+        the limit is already spent. Raises redis.RedisError when Redis fails.
+        """
+        date = utc_date(self.clock())
+        spend_keys = (self._k("spend", date, "agent", agent), self._k("spend", date, "global"))
+        hold_keys = (self._k("resv", date, "agent", agent), self._k("resv", date, "global"))
+        rid = uuid.uuid4().hex
+
+        def txn(pipe):
+            now = self.clock()
+            spent = [float(pipe.get(k) or 0.0) for k in spend_keys]
+            held, dead = [], []
+            for k in hold_keys:
+                total, gone = self._live(pipe.hgetall(k), now)
+                held.append(total)
+                dead.append(gone)
+            for scope, i, limit in (("agent", 0, agent_limit), ("global", 1, global_limit)):
+                over = spent[i] >= limit if usd <= 0 else spent[i] + held[i] + usd > limit
+                if over:
+                    raise BudgetRefused(scope, spent[i], held[i], limit)
+            pipe.multi()
+            for i, k in enumerate(hold_keys):
+                if dead[i]:
+                    pipe.hdel(k, *dead[i])
+                if usd > 0:
+                    pipe.hset(k, rid, "%r:%r" % (float(usd), now + hold_sec))
+                    pipe.expire(k, DAY_TTL)
+
+        self.r.transaction(txn, *spend_keys, *hold_keys)
+        return Reservation(self if usd > 0 else None, hold_keys, rid, usd)
+
+    def reserved(self, agent=None, date=None):
+        """USD currently held by in-flight requests (one agent, or all)."""
+        date = date or utc_date(self.clock())
+        key = self._k("resv", date, "agent", agent) if agent else self._k("resv", date, "global")
+        return self._live(self.r.hgetall(key), self.clock())[0]
+
     def record(self, agent, model, usd, usage):
         """Add one request's cost and tokens. Returns (agent_total, global_total)."""
         date = utc_date(self.clock())
@@ -82,6 +178,17 @@ class Store:
             p.expire(key, DAY_TTL)
         results = p.execute()
         return float(results[0]), float(results[1])
+
+    def count_unparsed(self, provider):
+        """Count a response whose usage could not be read (billed at an estimate)."""
+        key = self._k("unparsed", utc_date(self.clock()))
+        p = self.r.pipeline()
+        p.hincrby(key, provider, 1)
+        p.expire(key, DAY_TTL)
+        p.execute()
+
+    def unparsed(self, date=None):
+        return {k: int(v) for k, v in self.r.hgetall(self._k("unparsed", date or utc_date(self.clock()))).items()}
 
     def count_request(self, agent, status):
         key = self._k("requests", utc_date(self.clock()), "agent", agent)
@@ -108,6 +215,15 @@ class Store:
 
     def delete_agent_token(self, agent):
         self.r.delete(self._k("auth", "agent", agent))
+
+    def auth_failure(self, client):
+        """Count a failed authentication from `client` this minute."""
+        key = self._k("authfail", client, int(self.clock() // 60))
+        p = self.r.pipeline()
+        p.incr(key)
+        p.expire(key, 120)
+        count, _ = p.execute()
+        return int(count)
 
     # ── rate limit & circuit breaker ───────────────────────────────────
     def rate_hit(self, agent):
@@ -179,6 +295,7 @@ class Store:
         return {
             "date": date,
             "global_usd": self.global_spend(date),
+            "usage_unparsed": self.unparsed(date),
             "agents": agents,
             "models": models,
         }
@@ -206,8 +323,27 @@ class Store:
         self.r.expire(key, max(60, int(window) * 2))
         return count
 
+    def loop_history(self, agent, fingerprint, window, keep):
+        """Append a fingerprint to the agent's sliding window; returns the
+        fingerprints (oldest first) of the last `keep` requests that arrived
+        within `window` seconds."""
+        key = self._k("loophist", agent)
+        now = self.clock()
+        p = self.r.pipeline()
+        p.rpush(key, "%r|%s" % (now, fingerprint))
+        p.ltrim(key, -int(keep), -1)
+        p.expire(key, max(60, int(window) * 2))
+        p.lrange(key, 0, -1)
+        entries = p.execute()[-1]
+        out = []
+        for entry in entries:
+            ts, _, fp = entry.partition("|")
+            if now - float(ts) <= window:
+                out.append(fp)
+        return out
+
     def loop_reset(self, agent):
-        self.r.delete(self._k("loop", agent))
+        self.r.delete(self._k("loop", agent), self._k("loophist", agent))
 
     # ── recording & replay ─────────────────────────────────────────────
     def set_record(self, agent, enabled):

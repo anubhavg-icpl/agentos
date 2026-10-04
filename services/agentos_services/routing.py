@@ -10,6 +10,12 @@ Applied to the `model` field of a request body before it is forwarded:
      daily budget, a model costlier than the configured cheaper model of the
      same provider is replaced by it.
 
+Provider targets: `routing.targets` maps a model name to a provider (for
+example {"llama3.1": "local"}). When a rule picks such a model, the request
+moves to that provider if it speaks the same wire format. A model served by a
+zero-cost provider (a local server) has unit cost 0, so strategy "cheapest"
+and the budget downgrade prefer it.
+
 A request is never routed to another vendor's model: the target's vendor
 (the "provider" field in pricing.json) must equal the requested model's
 vendor, or, when that is unknown, the gateway provider's name.
@@ -21,9 +27,25 @@ log = logging.getLogger("agentos.routing")
 
 
 class Router:
-    def __init__(self, cfg, pricing):
+    def __init__(self, cfg, pricing, providers=None):
         self.cfg = cfg or {}
         self.pricing = pricing
+        self.providers = providers or {}
+
+    # ── providers ──────────────────────────────────────────────────────
+    def provider_for(self, model):
+        """Provider that serves `model` when routing names one ("targets")."""
+        name = (self.cfg.get("targets") or {}).get(model)
+        return name if name in self.providers else None
+
+    def zero_cost(self, model):
+        """True when `model` is served by a provider that costs nothing (a local server)."""
+        name = self.provider_for(model)
+        if not name:
+            return False
+        prov = self.providers[name]
+        zero = prov.get("zero_cost")
+        return bool(prov.get("api") == "openai-compatible" if zero is None else zero)
 
     # ── pricing helpers ────────────────────────────────────────────────
     def vendor(self, model):
@@ -32,6 +54,8 @@ class Router:
 
     def unit_cost(self, model):
         """Comparable cost of a model; None when it is not in pricing.json."""
+        if self.zero_cost(model):
+            return 0.0
         rates, priced = self.pricing.rates(model)
         if not priced:
             return None
@@ -110,9 +134,11 @@ class Router:
             "agents": self.cfg.get("agents") or {},
             "groups": self.cfg.get("groups") or [],
             "downgrade": self.cfg.get("downgrade") or {},
+            "targets": self.cfg.get("targets") or {},
         }
         if agent and provider and model:
             routed, reason = self.route(agent, provider, model, used_pct)
             out["effective"] = {"agent": agent, "provider": provider, "model": model,
-                                "routed_model": routed, "reason": reason, "used_pct": used_pct}
+                                "routed_model": routed, "reason": reason, "used_pct": used_pct,
+                                "routed_provider": self.provider_for(routed)}
         return out
