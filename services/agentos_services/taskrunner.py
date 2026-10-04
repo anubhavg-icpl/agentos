@@ -99,6 +99,10 @@ class TaskRunner:
                 self.git(["-c", "user.name=AgentOS", "-c", "user.email=agentos@localhost",
                           "commit", "--quiet", "--allow-empty", "-m", "Initialize workspace"], ws)
             wt = os.path.join(os.path.dirname(ws), "%s.%s" % (os.path.basename(ws), task["id"]))
+            if int(task.get("attempt") or 1) > 1:
+                # A retry (orchestrator `max_retries`): start clean, drop the failed attempt's worktree and branch
+                self.git(["worktree", "remove", "--force", wt], ws, check=False)
+                self.git(["branch", "-D", branch], ws, check=False)
             self.git(["worktree", "add", "--quiet", "-b", branch, wt], ws)
             return wt, branch, [wt, os.path.join(ws, ".git")]
         if self.git(["checkout", "--quiet", "-b", branch], ws, check=False).returncode != 0:
