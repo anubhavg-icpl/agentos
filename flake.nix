@@ -186,7 +186,7 @@
             packages = with pkgs; [
               nixpkgs-fmt
               nil
-              (python3.withPackages (ps: [ ps.pytest ps.redis ps.fakeredis ]))
+              (python3.withPackages (ps: [ ps.pytest ps.redis ps.fakeredis ps.cryptography ]))
             ];
           };
         });

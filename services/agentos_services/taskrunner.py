@@ -39,9 +39,11 @@ import time
 import urllib.request
 
 from . import config as configmod
+from . import provenance as PV
 from . import publish as P
 from . import tasks as T
-from .store import Store, connect
+from .recorder import transcript_digest
+from .store import Store, connect, utc_date
 from .unixapi import call
 
 log = logging.getLogger("agentos.taskrunner")
@@ -78,7 +80,8 @@ class RunnerError(Exception):
 
 class TaskRunner:
     def __init__(self, cfg, runtime, tasks, clock=time.time, systemd_run="systemd-run",
-                 systemctl="systemctl", drop_privileges=True, publisher=None):
+                 systemctl="systemctl", drop_privileges=True, publisher=None, signer=None,
+                 closure_path="/run/current-system"):
         self.cfg = cfg
         self.opts = T.settings(cfg, "orchestrator")
         self.runtime = runtime
@@ -93,6 +96,13 @@ class TaskRunner:
         self.base_sha = None
         # publisher(publish_opts) -> P.Publisher; replaced in tests
         self.publisher = publisher or self._make_publisher
+        self.prov_opts = PV.settings(cfg)
+        self._signer = signer
+        self.closure_path = closure_path
+        self.envelope = None      # the provenance envelope of the task being run
+        self.agent_exe = None
+        self.pending_result = {}
+        self.pushed_digest = None
 
     # ── helpers ────────────────────────────────────────────────────────
     def stop_unit(self, unit):
@@ -261,6 +271,129 @@ class TaskRunner:
                 return None
             time.sleep(0.25)
 
+    # ── provenance (provenance.py) ─────────────────────────────────────
+    def signer(self):
+        if self._signer is None:
+            self._signer = PV.Signer.load(self.prov_opts)
+        return self._signer
+
+    @staticmethod
+    def _store_path(path):
+        parts = (path or "").split("/")
+        return "/".join(parts[:4]) if path and path.startswith("/nix/store/") and len(parts) >= 4 else path
+
+    def build_envelope(self, task, result, sha, workdir, repo=None, pr_url=None, started=None):
+        """Sign a statement about `sha`. Raises ProvenanceError."""
+        signer = self.signer()
+        tree = self.git(["rev-parse", sha + "^{tree}"], workdir, check=False).stdout.strip() or None
+        dirty = bool(self.git(["status", "--porcelain"], workdir, check=False).stdout.strip())
+        now = self.clock()
+        started = started or task.get("started_at") or now
+        dates = sorted({utc_date(t) for t in (started, now)})
+        try:
+            usage = self.tasks.store.agent_usage(task["id"], dates)
+        except Exception as exc:  # no gateway/Redis books: the statement says so by being empty
+            log.warning("task %s: no usage for provenance: %s", task["id"], exc)
+            usage = {}
+        recording = None
+        digest, count = transcript_digest(self.cfg["recording"]["dir"], task["id"])
+        if digest:
+            recording = {"id": task["id"], "requests": count, "transcriptSha256": digest}
+        judge = None
+        if task.get("group"):
+            meta = self.tasks.group_meta(task["group"]) or {}
+            judge = {"group": task["group"], "role": task.get("role"), "winner": meta.get("winner"),
+                     "judgeTask": meta.get("judge_task")}
+        exe = self.agent_exe
+        real = os.path.realpath(exe) if exe else None
+        statement = PV.build_statement(
+            commit=sha, tree=tree, pr_url=pr_url, repo=repo, branch="agent/" + task["id"], agent=task["agent"],
+            agent_binary=real, agent_store_path=self._store_path(real),
+            system_closure=os.path.realpath(self.closure_path) if os.path.exists(self.closure_path) else None,
+            task=task, prompt=task.get("resolved_prompt") or task.get("prompt"),
+            include_prompt=bool(self.prov_opts["include_prompt"]), usage=usage, verify=result.get("verify"),
+            judge=judge, approval=task.get("approval"), recording=recording, started_at=started, finished_at=now,
+            exit_code=result.get("exit_code"), dirty=dirty)
+        return signer.sign(statement)
+
+    def attest_callback(self, task, result, workdir, repo=None):
+        """The `attest(commit)` hook for the publisher, or None when provenance is off.
+        It returns an envelope; without a key it returns None, or refuses the publish
+        when `require_for_publish` is set."""
+        if not self.prov_opts["enable"]:
+            return None
+
+        def attest(sha):
+            try:
+                envelope = self.build_envelope(task, result, sha, workdir, repo=repo)
+            except PV.ProvenanceError as exc:
+                log.warning("task %s: no provenance: %s", task["id"], exc)
+                if self.prov_opts["require_for_publish"]:
+                    raise P.PublishError("provenance is required and could not be produced: %s" % exc, "provenance")
+                return None
+            self.envelope = envelope
+            return envelope
+        return attest
+
+    def reuse_callback(self, envelope):
+        """For a task of kind "publish": the dependency's envelope, if it still attests the commit."""
+        if not self.prov_opts["enable"]:
+            return None
+
+        def attest(sha):
+            problem = None
+            try:
+                signer = self.signer()
+                res = PV.verify_envelope(envelope, {signer.keyid: signer.pub}, sha, check_paths=False) if envelope else None
+                if res is None:
+                    problem = "the task that produced the branch has no provenance"
+                elif not res["ok"]:
+                    problem = "its provenance does not match the commit being published"
+            except PV.ProvenanceError as exc:
+                problem = str(exc)
+            if problem and self.prov_opts["require_for_publish"]:
+                raise P.PublishError("provenance is required: %s" % problem, "provenance")
+            return None if problem else envelope
+        return attest
+
+    def attest_unpublished(self, task, result, workdir, branch):
+        """Provenance for a task that was not (or could not be) published: sign the
+        branch tip and attach the note locally."""
+        if not self.prov_opts["enable"] or self.envelope is not None or branch != "agent/" + task["id"]:
+            return
+        try:
+            sha = self.git(["rev-parse", "--verify", "refs/heads/" + branch], workdir).stdout.strip()
+            envelope = self.build_envelope(task, result, sha, workdir)
+            PV.add_note(self.git, workdir, sha, envelope)
+        except (PV.ProvenanceError, RunnerError) as exc:
+            log.warning("task %s: no provenance: %s", task["id"], exc)
+            return
+        self.envelope = envelope
+
+    def bind_pr(self, task, result, workdir):
+        """Once a PR exists, re-sign with the PR as a second subject. The pushed note
+        (and the PR body digest) keep the first envelope; this one is for the task result."""
+        info = result.get("publish") or {}
+        if self.envelope is None or info.get("status") != "published":
+            return
+        self.pushed_digest = info.get("provenance_digest")
+        try:
+            sha = PV.decode_payload(self.envelope)["subject"][0]["digest"]["gitCommit"]
+            bound = self.build_envelope(task, result, sha, workdir, repo=info.get("repo"), pr_url=info.get("pr_url"))
+            PV.add_note(self.git, workdir, sha, bound)
+        except (PV.ProvenanceError, RunnerError) as exc:
+            log.warning("task %s: could not bind the PR to the provenance: %s", task["id"], exc)
+            return
+        self.envelope = bound
+
+    def provenance_fields(self):
+        if self.envelope is None:
+            return {}
+        out = {"envelope": self.envelope, "sha256": PV.envelope_digest(self.envelope), "predicateType": PV.PREDICATE_TYPE}
+        if self.pushed_digest:
+            out["pushed_sha256"] = self.pushed_digest
+        return {"provenance": out}
+
     # ── publishing (publish.py) ────────────────────────────────────────
     def _make_publisher(self, popts):
         return P.Publisher(popts, P.load_token(popts),
@@ -294,7 +427,9 @@ class TaskRunner:
             msg = "task is not on its own branch"
             return {"publish": {"status": "skipped", "error": msg}}, (msg if spec["explicit"] else None)
         try:
-            info = self.publisher(popts).publish(spec, task["id"], workdir, branch, base_sha)
+            attest = self.attest_callback(task, self.pending_result, workdir, repo=spec["repo"])
+            extra = {"attest": attest} if attest else {}
+            info = self.publisher(popts).publish(spec, task["id"], workdir, branch, base_sha, **extra)
         except P.PublishError as exc:
             log.warning("task %s: publish %s: %s", task["id"], exc.code, exc)
             status = "skipped" if exc.code == "empty" and not spec["explicit"] else "error"
@@ -325,8 +460,10 @@ class TaskRunner:
             spec = P.resolve_spec(dict(task, kind="publish", workspace=workspace,
                                        origin=task.get("origin") or source.get("origin")),
                                   popts, self.publish_marker(task_id))
+            attest = self.reuse_callback(((res.get("provenance") or {}).get("envelope")))
+            extra = {"attest": attest} if attest else {}
             info = self.publisher(popts).publish(spec, task_id, res.get("worktree") or workspace, res["branch"],
-                                                 res.get("base_sha"))
+                                                 res.get("base_sha"), **extra)
         except (P.PublishError, T.ValidationError) as exc:
             self.tasks.finish(task_id, T.FAILED, error="publish refused: %s" % exc)
             log.error("task %s: %s", task_id, exc)
@@ -421,6 +558,7 @@ class TaskRunner:
             if not exe:
                 raise RunnerError("%s is not installed" % argv[0])
             argv[0] = exe
+            self.agent_exe, self.envelope, self.pushed_digest = exe, None, None
         except (T.ValidationError, RunnerError) as exc:
             self.tasks.finish(task_id, T.FAILED, error="rejected: %s" % exc)
             log.error("task %s rejected: %s", task_id, exc)
@@ -523,10 +661,15 @@ class TaskRunner:
             if result["verify"]["status"] != "passed":
                 skip = "verify failed"
         if outcome == T.SUCCEEDED:
+            self.pending_result = result
             fields, publish_error = self.try_publish(task, workdir, branch, self.base_sha, skip_reason=skip)
             result.update(fields)
             if publish_error:
                 outcome, result["error"] = T.FAILED, "publish failed: %s" % publish_error
+            else:
+                self.attest_unpublished(task, result, workdir, branch)
+            self.bind_pr(task, result, workdir)
+            result.update(self.provenance_fields())
         self.tasks.finish(task_id, outcome, **result)
         try:
             self.tasks.store.publish({"type": "task_finished", "task": task_id, "agent": task_id,

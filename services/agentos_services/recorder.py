@@ -141,3 +141,20 @@ class Recorder:
             response["truncated"] = True
         return {"seq": seq, "ts": ts, "agent": agent, "provider": provider, "model": model,
                 "request": request, "response": response}
+
+
+def transcript_digest(directory, recording):
+    """sha256 over a recording: one "<seq> <sha256 of the entry file>" line per request,
+    in order. Returns (hex digest, request count), or (None, 0) when there is none."""
+    path = os.path.join(directory, recording)
+    try:
+        names = sorted(n for n in os.listdir(path) if n.endswith(".json"))
+    except OSError:
+        return None, 0
+    if not names:
+        return None, 0
+    lines = []
+    for name in names:
+        with open(os.path.join(path, name), "rb") as f:
+            lines.append("%s %s" % (name[:-5], hashlib.sha256(f.read()).hexdigest()))
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest(), len(names)

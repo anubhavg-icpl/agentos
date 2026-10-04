@@ -8,7 +8,7 @@ version = "0.4.0"
 description = "AgentOS model gateway, agent daemon, orchestrator and scheduler"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-dependencies = ["redis>=5"]
+dependencies = ["redis>=5", "cryptography>=41"]
 
 [project.scripts]
 agentos-model-gateway = "agentos_services.gateway:main"
@@ -18,6 +18,7 @@ agentos-fleet = "agentos_services.fleet:main"
 agentos-market = "agentos_services.market:main"
 agentos-mcp-bus = "agentos_services.mcp_bus:main"
 agentos-gpu = "agentos_services.gpu:main"
+agentos-provenance = "agentos_services.provenance:main"
 agentos-netns = "agentos_services.netns:main"
 agentos-orchestrator = "agentos_services.orchestrator:main"
 agentos-task-runner = "agentos_services.taskrunner:main"

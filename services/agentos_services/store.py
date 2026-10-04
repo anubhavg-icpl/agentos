@@ -220,17 +220,31 @@ class Store:
         global_key = self._k("spend", date, "global")
         model_key = self._k("spend", date, "model", model)
         tokens_key = self._k("tokens", date, "agent", agent)
+        models_key = self._k("models", date, "agent", agent)
         p = self.r.pipeline()
         p.incrbyfloat(agent_key, usd)
         p.incrbyfloat(global_key, usd)
         p.incrbyfloat(model_key, usd)
+        p.hincrbyfloat(models_key, model, usd)
         for field, value in (usage or {}).items():
             if value:
                 p.hincrby(tokens_key, field, int(value))
-        for key in (agent_key, global_key, model_key, tokens_key):
+        for key in (agent_key, global_key, model_key, tokens_key, models_key):
             p.expire(key, DAY_TTL)
         results = p.execute()
         return float(results[0]), float(results[1])
+
+    def agent_usage(self, agent, dates):
+        """Spend, tokens and per-model spend of one agent over the given UTC dates
+        (provenance: what a task cost, from the gateway's own books)."""
+        usd, tokens, models = 0.0, {}, {}
+        for date in dates:
+            usd += self.spend(agent, date)
+            for k, v in self.r.hgetall(self._k("tokens", date, "agent", agent)).items():
+                tokens[k] = tokens.get(k, 0) + int(v)
+            for k, v in self.r.hgetall(self._k("models", date, "agent", agent)).items():
+                models[k] = models.get(k, 0.0) + float(v)
+        return {"usd": round(usd, 6), "tokens": tokens, "models": models}
 
     def count_unparsed(self, provider):
         """Count a response whose usage could not be read (billed at an estimate)."""

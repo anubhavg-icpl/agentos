@@ -36,6 +36,7 @@
 
     # Developer experience
     ./git-automation
+    ./provenance
     ./provisioning
     ./editors
     ./desktop
