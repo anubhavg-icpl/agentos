@@ -36,10 +36,17 @@ writeShellApplication {
       agentos-task submit --agent <name> [--workspace <name|path>] (--prompt <text> | --prompt-file <file>)
                           [--budget <usd>] [--timeout <sec>] [--after <task-id>]... [--swarm <n>]
                           [--group <name>] [--isolate] [--wait] [--json]
+                          [--gate] [--priority <n>] [--retries <n>] [--backoff <sec>]
+                          [--concurrency-key <k>] [--dedupe-key <k>] [--verify '["cmd","arg"]']
+                          [--judge-agent <name> --judge-prompt <text>]
       agentos-task list [--status <s>] [--group <name>] [--json]
       agentos-task show <task-id|group> [--json]
       agentos-task logs <task-id> [-f]
       agentos-task cancel <task-id|group>
+      agentos-task approve <task-id> [--note <text>]
+      agentos-task reject <task-id> [--note <text>]
+      agentos-task workflow submit <file.json> [--wait] [--json]
+      agentos-task workflow status <group> [--json]
 
     NOTES
       --after <id>   start when that task has succeeded; the prompt may use {prev_result}
@@ -48,6 +55,19 @@ writeShellApplication {
                      own branch (agent/<task-id>)
       --budget       daily budget for each task's agent, in USD (enforced by the gateway)
       --wait         block until the task (or the whole swarm) has finished; exit 1 if any failed
+      --gate         the task waits (awaiting_approval, no worker slot) until: agentos-task approve <id>
+      --priority     higher runs first (-1000..1000, default 0); first come first served within a priority
+      --retries      retry a failed or timed-out run up to n times; --backoff sec doubles each retry
+      --concurrency-key / --dedupe-key
+                     at most one running task per concurrency key; a submit whose dedupe key is held by an
+                     unfinished task prints that task's id instead of queueing a new one
+      --verify       JSON argv run in the task's worktree after success (needs taskrunner support)
+      --judge-*      with --swarm: after all members finish a judge task gets {results}; its first output
+                     line "winner: <task-id>" is recorded on the group
+      workflow       file.json is {"nodes": {"name": {"agent": ..., "workspace": ..., "prompt": ...,
+                     "depends_on": ["other"], "when": "all_succeeded"}}}; prompts may use
+                     {nodes.<name>.result}; when: all_succeeded|any_succeeded|any_failed|all_failed|always|
+                     node:<name>=succeeded|failed|timeout|skipped|cancelled, with and/or/not/parentheses
     EOF
     }
 
@@ -84,6 +104,7 @@ writeShellApplication {
 
     cmd_submit() {
       local agent="" workspace="$PWD" prompt="" have_prompt=0 budget="" timeout="" swarm="" group="" isolate=false wait=0 raw=0
+      local gate=false priority="" retries="" backoff="" ckey="" dkey="" verify="null" jagent="" jprompt=""
       local after=()
       while [ $# -gt 0 ]; do
         case "$1" in
@@ -99,6 +120,18 @@ writeShellApplication {
           --swarm) swarm="''${2:?--swarm needs a value}"; shift 2 ;;
           --group) group="''${2:?--group needs a value}"; shift 2 ;;
           --isolate) isolate=true; shift ;;
+          --gate) gate=true; shift ;;
+          --priority) priority="''${2:?--priority needs a value}"; shift 2 ;;
+          --retries) retries="''${2:?--retries needs a value}"; shift 2 ;;
+          --backoff) backoff="''${2:?--backoff needs a value}"; shift 2 ;;
+          --concurrency-key) ckey="''${2:?--concurrency-key needs a value}"; shift 2 ;;
+          --dedupe-key) dkey="''${2:?--dedupe-key needs a value}"; shift 2 ;;
+          --verify)
+            verify=$(jq -c 'if type == "array" then {cmd: .} else . end' <<<"''${2:?--verify needs a JSON array}") \
+              || die "--verify must be a JSON array such as '[\"pytest\",\"-q\"]'"
+            shift 2 ;;
+          --judge-agent) jagent="''${2:?--judge-agent needs a value}"; shift 2 ;;
+          --judge-prompt) jprompt="''${2:?--judge-prompt needs a value}"; shift 2 ;;
           --wait) wait=1; shift ;;
           --json) raw=1; shift ;;
           *) die "unknown option: $1 (see: agentos-task help)" ;;
@@ -106,17 +139,30 @@ writeShellApplication {
       done
       [ -n "$agent" ] || die "--agent is required"
       [ "$have_prompt" -eq 1 ] || die "--prompt or --prompt-file is required"
+      if [ -n "$jagent$jprompt" ] && { [ -z "$jagent" ] || [ -z "$jprompt" ]; }; then
+        die "--judge-agent and --judge-prompt go together"
+      fi
 
       local body
       body=$(jq -cn --arg agent "$agent" --arg workspace "$workspace" --arg prompt "$prompt" \
         --arg budget "$budget" --arg timeout "$timeout" --arg swarm "$swarm" --arg group "$group" \
-        --argjson isolate "$isolate" --args '
+        --argjson isolate "$isolate" --argjson gate "$gate" --argjson verify "$verify" \
+        --arg priority "$priority" --arg retries "$retries" --arg backoff "$backoff" \
+        --arg ckey "$ckey" --arg dkey "$dkey" --arg jagent "$jagent" --arg jprompt "$jprompt" --args '
         {agent: $agent, workspace: $workspace, prompt: $prompt, isolate: $isolate, depends_on: $ARGS.positional}
+        + (if $gate then {gate: true} else {} end)
+        + (if $priority != "" then {priority: ($priority | tonumber)} else {} end)
+        + (if $retries != "" then {max_retries: ($retries | tonumber)} else {} end)
+        + (if $backoff != "" then {backoff_sec: ($backoff | tonumber)} else {} end)
+        + (if $ckey != "" then {concurrency_key: $ckey} else {} end)
+        + (if $dkey != "" then {dedupe_key: $dkey} else {} end)
+        + (if $verify != null then {verify: $verify} else {} end)
+        + (if $jagent != "" then {judge: {agent: $jagent, prompt: $jprompt}} else {} end)
         + (if $budget != "" then {budget_usd: ($budget | tonumber)} else {} end)
         + (if $timeout != "" then {timeout_sec: ($timeout | tonumber)} else {} end)
         + (if $swarm != "" then {swarm: ($swarm | tonumber)} else {} end)
         + (if $group != "" then {group: $group} else {} end)' "''${after[@]}") \
-        || die "invalid number in --budget, --timeout or --swarm"
+        || die "invalid number in --budget, --timeout, --swarm, --priority, --retries or --backoff"
 
       local resp
       resp=$(api POST /tasks "$body")
@@ -124,7 +170,14 @@ writeShellApplication {
         echo "$resp"
       else
         jq -r '.tasks[].id' <<<"$resp"
-        ok "queued $(jq '.tasks | length' <<<"$resp") task(s); follow with: agentos-task show $(jq -r '.group // .tasks[0].id' <<<"$resp")"
+        if [ "$(jq '.deduplicated // false' <<<"$resp")" = "true" ]; then
+          ok "dedupe key is held by an unfinished task; nothing queued"
+        else
+          ok "queued $(jq '.tasks | length' <<<"$resp") task(s); follow with: agentos-task show $(jq -r '.group // .tasks[0].id' <<<"$resp")"
+        fi
+        if [ "$(jq '[.tasks[] | select(.status == "awaiting_approval")] | length' <<<"$resp")" -gt 0 ]; then
+          info "awaiting approval; release with: agentos-task approve $(jq -r '[.tasks[] | select(.status == "awaiting_approval")][0].id' <<<"$resp")"
+        fi
       fi
       if [ "$wait" -eq 1 ]; then
         wait_for "$(jq -r '.group // .tasks[0].id' <<<"$resp")"
@@ -140,7 +193,7 @@ writeShellApplication {
         else
           resp=$(api GET "/tasks/$id" | jq -c '{tasks: [.]}')
         fi
-        pending=$(jq '[.tasks[] | select(.status == "queued" or .status == "running")] | length' <<<"$resp")
+        pending=$(jq '[.tasks[] | select(.status == "queued" or .status == "running" or .status == "awaiting_approval")] | length' <<<"$resp")
         if [ "$pending" -eq 0 ]; then
           break
         fi
@@ -180,7 +233,8 @@ writeShellApplication {
       local resp
       if resp=$(api GET "/groups/$id" 2>/dev/null); then
         if [ "$raw" -eq 1 ]; then echo "$resp"; return; fi
-        jq -r '"group \(.group): " + ([.counts | to_entries[] | "\(.value) \(.key)"] | join(", "))' <<<"$resp"
+        jq -r '"group \(.group): " + ([.counts | to_entries[] | "\(.value) \(.key)"] | join(", "))
+               + (if .winner then "   winner: \(.winner)" else "" end)' <<<"$resp"
         summary <<<"$resp"
         return
       fi
@@ -196,6 +250,9 @@ writeShellApplication {
         "after:     \(if (.depends_on | length) > 0 then (.depends_on | join(", ")) else "-" end)",
         "budget:    \(if .budget_usd then "$\(.budget_usd)" else "gateway default" end)   timeout: \(.timeout_sec)s",
         "exit code: \(.result.exit_code // "-")",
+        "attempt:   \(.attempt // 1) of \((.max_retries // 0) + 1)\(if .not_before and .status == "queued" then "   (next try " + (.not_before | floor | strftime("%H:%M:%S")) + ")" else "" end)",
+        (if .approval then "approval:  \(.approval.decision) by \(.approval.by) at \(.approval.at | floor | strftime("%m-%d %H:%M:%S"))\(if .approval.note then " (\(.approval.note))" else "" end)" else empty end),
+        (if .result.verify then "verify:    \(.result.verify.status)" else empty end),
         "prompt:    \(.prompt | if length > 200 then .[0:200] + "..." else . end)",
         (if .result.output_tail then "\n--- output (tail) ---\n\(.result.output_tail)" else empty end)' <<<"$resp"
     }
@@ -222,7 +279,73 @@ writeShellApplication {
       api POST "/tasks/$id/cancel" | jq -r '.tasks[] | "\(.id) \(.status)"'
     }
 
+    cmd_decide() {
+      local verb="$1" id="''${2:-}" note=""
+      [ -n "$id" ] || die "Usage: agentos-task $verb <task-id> [--note <text>]"
+      valid_id "$id" || die "invalid id: $id"
+      shift 2
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --note) note="''${2:?--note needs a value}"; shift 2 ;;
+          *) die "unknown option: $1" ;;
+        esac
+      done
+      api POST "/tasks/$id/$verb" "$(jq -cn --arg note "$note" 'if $note == "" then {} else {note: $note} end')" \
+        | jq -r '.tasks[] | "\(.id) \(.status)"'
+    }
+
+    cmd_workflow() {
+      local sub="''${1:-}"
+      shift || true
+      case "$sub" in
+        submit)
+          local file="''${1:-}" wait=0 raw=0
+          [ -n "$file" ] || die "Usage: agentos-task workflow submit <file.json> [--wait] [--json]"
+          shift
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --wait) wait=1; shift ;;
+              --json) raw=1; shift ;;
+              *) die "unknown option: $1" ;;
+            esac
+          done
+          [ -r "$file" ] || die "cannot read $file"
+          jq -e 'type == "object"' "$file" >/dev/null 2>&1 || die "$file is not a JSON object"
+          local resp
+          resp=$(api POST /workflows "$(jq -c . "$file")")
+          if [ "$raw" -eq 1 ]; then
+            echo "$resp"
+          else
+            jq -r '.group' <<<"$resp"
+            ok "queued $(jq '.tasks | length' <<<"$resp") node(s); follow with: agentos-task workflow status $(jq -r '.group' <<<"$resp")"
+          fi
+          if [ "$wait" -eq 1 ]; then
+            wait_for "$(jq -r '.group' <<<"$resp")"
+          fi
+          ;;
+        status)
+          local group="''${1:-}" raw=0
+          [ -n "$group" ] || die "Usage: agentos-task workflow status <group> [--json]"
+          [ "''${2:-}" != "--json" ] || raw=1
+          valid_id "$group" || die "invalid id: $group"
+          local resp
+          resp=$(api GET "/workflows/$group")
+          if [ "$raw" -eq 1 ]; then echo "$resp"; return; fi
+          jq -r '"workflow \(.group): " + ([.counts | to_entries[] | "\(.value) \(.key)"] | join(", "))
+                 + (if .winner then "   winner: \(.winner)" else "" end),
+                 (["NODE", "STATUS", "TASK", "AFTER", "ATTEMPT"] | @tsv),
+                 (.tasks as $all | .tasks[] | [ (.node // (.role // "-")), .status, .id,
+                    ((.depends_on | map(. as $d | ($all | map(select(.id == $d)) | first | (.node // .id) // $d)) | join(",")) | if . == "" then "-" else . end),
+                    "\(.attempt // 1)/\((.max_retries // 0) + 1)" ] | @tsv)' <<<"$resp" \
+            | column -t -s "$(printf '\t')"
+          ;;
+        *) die "Usage: agentos-task workflow submit <file.json> | workflow status <group>" ;;
+      esac
+    }
+
     case "''${1:-help}" in
+      approve|reject) cmd_decide "$@" ;;
+      workflow|wf) shift; cmd_workflow "$@" ;;
       submit|run) shift; cmd_submit "$@" ;;
       list|ls) shift; cmd_list "$@" ;;
       show|status) shift; cmd_show "$@" ;;
