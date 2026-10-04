@@ -49,6 +49,29 @@ log = logging.getLogger("agentos.taskrunner")
 KILL_LOOKUP_SEC = 3
 
 
+# Keep in step with HARDEN_PROPS in nixos/packages/cli.nix (see the comment there
+# for what is left out on purpose: MemoryDenyWriteExecute, ProcSubset=pid).
+HARDEN_PROPS = (
+    "SystemCallFilter=@system-service",
+    "SystemCallFilter=~@privileged @mount @module @raw-io @reboot @swap @obsolete @cpu-emulation @debug",
+    "SystemCallErrorNumber=EPERM",
+    "SystemCallArchitectures=native",
+    "RestrictNamespaces=yes",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+    "ProtectProc=invisible",
+    "LockPersonality=yes",
+    "RestrictRealtime=yes",
+    "RestrictSUIDSGID=yes",
+    "ProtectClock=yes",
+    "ProtectControlGroups=yes",
+    "ProtectKernelLogs=yes",
+    "ProtectHostname=yes",
+    "CapabilityBoundingSet=",
+    "AmbientCapabilities=",
+    "MemorySwapMax=0",
+)
+
+
 class RunnerError(Exception):
     pass
 
@@ -205,9 +228,6 @@ class TaskRunner:
             "-p", "ReadWritePaths=%s %s" % (" ".join(writable), home),
             "-p", "ProtectKernelTunables=yes",
             "-p", "ProtectKernelModules=yes",
-            "-p", "ProtectControlGroups=yes",
-            "-p", "RestrictSUIDSGID=yes",
-            "-p", "LockPersonality=yes",
             "-p", "UMask=0002",
             # Backstop in case this helper dies before enforcing the timeout
             "-p", "RuntimeMaxSec=%d" % (timeout + 60),
@@ -217,6 +237,8 @@ class TaskRunner:
             "--setenv=TERM=dumb",
             "--setenv=LANG=C.UTF-8",
         ]
+        for prop in HARDEN_PROPS:
+            args += ["-p", prop]
         args += ["--setenv=%s=%s" % kv for kv in env.items()]
         return args
 

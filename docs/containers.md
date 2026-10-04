@@ -17,6 +17,35 @@ agent). A container additionally gets:
 | Network | A network namespace `agentos-<id>` joined with `NetworkNamespacePath=` |
 | Devices | `PrivateDevices=yes`; granted GPUs are bind-mounted (see [gpu.md](gpu.md)) |
 
+## Kernel-surface hardening
+
+Sandbox units, container units and the orchestrator's task and verify units
+all get the same extra properties (`HARDEN_PROPS` in `nixos/packages/cli.nix`
+and `taskrunner.py`):
+
+- `SystemCallFilter=@system-service` minus `@privileged @mount @module
+  @raw-io @reboot @swap @obsolete @cpu-emulation @debug`, with
+  `SystemCallErrorNumber=EPERM` (denied calls fail instead of killing the
+  agent, so libuv falls back from io_uring) and `SystemCallArchitectures=native`
+- `RestrictNamespaces=yes` (`unshare -U` fails), `RestrictAddressFamilies=AF_UNIX
+  AF_INET AF_INET6 AF_NETLINK` (no raw or packet sockets)
+- `ProtectProc=invisible`, `ProtectClock`, `ProtectControlGroups`,
+  `ProtectKernelLogs`, `ProtectHostname`, `LockPersonality`, `RestrictRealtime`,
+  `RestrictSUIDSGID`
+- empty `CapabilityBoundingSet=` and `AmbientCapabilities=`, `MemorySwapMax=0`
+
+Left out on purpose:
+
+- `MemoryDenyWriteExecute`: Node and V8 need writable-executable JIT pages.
+- `ProcSubset=pid`: it hides `/proc/cpuinfo`, `/proc/stat` and `/proc/meminfo`,
+  so Node's `os.cpus()` returns `[]` and jest, npm and webpack size their worker
+  pools wrongly.
+
+Consequence of `RestrictNamespaces=yes`: tools that build their own sandbox
+from user namespaces (bubblewrap, Chromium's sandbox, rootless containers)
+cannot run inside an agent; run Chromium with `--no-sandbox`. Git, HTTPS
+and npm are unaffected.
+
 ## Network
 
 `agentos-netns setup <id>` runs as `ExecStartPre=+` of the unit (root) and
@@ -41,10 +70,14 @@ Firewall (security and networking modules):
 - INPUT from `agentos0` (chain `agentos-in`): only the gateway port, DNS and
   ping to the bridge address. Other host services, even ones open to all
   interfaces such as SSH, are rejected.
-- FORWARD from `agentos0` (chain `agentos-fwd`): never to the `agentos-llm`
-  ipset (provider APIs only via the gateway), never to the agent subnet. With
-  `defaultEgress = "deny"` only addresses in `agentos-egress` are allowed;
-  with `"allow"` RFC1918 and link-local ranges are refused. IPv6 is rejected.
+- FORWARD from `agentos0` (chain `agentos-fwd`) is default deny: never to the
+  `agentos-llm` ipset (provider APIs only via the gateway), never back out of
+  `agentos0` (other containers), never to `169.254.169.254` or any private,
+  loopback, CGNAT, link-local, multicast or reserved range (the LAN), even if
+  an allowlisted name resolves there. The gateway and DNS forwarder are host
+  addresses reached through INPUT (`agentos-in`), not forwarded. With
+  `defaultEgress = "deny"` only addresses in `agentos-egress` are then allowed;
+  with `"allow"` the remaining public addresses are. IPv6 is rejected.
 - Loopback services of the host are unreachable: the container's `127.0.0.1`
   is its own.
 
@@ -56,11 +89,15 @@ Firewall (security and networking modules):
   namespaces (`nsenter`), picking a process inside the PID namespace.
 - Everything under `/run/agentos/net/<id>`, the namespace and the veth are
   removed when the unit stops.
+- Before every setup (and on `agentos-netns sweep`) stale `agentos-*`
+  namespaces, state directories and `avh*` veths with no live
+  `agentos-agent-<id>.service` are removed, so a crash does not leak addresses.
 
 ## Limits
 
 - No user namespace (`PrivateUsers=`): the agent is `agentos-agent` in the
-  host's user namespace, with no capabilities and `NoNewPrivileges`.
+  host's user namespace, with no capabilities and `NoNewPrivileges`; creating
+  user namespaces inside is blocked (`RestrictNamespaces=yes`).
 - The agent binary must live under `/nix/store` or the system profile; tools
   in the operator's home profile are not visible (same as the sandbox).
 - The container is not a general OCI container; use `containerRuntime` for
