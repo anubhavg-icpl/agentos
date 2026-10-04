@@ -112,6 +112,9 @@ class OpenAICompatible(OpenAI):
     name = "openai-compatible"
     free = True
 
+    def inject_key(self, headers, key):
+        self.strip_credentials(headers)
+        super().inject_key(headers, key)
 
 class AzureOpenAI(OpenAI):
     name = "azure-openai"
