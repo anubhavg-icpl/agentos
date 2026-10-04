@@ -62,8 +62,8 @@ from .bus import Bus, BusError
 from .loops import fingerprint
 from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
-from .store import Store, connect
-from .usage import Pricing, UsageParser
+from .store import BudgetRefused, Store, connect
+from .usage import GENERATION_KEYS, Pricing, UsageParser, estimate_cost, output_cap
 
 log = logging.getLogger("agentos.gateway")
 
@@ -143,23 +143,36 @@ class Gateway:
                 "AgentOS rate limit: more than %d requests per minute for agent %s" % (rpm, agent),
                 {"Retry-After": str(max(1, 60 - int(now) % 60))},
             )
+
+    def reserve_budget(self, agent, usd):
+        """Hold `usd` against the agent's and the global budget, or refuse with 402."""
         limit = self.daily_limit(agent)
-        spent = self.store.spend(agent)
-        if spent >= limit:
-            self._budget_exceeded(agent, spent, limit)
-            raise HTTPError(
-                402, "budget_exceeded",
-                "AgentOS daily budget exhausted for agent %s: $%.4f of $%.2f" % (agent, spent, limit),
-            )
         global_limit = float(self.cfg["budget"]["global_daily_usd"])
-        global_spent = self.store.global_spend()
-        if global_spent >= global_limit:
-            if self.store.mark_alert("_global", "exceeded"):
-                self.store.publish({"type": "global_budget_exceeded", "usd": global_spent, "limit_usd": global_limit})
-            raise HTTPError(
-                402, "budget_exceeded",
-                "AgentOS global daily budget exhausted: $%.4f of $%.2f" % (global_spent, global_limit),
-            )
+        if not self.cfg["budget"].get("reserve", True):
+            usd = 0.0
+        try:
+            return self.store.reserve(agent, usd, limit, global_limit,
+                                      float(self.cfg["gateway"]["upstream_timeout_sec"]) + 60)
+        except BudgetRefused as exc:
+            if exc.scope == "agent":
+                if exc.spent >= exc.limit:
+                    self._budget_exceeded(agent, exc.spent, exc.limit)
+                    message = "AgentOS daily budget exhausted for agent %s: $%.4f of $%.2f" % (
+                        agent, exc.spent, exc.limit)
+                else:
+                    message = ("AgentOS daily budget for agent %s cannot cover this request: $%.4f spent, "
+                               "$%.4f reserved by requests in flight, ~$%.4f estimated, limit $%.2f" % (
+                                   agent, exc.spent, exc.reserved, usd, exc.limit))
+            else:
+                if exc.spent >= exc.limit and self.store.mark_alert("_global", "exceeded"):
+                    self.store.publish({"type": "global_budget_exceeded", "usd": exc.spent, "limit_usd": exc.limit})
+                if exc.spent >= exc.limit:
+                    message = "AgentOS global daily budget exhausted: $%.4f of $%.2f" % (exc.spent, exc.limit)
+                else:
+                    message = ("AgentOS global daily budget cannot cover this request: $%.4f spent, "
+                               "$%.4f reserved, ~$%.4f estimated, limit $%.2f" % (
+                                   exc.spent, exc.reserved, usd, exc.limit))
+            raise HTTPError(402, "budget_exceeded", message)
 
     def _budget_exceeded(self, agent, spent, limit):
         if self.store.mark_alert(agent, "exceeded"):
@@ -446,7 +459,7 @@ class Gateway:
         api = prov.get("api", "openai")
         replaying = self.store.replay_state(agent) is not None
         if not replaying:
-            self.admit(agent)
+            self.admit(agent)           # circuit breaker and rate limit
 
         body = read_body(req, int(self.cfg["gateway"]["max_request_bytes"]))
         orig_body = body
@@ -478,6 +491,25 @@ class Gateway:
                 edited = True
             if edited:
                 body = json.dumps(payload).encode()
+        resv = self.reserve_budget(agent, self.estimate(request_model, payload, body, rest_path))
+        try:
+            self.forward(req, agent, provider, api, rest_path, query, started, body, orig_body,
+                         request_model, route, resv)
+        finally:
+            resv.release()
+
+    def estimate(self, model, payload, body, rest_path):
+        """Estimated USD of a request, held against the budget while it runs."""
+        if not isinstance(payload, dict) or not any(k in payload for k in GENERATION_KEYS):
+            return 0.0
+        if rest_path.endswith("embeddings"):
+            return estimate_cost(self.pricing, model, len(body or b""), 0)
+        cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)))
+        return estimate_cost(self.pricing, model, len(body or b""), cap)
+
+    def forward(self, req, agent, provider, api, rest_path, query, started, body, orig_body,
+                request_model, route, resv):
+        prov = self.cfg["providers"][provider]
         record_seq = None
         captured = bytearray()
         capture_cap = int(self.cfg["recording"]["max_body_bytes"])
@@ -582,6 +614,8 @@ class Gateway:
         except Exception:
             log.exception("accounting failed for agent %s", agent)
         finally:
+            # Spend is recorded; drop the hold before the client sees the end
+            resv.release()
             if pending and not client_gone:
                 write_chunk(req, pending)
 

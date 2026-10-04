@@ -39,6 +39,7 @@ class MockUpstream(http.server.ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), MockHandler)
         self.requests = []
         self.fail_status = None
+        self.delay = 0.0
 
     @property
     def url(self):
@@ -55,6 +56,8 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
         self.server.requests.append({"path": self.path, "headers": dict(self.headers), "body": body})
+        if self.server.delay:
+            time.sleep(self.server.delay)
         if self.server.fail_status:
             return self._json(self.server.fail_status, {"type": "error", "error": {"type": "api_error"}})
         model = body.get("model", "claude-test")

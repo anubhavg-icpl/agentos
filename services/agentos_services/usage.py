@@ -213,3 +213,30 @@ class Pricing:
             + usage["cache_write_tokens"] * cache_write
         ) / 1_000_000
         return usd, priced
+
+
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
+GENERATION_KEYS = ("messages", "input", "contents", "prompt")
+
+
+def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS):
+    """Most output tokens a request may produce, as the client asked for it."""
+    if not isinstance(payload, dict):
+        return default
+    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+        value = payload.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value)
+    gen = payload.get("generationConfig")
+    if isinstance(gen, dict) and isinstance(gen.get("maxOutputTokens"), (int, float)) and gen["maxOutputTokens"] > 0:
+        return int(gen["maxOutputTokens"])
+    return default
+
+
+def estimate_cost(pricing, model, input_bytes, max_output_tokens):
+    """Worst-case-ish USD for a request: ~4 bytes per input token plus the
+    full output allowance, both at the model's list price."""
+    rates, _ = pricing.rates(model)
+    in_tokens = (int(input_bytes) + 3) // 4
+    return (in_tokens * float(rates.get("input_per_1m", 0.0))
+            + int(max_output_tokens) * float(rates.get("output_per_1m", 0.0))) / 1_000_000

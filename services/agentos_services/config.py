@@ -33,6 +33,11 @@ DEFAULTS = {
         "global_daily_usd": 500.0,
         "alert_thresholds": [50, 80, 95, 100],
         "auto_shutdown": True,
+        # Hold an estimated cost (max output tokens + input size) before
+        # forwarding, so concurrent requests cannot overshoot a budget
+        "reserve": True,
+        # Output allowance assumed when a request sets no max_tokens
+        "default_max_tokens": 4096,
     },
     "limits": {
         "max_requests_per_minute": 60,
