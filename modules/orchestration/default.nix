@@ -43,6 +43,18 @@ in
       '';
     };
 
+    maxWorkflowNodes = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 50;
+      description = "Largest workflow (DAG of tasks) `agentos-task workflow submit` accepts";
+    };
+
+    maxRetries = lib.mkOption {
+      type = lib.types.ints.between 0 10;
+      default = 5;
+      description = "Largest `--retries` a task may ask for (the hard ceiling is 10)";
+    };
+
     taskTimeoutSec = lib.mkOption {
       type = lib.types.ints.positive;
       default = 3600;
@@ -106,6 +118,8 @@ in
 
     agentos.services.settings.orchestrator = {
       max_workers = cfg.maxWorkers;
+      max_workflow_nodes = cfg.maxWorkflowNodes;
+      max_retries_cap = cfg.maxRetries;
       default_timeout_sec = cfg.taskTimeoutSec;
       result_tail_kb = cfg.resultTailKB;
       tasks_dir = tasksDir;
