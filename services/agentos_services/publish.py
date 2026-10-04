@@ -45,6 +45,7 @@ import urllib.parse
 import urllib.request
 
 from . import config as configmod
+from . import provenance as prov
 
 log = logging.getLogger("agentos.publish")
 
@@ -220,7 +221,13 @@ class Publisher:
         return res
 
     # -- stage 1: as the agent user
-    def prepare_bundle(self, workdir, branch, base_sha, base, bundle):
+    def prepare_bundle(self, workdir, branch, base_sha, base, bundle, attest=None):
+        """Commit, check, bundle. Returns (branch commit, provenance envelope or None).
+
+        `attest(commit)` -> envelope (or None) runs after the leftover changes
+        are committed and before the bundle is made, so the signed commit is
+        exactly the one pushed; the envelope goes into a git note that rides
+        in the bundle."""
         agent = lambda args, **kw: self.git(["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *args],  # noqa: E731
                                             cwd=workdir, as_agent=True, **kw)
         if agent(["rev-parse", "--git-dir"]).returncode != 0:
@@ -245,25 +252,46 @@ class Publisher:
             base_ref = agent(["hash-object", "-t", "tree", "/dev/null"]).stdout.strip()
         if agent(["diff", "--quiet", base_ref, "refs/heads/" + branch]).returncode == 0:
             raise PublishError("the branch has no changes against %s" % base, "empty")
-        res = agent(["bundle", "create", "--quiet", bundle, "refs/heads/" + branch])
+        refs = ["refs/heads/" + branch]
+        sha = agent(["rev-parse", "--verify", "refs/heads/" + branch]).stdout.strip()
+        envelope = attest(sha) if attest else None
+        if envelope:
+            try:
+                prov.add_note(lambda a, cwd: agent(a), workdir, sha, envelope)
+            except prov.ProvenanceError as exc:
+                raise PublishError(str(exc), "provenance")
+            refs.append(prov.NOTES_REF)
+        res = agent(["bundle", "create", "--quiet", bundle, *refs])
         if res.returncode != 0:
             raise PublishError("could not bundle the branch: %s" % self._redact(res.stderr))
+        return sha, envelope
 
     # -- stage 2: as root, in a clean repository
-    def push_bundle(self, bundle, branch, url, tmp):
+    def push_bundle(self, bundle, branch, url, tmp, notes=False):
         bare = os.path.join(tmp, "clean.git")
         env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "HOME": tmp}
         self._git(["init", "--bare", "--quiet", bare], env=env, what="git init")
         safe = ["-c", "transfer.fsckObjects=true", "-c", "protocol.ext.allow=never", "-c", "core.hooksPath=/dev/null"]
-        self._git([*safe, "fetch", "--quiet", bundle, "refs/heads/%s:refs/heads/%s" % (branch, branch)],
-                  cwd=bare, env=env, what="git fetch (bundle)")
+        refspecs = ["refs/heads/%s:refs/heads/%s" % (branch, branch)]
+        self._git([*safe, "fetch", "--quiet", bundle, refspecs[0]], cwd=bare, env=env, what="git fetch (bundle)")
         if url.startswith(("https://", "http://")):
             cred = base64.b64encode(("x-access-token:" + self.token).encode()).decode()
             # In the environment, not argv: argv is world-readable in /proc
             env.update({"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader",
                         "GIT_CONFIG_VALUE_0": "Authorization: Basic " + cred})
-        self._git([*safe, "push", "--quiet", url, "refs/heads/%s:refs/heads/%s" % (branch, branch)],
-                  cwd=bare, env=env, what="git push")
+        if notes:
+            refspecs.append(prov.NOTES_REF + ":" + prov.NOTES_REF)
+            self._git([*safe, "fetch", "--quiet", bundle, prov.NOTES_REF + ":" + prov.NOTES_REF],
+                      cwd=bare, env=env, what="git fetch (notes)")
+            # Notes others pushed before must survive: merge them in (union; ours are on other commits)
+            remote = "refs/notes/remote-agentos-provenance"
+            got = self.git([*safe, "fetch", "--quiet", url, "+%s:%s" % (prov.NOTES_REF, remote)], cwd=bare, env=env)
+            if got.returncode == 0:
+                ident = {"GIT_AUTHOR_NAME": "AgentOS", "GIT_AUTHOR_EMAIL": "agentos@localhost",
+                         "GIT_COMMITTER_NAME": "AgentOS", "GIT_COMMITTER_EMAIL": "agentos@localhost"}
+                self._git([*safe, "notes", "--ref=" + prov.NOTES_REF, "merge", "-s", "union", remote],
+                          cwd=bare, env=dict(env, **ident), what="git notes merge")
+        self._git([*safe, "push", "--quiet", url, *refspecs], cwd=bare, env=env, what="git push")
         return self._git(["rev-parse", "refs/heads/" + branch], cwd=bare, env=env).stdout.strip()
 
     # -- GitHub REST
@@ -293,6 +321,20 @@ class Publisher:
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise PublishError("GitHub API unreachable: %s" % self._redact(str(exc)))
 
+    def set_status(self, repo, sha, state, description, context=prov.STATUS_CONTEXT, target_url=None):
+        """A commit status (the merge gate). Best effort: a failure is logged, never raised."""
+        body = {"state": state, "context": context, "description": clean_text(description, 140)}
+        if target_url:
+            body["target_url"] = target_url
+        try:
+            status, data = self.api("POST", "/repos/%s/statuses/%s" % (repo, sha), body)
+        except PublishError as exc:
+            log.warning("could not set the %s status: %s", context, exc)
+            return False
+        if status != 201:
+            log.warning("could not set the %s status (HTTP %s)", context, status)
+        return status == 201
+
     def open_pr(self, repo, branch, base, title, body, draft):
         status, data = self.api("POST", "/repos/%s/pulls" % repo,
                                 {"title": title, "head": branch, "base": base, "body": body, "draft": draft})
@@ -309,8 +351,12 @@ class Publisher:
         raise PublishError("GitHub refused the pull request (HTTP %s): %s" % (status, self._redact(clean_text(message, 200))), "api")
 
     # -- entry point
-    def publish(self, spec, task_id, workdir, branch, base_sha=None):
-        """Push `branch` from `workdir` and open the PR. Returns the result dict."""
+    def publish(self, spec, task_id, workdir, branch, base_sha=None, attest=None):
+        """Push `branch` from `workdir` and open the PR. Returns the result dict.
+
+        `attest(commit)` (see prepare_bundle) is given when provenance is on: its
+        envelope is pushed as a git note, summarised in the PR body, and the
+        `agentos/provenance` status is set on the pushed commit."""
         repo = spec["repo"]
         conf = self.opts["repos"].get(repo)
         if conf is None or not _REPO.match(repo):
@@ -331,14 +377,24 @@ class Publisher:
         try:
             os.chmod(tmp, 0o1777)  # the agent-side git writes the bundle here
             bundle = os.path.join(tmp, "branch.bundle")
-            self.prepare_bundle(workdir, branch, base_sha, base, bundle)
-            sha = self.push_bundle(bundle, branch, url, tmp)
+            _, envelope = self.prepare_bundle(workdir, branch, base_sha, base, bundle, attest)
+            sha = self.push_bundle(bundle, branch, url, tmp, notes=bool(envelope))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
         body = spec.get("body") or ""
         if spec.get("issue"):
             body += "\n\nRefs #%d" % spec["issue"]
         body += "\n\n---\nOpened by AgentOS from task `%s` (branch `%s`)." % (task_id, branch)
+        if envelope:
+            body += "\n\n---\n" + prov.summary(envelope)
         pr_url, number = self.open_pr(repo, branch, base, spec["title"], body.strip(), bool(spec.get("draft")))
+        result = {}
+        if attest is not None:
+            if envelope:
+                digest = prov.envelope_digest(envelope)
+                self.set_status(repo, sha, "success", "Signed provenance attached (sha256 %s)" % digest[:16], target_url=pr_url)
+                result = {"provenance_digest": digest}
+            else:
+                self.set_status(repo, sha, "failure", "No provenance was attached to this commit", target_url=pr_url)
         log.info("task %s: pushed %s to %s, PR %s", task_id, branch, repo, pr_url)
-        return {"pr_url": pr_url, "pr_number": number, "branch": branch, "base": base, "repo": repo, "pushed_sha": sha}
+        return {"pr_url": pr_url, "pr_number": number, "branch": branch, "base": base, "repo": repo, "pushed_sha": sha, **result}

@@ -365,6 +365,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | circuit-breaker | Rate limit, circuit breaker, resource limits | `agentos-breaker` |
 | secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
 | git-automation | Branch/commit/PR helpers, hooks (auto-commit †) | `agentos-git` |
+| provenance | Signed provenance for agent-authored commits (Ed25519, in-toto/DSSE, commit status) | `agentos-provenance` |
 | provisioning | Env detection, Nix dev shells | `agentos-env` |
 | scheduler | Cron-like task scheduling † | `agentos-schedule` |
 | notifications | Slack, Discord, webhook | `agentos-notify` |
@@ -481,6 +482,7 @@ agentos/
 | [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
 | [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
 | [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
+| [docs/provenance.md](docs/provenance.md) | Signed provenance for agent commits, verification and the merge gate |
 | [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
@@ -510,6 +512,7 @@ agentos/
 - [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
 - [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
 - [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
+- [x] Signed provenance for AI-authored commits, verifiable offline ([docs](docs/provenance.md))
 - [x] OpenClaw chat front end, opt-in ([docs](docs/openclaw.md))
 - [x] Pullrun packaged, experimental `--isolation pullrun` ([docs](docs/pullrun.md))
 

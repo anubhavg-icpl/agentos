@@ -12,7 +12,7 @@ python3Packages.buildPythonApplication {
   src = lib.cleanSource ../../services;
 
   build-system = [ python3Packages.setuptools ];
-  dependencies = [ python3Packages.redis ];
+  dependencies = [ python3Packages.redis python3Packages.cryptography ];
 
   nativeCheckInputs = [
     python3Packages.pytestCheckHook
