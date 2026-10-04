@@ -476,6 +476,7 @@ agentos/
 | [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
 | [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
 | [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
+| [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
 | [docs/desktop.md](docs/desktop.md) / [docs/aarch64.md](docs/aarch64.md) | Desktop edition and ARM64 |

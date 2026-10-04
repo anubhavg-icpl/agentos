@@ -156,6 +156,8 @@
           container = import ./tests/container.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
+          # OpenClaw chat gateway wired to the model gateway and orchestrator.
+          openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
         });
