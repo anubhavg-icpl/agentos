@@ -449,6 +449,24 @@ in
             enabled = false;
           }
         ])
+
+        # ════════════════════════════════════════════════════════════
+        # PULLRUN (operators only; present with agentos.pullrun.enable)
+        # ════════════════════════════════════════════════════════════
+        # It can run any image as root, through a root daemon whose socket is
+        # only open to the agentos group (operators). The sandboxed agent
+        # user cannot connect, so this server is for operators' own tools
+        # (an MCP client run by an operator), never for the agents spawned by
+        # `agentos spawn`. See docs/pullrun.md.
+        (lib.optional config.agentos.pullrun.enable {
+          name = "pullrun";
+          description = "Pullrun: run OCI images as containers or microVMs (root; operators only)";
+          command = "${config.agentos.pullrun.package}/bin/pullrun";
+          args = [ "--direct=false" "--socket" config.agentos.pullrun.socket "mcp" ];
+          category = "devops";
+          operatorsOnly = true;
+          enabled = true;
+        })
       ];
     };
 

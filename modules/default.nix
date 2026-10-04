@@ -31,6 +31,7 @@
     # Tool ecosystem
     ./mcp-registry
     ./mcp-servers
+    ./pullrun
 
     # Safety & control
     ./budget-controller
