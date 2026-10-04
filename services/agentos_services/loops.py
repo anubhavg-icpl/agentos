@@ -41,7 +41,8 @@ def scrub(text):
 
 def _normalise(obj):
     if isinstance(obj, dict):
-        return {k: ("<volatile>" if k in VOLATILE_KEYS and not isinstance(v, (dict, list)) else _normalise(v))
+        return {k: (v if k in {"input", "arguments", "args"} else
+                    "<volatile>" if k in VOLATILE_KEYS and not isinstance(v, (dict, list)) else _normalise(v))
                 for k, v in sorted(obj.items()) if k not in IGNORED_KEYS}
     if isinstance(obj, list):
         return [_normalise(v) for v in obj]

@@ -271,17 +271,25 @@ GENERATION_KEYS = ("messages", "input", "contents", "prompt")
 
 
 def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS):
-    """Most output tokens a request may produce, as the client asked for it."""
+    """Total output allowance across all requested candidates."""
     if not isinstance(payload, dict):
         return default
+    gen = payload.get("generationConfig")
+    gen = gen if isinstance(gen, dict) else {}
+    cap = default
     for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
         value = payload.get(key)
         if isinstance(value, (int, float)) and value > 0:
-            return int(value)
-    gen = payload.get("generationConfig")
-    if isinstance(gen, dict) and isinstance(gen.get("maxOutputTokens"), (int, float)) and gen["maxOutputTokens"] > 0:
-        return int(gen["maxOutputTokens"])
-    return default
+            cap = int(value)
+            break
+    else:
+        value = gen.get("maxOutputTokens")
+        if isinstance(value, (int, float)) and value > 0:
+            cap = int(value)
+    count = gen.get("candidateCount", payload.get("n", 1))
+    if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        cap *= count
+    return cap
 
 
 def estimate_cost(pricing, model, input_bytes, max_output_tokens):

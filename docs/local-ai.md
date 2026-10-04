@@ -58,9 +58,9 @@ to it is metered at $0 and cost routing can send work there. See
 
 ### Routing example
 
-Routing `targets` can cross providers, so cost routing can move work between
-hosted models and the zero-cost `local` provider. For example, route all CI
-agents to a small model, and pick the cheapest of a local group:
+Routing rules can use `routing.targets` to select another provider, provided
+it speaks the same wire format. Within local, route all CI agents to a small
+model, and pick the cheapest of a local group:
 
 ```nix
 agentos.budget-controller.routing = {
