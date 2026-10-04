@@ -484,6 +484,7 @@ agentos/
 | [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
+| [docs/agent-fleet-web.md](docs/agent-fleet-web.md) | agent-fleet in-browser chat and hub served on loopback (wllama vendored), Hugging Face deploy tool |
 | [docs/desktop.md](docs/desktop.md) / [docs/aarch64.md](docs/aarch64.md) | Desktop edition and ARM64 |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: add modules, agents, and more |

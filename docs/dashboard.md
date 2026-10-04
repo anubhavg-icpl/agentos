@@ -45,3 +45,7 @@ All `GET`, JSON:
 | `/api/requests?agent=ID&limit=50` | Newest first, from `/var/lib/agentos/logs/<id>.log` |
 
 The command is `agentos-dashboard --token-file FILE [--listen ADDR] [--port N] [--config PATH]`.
+
+## Links to other web UIs
+
+`/api/links` returns the links configured in `[dashboard] links` of `services.toml` (only `http(s)` URLs) and the page shows them in the header. Enabling `agentos.dashboard.agentFleetWeb` adds its chat and hub ([docs/agent-fleet-web.md](agent-fleet-web.md)).

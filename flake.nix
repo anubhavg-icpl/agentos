@@ -165,6 +165,8 @@
           pullrun = import ./tests/pullrun.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
+          # agent-fleet chat and hub: static server on loopback, wasm/COOP/COEP.
+          agent-fleet-web = import ./tests/agent-fleet-web.nix { inherit pkgs agentosModules; };
           # OpenClaw chat gateway wired to the model gateway and orchestrator.
           openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
