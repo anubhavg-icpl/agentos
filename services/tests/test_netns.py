@@ -99,3 +99,33 @@ def test_sweep_removes_only_stale(tmp_path):
     assert (tmp_path / "net" / "live").exists() and (tmp_path / "net" / "mine").exists()
     assert ["ip", "link", "del", "avhdeadbeef"] in rec.calls
     assert ["ip", "netns", "del", "agentos-dead"] in rec.calls
+
+
+def test_sweep_waits_for_a_setup_in_progress(tmp_path):
+    import threading
+    order = []
+    started = threading.Event()
+    other = {}
+
+    def runner(cmd, check=True):
+        if cmd[:3] == ["ip", "link", "add"]:
+            started.set()
+            t = threading.Thread(target=lambda: (other["ns"].sweep(), order.append("sweep")))
+            other["t"] = t
+            t.start()
+            t.join(0.5)                     # the sweep must still be blocked on the lock
+            order.append("setup-step")
+
+    ns = make(tmp_path, runner)
+    other["ns"] = make(tmp_path, lambda cmd, check=True: None)
+    other["ns"].list_veths = lambda: [names("agent-a")["host_if"]]
+    other["ns"].is_live = lambda i: False
+    ns.setup("agent-a")
+    other["t"].join(5)
+    assert order == ["setup-step", "sweep"]
+
+
+def test_setup_with_sweep_does_not_deadlock(tmp_path):
+    ns = make(tmp_path)
+    ns.list_veths = lambda: []
+    assert str(ns.setup("agent-a", sweep=True)) == "10.200.0.2"

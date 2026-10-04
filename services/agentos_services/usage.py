@@ -270,6 +270,10 @@ DEFAULT_MAX_OUTPUT_TOKENS = 4096
 GENERATION_KEYS = ("messages", "input", "contents", "prompt")
 
 
+def _positive(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
 def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS):
     """Total output allowance across all requested candidates."""
     if not isinstance(payload, dict):
@@ -290,6 +294,44 @@ def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS):
     if isinstance(count, int) and not isinstance(count, bool) and count > 0:
         cap *= count
     return cap
+
+
+def apply_output_cap(payload, api, rest_path, default, api_version=None):
+    """Give a generation request that sets no output limit one, so what is
+    reserved against the budget is also what the provider may produce.
+
+    The field is the provider's own: max_tokens (Anthropic and legacy
+    completions), max_completion_tokens (OpenAI chat; Azure from api-version
+    2024-09), max_output_tokens (Responses), generationConfig.maxOutputTokens
+    (Gemini). Returns True if the payload changed.
+    """
+    if not isinstance(payload, dict) or not any(k in payload for k in GENERATION_KEYS):
+        return False
+    if rest_path.endswith("embeddings") or not _positive(default):
+        return False
+    default = int(default)
+    if api == "gemini":
+        gen = payload.setdefault("generationConfig", {})
+        if not isinstance(gen, dict) or "maxOutputTokens" in gen:
+            return False
+        gen["maxOutputTokens"] = default
+        return True
+    if any(payload.get(k) is not None for k in ("max_tokens", "max_completion_tokens", "max_output_tokens")):
+        return False
+    if api == "anthropic":
+        field = "max_tokens"
+    elif rest_path.endswith("responses"):
+        field = "max_output_tokens"
+    elif rest_path.endswith("chat/completions"):
+        field = "max_completion_tokens"
+        if api_version is not None and str(api_version) < "2024-09":
+            field = "max_tokens"
+    elif "prompt" in payload:
+        field = "max_tokens"
+    else:
+        return False
+    payload[field] = default
+    return True
 
 
 def estimate_cost(pricing, model, input_bytes, max_output_tokens):
