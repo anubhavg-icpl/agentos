@@ -57,6 +57,8 @@ import threading
 import time
 import urllib.parse
 
+import redis
+
 from . import config as configmod
 from .bus import Bus, BusError
 from .loops import fingerprint
@@ -294,6 +296,14 @@ class Gateway:
             if provider not in self.cfg["providers"]:
                 raise HTTPError(404, "not_found", "unknown provider %r" % provider)
             self.proxy(req, agent, provider, rest, path.query, started)
+        except redis.RedisError as exc:
+            # Fail closed: without the store nothing can be authenticated,
+            # rate limited or metered, so nothing is forwarded.
+            log.error("state store unavailable: %s", exc)
+            send_json(req, 503, {"type": "error", "error": {
+                "type": "store_unavailable",
+                "message": "AgentOS state store (Redis) is unavailable; refusing to proxy unmetered traffic"}},
+                {"Retry-After": "5"})
         except HTTPError as exc:
             error = {"type": exc.error_type, "message": exc.message}
             if exc.details:
@@ -301,7 +311,10 @@ class Gateway:
             send_json(req, exc.status, {"type": "error", "error": error}, exc.headers)
             # Only account errors to agents that proved who they are
             if authed:
-                self.store.count_request(authed, exc.status)
+                try:
+                    self.store.count_request(authed, exc.status)
+                except redis.RedisError as err:
+                    log.error("cannot count request: %s", err)
                 self.write_log(authed, {"method": req.command, "path": redact(path.path), "status": exc.status, "error": exc.error_type})
 
     def api(self, req, parts, query, admin):
@@ -564,13 +577,19 @@ class Gateway:
                 conn.request(req.command, target, body=body, headers=headers)
                 resp = conn.getresponse()
             except (OSError, http.client.HTTPException) as exc:
-                self.upstream_failed(agent)
+                try:
+                    self.upstream_failed(agent)
+                except redis.RedisError as err:
+                    log.error("cannot update circuit breaker: %s", err)
                 raise HTTPError(502, "api_error", "AgentOS gateway could not reach %s: %s" % (provider, exc))
 
-            if resp.status >= 500:
-                self.upstream_failed(agent)
-            else:
-                self.store.record_success(agent)
+            try:
+                if resp.status >= 500:
+                    self.upstream_failed(agent)
+                else:
+                    self.store.record_success(agent)
+            except redis.RedisError as exc:
+                log.error("cannot update circuit breaker: %s", exc)     # response is already in hand
 
             parser = UsageParser(api, resp.getheader("Content-Type", ""), request_model)
             req.send_response(resp.status)
