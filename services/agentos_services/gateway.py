@@ -559,8 +559,9 @@ class Gateway:
         if edited:
             body = json.dumps(payload).encode()
         free = adapter.zero_cost
-        resv = self.reserve_budget(agent, 0.0 if free else self.estimate(request_model, payload, body, rest_path))
-        resv.estimate = 0.0 if free else self.estimate(request_model, payload, body, rest_path)
+        estimate = 0.0 if free else self.estimate(request_model, payload, body, rest_path)
+        resv = self.reserve_budget(agent, estimate)
+        resv.estimate = estimate
         try:
             self.forward(req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
                          request_model, route, resv)
