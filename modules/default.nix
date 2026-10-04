@@ -13,6 +13,7 @@
     ./security
     ./observability
     ./dashboard
+    ./agent-fleet-web
     ./fleet
     ./marketplace
     ./storage

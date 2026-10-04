@@ -107,6 +107,10 @@ DEFAULTS = {
         "events": [],
         "targets": [],
     },
+    "dashboard": {
+        # Links shown in the dashboard header: [{name = "...", url = "http://..."}]
+        "links": [],
+    },
 }
 
 # Provider api kinds the gateway has an adapter for (providers.py)

@@ -19,6 +19,7 @@ Endpoints (GET):
   /api/spend              today's spend per agent and per model
   /api/history?days=N     spend per day (default 7) with per-agent split
   /api/requests?agent=ID&limit=N   tail of one agent's gateway request log
+  /api/links              configured links to other local web UIs
 """
 
 import argparse
@@ -94,6 +95,7 @@ class Dashboard:
             "/api/spend": self.spend,
             "/api/history": self.history,
             "/api/requests": self.requests,
+            "/api/links": self.links,
         }
         fn = handlers.get(route)
         if fn is None:
@@ -180,6 +182,15 @@ class Dashboard:
             return 400, {"error": "agent must be a valid agent id"}
         limit = _int((query.get("limit") or ["50"])[0], 50, 1, MAX_REQUESTS)
         return 200, {"agent": agent, "requests": tail_log(self.log_dir, agent, limit)}
+
+    def links(self, query):
+        """Links to other local web UIs; only http(s) URLs are passed on."""
+        out = []
+        for link in self.cfg.get("dashboard", {}).get("links", []):
+            name, url = str(link.get("name", "")), str(link.get("url", ""))
+            if name and url.startswith(("http://", "https://")):
+                out.append({"name": name, "url": url})
+        return 200, {"links": out}
 
     def health(self, query):
         services = {}

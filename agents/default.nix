@@ -265,6 +265,10 @@ rec {
   schedule-cli = pkgs.callPackage ../nixos/packages/schedule-cli.nix { };
   # OCI runtime: containers and Firecracker microVMs from one image
   pullrun = pkgs.callPackage ../nixos/packages/pullrun.nix { };
+  # agent-fleet: in-browser chat and fleet hub (static site, wllama vendored),
+  # and the CLI that publishes them to Hugging Face Spaces
+  agent-fleet-web = pkgs.callPackage ../nixos/packages/agent-fleet-web.nix { };
+  agent-fleet-deploy = pkgs.callPackage ../nixos/packages/agent-fleet-deploy.nix { inherit agent-fleet-web; };
 
   # Service daemons. These are placeholders with no source code yet;
   # they are only referenced when agentos.daemons.enable = true.

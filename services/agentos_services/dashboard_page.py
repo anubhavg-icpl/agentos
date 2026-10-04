@@ -34,6 +34,7 @@ section { background: var(--card); border: 1px solid var(--line); border-radius:
 section.wide { grid-column: 1 / -1; }
 .pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .pill { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; }
+a.pill { color: var(--accent); border-color: var(--accent); text-decoration: none; }
 .pill.ok { color: var(--ok); border-color: var(--ok); }
 .pill.bad { color: var(--bad); border-color: var(--bad); }
 .scroll { overflow-x: auto; }
@@ -62,6 +63,7 @@ select { background: var(--card); color: var(--fg); border: 1px solid var(--line
 <header>
   <h1>AgentOS</h1>
   <div class="pills" id="health"></div>
+  <nav class="pills" id="links" aria-label="Related web UIs"></nav>
   <div class="muted"><span id="err"></span> <span id="updated"></span></div>
 </header>
 <main>
@@ -231,11 +233,24 @@ async function renderRequests() {
   });
 }
 
+function renderLinks(l) {
+  const box = $("links");
+  box.replaceChildren();
+  l.links.forEach((x) => {
+    const a = document.createElement("a");
+    a.className = "pill";
+    a.textContent = x.name;
+    a.href = x.url;
+    a.rel = "noopener";
+    box.appendChild(a);
+  });
+}
+
 async function refresh() {
   try {
-    const [h, s, a, hist] = await Promise.all(
-      ["/api/health", "/api/spend", "/api/agents", "/api/history?days=7"].map(get));
-    renderHealth(h); renderSpend(s); renderAgents(a); renderHistory(hist);
+    const [h, s, a, hist, l] = await Promise.all(
+      ["/api/health", "/api/spend", "/api/agents", "/api/history?days=7", "/api/links"].map(get));
+    renderHealth(h); renderSpend(s); renderAgents(a); renderHistory(hist); renderLinks(l);
     await renderRequests();
     $("err").textContent = "";
     $("updated").textContent = "updated " + new Date().toLocaleTimeString();
