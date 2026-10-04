@@ -17,7 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **ARM64**: `-aarch64` variants of the server, VM, ISO and desktop hosts, and `packages.aarch64-linux.{iso,vm}-image`.
 - VM tests `gateway-features`, `orchestration`, `container`, `platform` and `desktop`.
 
+- **Sandbox hardening**: syscall filter, no new namespaces, restricted address families, no capabilities, no swap for agent units; default-deny forwarding from the agent bridge to private ranges and cloud metadata; stale namespace sweep.
+- **Local AI** (`agentos.localAI`): Ollama or llama.cpp (CUDA, ROCm or CPU) and Open WebUI on loopback, registered as the gateway provider `local`.
+- **Five more agents** (20 in total): Kilo Code, Mistral Vibe, Kiro CLI, Codebuff, Pi; `checks.<system>.agent-inclusion` keeps the runtime map and installed packages in step.
+- **Installer**: SSH key validation, typed device confirmation, `--encrypt` (LUKS2). Desktop VM image gets a random first-boot password; the live ISO enforces key-only SSH.
+
 ### Changed
+- The unbuilt MCP gateway, MCP registry service, provisioner and memory manager stubs and `agentos.plannedServices` were removed.
 - Unmanaged `/<provider>/` requests are only accepted on the gateway's admin socket.
 - The orchestration and scheduler modules were rewritten; `agentos.orchestration.mode`, `resultStrategy` and several `agentos.scheduler.*` options were removed (setting them fails with a pointer to the replacement).
 

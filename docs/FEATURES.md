@@ -83,11 +83,11 @@ agentos-memory search       # Browse collections
 agentos-memory forget       # Clear all memories
 ```
 
-### 7. Multi-Agent Orchestration (`modules/orchestration`) — planned
-Design for coordinating multiple agents (planner-worker, swarm, pipeline). The
-orchestrator service is not implemented; its unit and CLI are only installed
-with `agentos.plannedServices.enable`. Today, run several agents side by side
-with `agentos spawn` in separate workspaces.
+### 7. Multi-Agent Orchestration (`modules/orchestration`)
+Queued tasks, pipelines, swarms with verify and judge steps, DAG workflows,
+approval gates, retries and priorities, driven by `agentos-task`. GitHub
+webhooks can create tasks and publish pull requests. See
+[orchestration.md](orchestration.md) and [triggers.md](triggers.md).
 
 ---
 
@@ -203,10 +203,9 @@ agentos-env prebuild        # Pre-build environments
 
 ## Automation
 
-### 14. Scheduler (`modules/scheduler`) — planned
-Cron-like scheduling for recurring agent tasks. The scheduler service is not
-implemented; its unit and CLI are only installed with
-`agentos.plannedServices.enable`.
+### 14. Scheduler (`modules/scheduler`)
+Recurring tasks on systemd `OnCalendar` schedules, managed with
+`agentos-schedule` or declared in Nix. See [orchestration.md](orchestration.md).
 
 ### 15. Notifications (`modules/notifications`)
 The agent daemon forwards events to Slack, Discord or a generic JSON webhook.

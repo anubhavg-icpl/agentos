@@ -12,7 +12,7 @@ change; everything below is opt-in.
 | `nixosConfigurations.agentos-desktop` | The `agentos` host plus the desktop (bare metal, installed with `agentos-install --desktop`) |
 | `nixosConfigurations.agentos-desktop-vm` | The same as a QEMU/KVM guest |
 | `nixosConfigurations.agentos-desktop-iso` | Live installer ISO with the desktop |
-| `packages.<system>.desktop-vm-image` | Bootable qcow2 of the desktop VM (auto-login as `admin`, password `agentos`) |
+| `packages.<system>.desktop-vm-image` | Bootable qcow2 of the desktop VM (a random `admin` password is generated at first boot, shown on the console and in `/var/lib/agentos/first-boot-password`, and must be changed at first login) |
 | `packages.<system>.desktop-iso-image` | The desktop live ISO (several GB larger than `iso-image`) |
 
 ```
@@ -26,6 +26,12 @@ on ARM) and asks for a password for `admin`. The server host only accepts SSH
 keys, but a desktop needs a local login. The password hash is written to
 `/etc/agentos/admin-password`, which `users.users.admin.hashedPasswordFile`
 points at.
+
+On a desktop host built without `agentos-install`, set
+`agentos.desktop.initialHashedPassword` (from `mkpasswd -m yescrypt`) or create
+`/etc/agentos/admin-password`; activation warns when neither exists.
+`agentos-install --encrypt` puts the root filesystem on LUKS2 (passphrase at
+boot; TPM2 unlock is on the roadmap).
 
 ## Enabling it on your own host
 

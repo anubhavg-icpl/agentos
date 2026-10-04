@@ -47,7 +47,7 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 | Web dashboard, fleets, marketplace | Working | See [dashboard.md](dashboard.md), [fleet.md](fleet.md), [marketplace.md](marketplace.md). |
 | Desktop edition | Working, not boot-tested in CI | i3 (gaps) by default, sway or Hyprland; VS Code, Zed, Firefox. See [desktop.md](desktop.md). |
 | ARM64 hosts and images | Evaluated only | `-aarch64` hosts, `packages.aarch64-linux.{iso,vm}-image`. See [aarch64.md](aarch64.md). |
-| MCP gateway, MCP registry service, provisioner, memory manager | Planned | Units are gated behind `agentos.plannedServices.enable` (off); enabling it fails the build until they exist. |
+| MCP gateway, MCP registry service, provisioner, memory manager | Removed | They were unbuilt stubs; setting their old options now fails with a pointer to [ROADMAP.md](ROADMAP.md). |
 
 ## Known limitations
 
