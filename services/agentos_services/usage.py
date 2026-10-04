@@ -17,12 +17,16 @@ Provider kinds that share a wire format (azure-openai, openai-compatible)
 are parsed as the format they speak.
 
 Usage is normalised to four counters: input, output, cache_read and
-cache_write tokens, where input excludes cached tokens.
+cache_write tokens, where input excludes cached tokens. Anthropic cache
+writes with the 1 hour lifetime (priced higher than the 5 minute ones) are
+counted separately in cache_write_1h_tokens, which is present only when
+non-zero; cache_write_tokens then holds the 5 minute writes.
 """
 
 import json
 
 FIELDS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+OPTIONAL_FIELDS = ("cache_write_1h_tokens",)
 
 # Stop buffering non-streaming bodies beyond this size
 MAX_JSON_BODY = 32 * 1024 * 1024
@@ -66,12 +70,19 @@ def normalise(raw, api):
     if api == "gemini":
         return _normalise_gemini(raw)
     if api == "anthropic":
-        return {
+        written = _int(raw.get("cache_creation_input_tokens"))
+        detail = raw.get("cache_creation")
+        hour = _int(detail.get("ephemeral_1h_input_tokens")) if isinstance(detail, dict) else 0
+        hour = min(hour, written)
+        out = {
             "input_tokens": _int(raw.get("input_tokens")),
             "output_tokens": _int(raw.get("output_tokens")),
             "cache_read_tokens": _int(raw.get("cache_read_input_tokens")),
-            "cache_write_tokens": _int(raw.get("cache_creation_input_tokens")),
+            "cache_write_tokens": written - hour,
         }
+        if hour:
+            out["cache_write_1h_tokens"] = hour
+        return out
     if "prompt_tokens" in raw or "completion_tokens" in raw:
         # Chat Completions
         cached = _int((raw.get("prompt_tokens_details") or {}).get("cached_tokens"))
@@ -184,8 +195,8 @@ class UsageParser:
         if usage:
             self.seen_usage = True
             # Streaming counters are cumulative; keep the largest value seen
-            for f in FIELDS:
-                self.usage[f] = max(self.usage[f], usage[f])
+            for f in FIELDS + OPTIONAL_FIELDS:
+                self.usage[f] = max(self.usage.get(f, 0), usage.get(f, 0))
 
     def finish(self):
         """Return (model, usage or None) once the body is complete."""
@@ -196,7 +207,10 @@ class UsageParser:
             self._absorb(self._buf)
         self._buf = b""
         model = self.model or self.request_model or "unknown"
-        return model, (dict(self.usage) if self.seen_usage else None)
+        if not self.seen_usage:
+            return model, None
+        usage = {f: v for f, v in self.usage.items() if f in FIELDS or v}
+        return model, usage
 
 
 class Pricing:
@@ -241,11 +255,13 @@ class Pricing:
         out = float(rates.get("output_per_1m", 0.0))
         cache_read = float(rates.get("cache_read_per_1m", inp))
         cache_write = float(rates.get("cache_write_per_1m", inp * 1.25))
+        cache_write_1h = float(rates.get("cache_write_1h_per_1m", inp * 2.0))
         usd = (
             usage["input_tokens"] * inp
             + usage["output_tokens"] * out
             + usage["cache_read_tokens"] * cache_read
             + usage["cache_write_tokens"] * cache_write
+            + usage.get("cache_write_1h_tokens", 0) * cache_write_1h
         ) / 1_000_000
         return usd, priced
 

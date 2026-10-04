@@ -12,6 +12,7 @@ Keys (all prefixed with "agentos:"):
   tokens:<date>:agent:<id>     hash    token counters + request count
   requests:<date>:agent:<id>   hash    responses by status class (2xx, 4xx...)
   budget:agent:<id>            float   per-agent daily budget override
+  unparsed:<date>              hash    responses billed at an estimate because no usage could be read, by provider
   alerts:<date>:agent:<id>     set     thresholds already alerted today
   authfail:<addr>:<minute>     int     failed agent authentications from one address
   rate:<id>:<minute>           int     requests in the current minute
@@ -59,6 +60,7 @@ class Reservation:
         self.rid = rid
         self.usd = usd
         self.released = store is None
+        self.estimate = usd
 
     def release(self):
         if self.released:
@@ -176,6 +178,17 @@ class Store:
         results = p.execute()
         return float(results[0]), float(results[1])
 
+    def count_unparsed(self, provider):
+        """Count a response whose usage could not be read (billed at an estimate)."""
+        key = self._k("unparsed", utc_date(self.clock()))
+        p = self.r.pipeline()
+        p.hincrby(key, provider, 1)
+        p.expire(key, DAY_TTL)
+        p.execute()
+
+    def unparsed(self, date=None):
+        return {k: int(v) for k, v in self.r.hgetall(self._k("unparsed", date or utc_date(self.clock()))).items()}
+
     def count_request(self, agent, status):
         key = self._k("requests", utc_date(self.clock()), "agent", agent)
         p = self.r.pipeline()
@@ -281,6 +294,7 @@ class Store:
         return {
             "date": date,
             "global_usd": self.global_spend(date),
+            "usage_unparsed": self.unparsed(date),
             "agents": agents,
             "models": models,
         }

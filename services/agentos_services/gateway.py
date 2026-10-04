@@ -195,8 +195,11 @@ class Gateway:
         if self.store.mark_alert(agent, "exceeded"):
             self.store.publish({"type": "budget_exceeded", "agent": agent, "usd": spent, "limit_usd": limit})
 
-    def after_usage(self, agent, model, usage, zero_cost=False):
-        usd, priced = (0.0, True) if zero_cost else self.pricing.cost(model, usage)
+    def after_usage(self, agent, model, usage, zero_cost=False, fixed_usd=None):
+        if fixed_usd is not None:
+            usd, priced = fixed_usd, False
+        else:
+            usd, priced = (0.0, True) if zero_cost else self.pricing.cost(model, usage)
         agent_total, _ = self.store.record(agent, model, usd, usage)
         limit = self.daily_limit(agent)
         if limit > 0:
@@ -210,6 +213,11 @@ class Gateway:
         if agent_total >= limit:
             self._budget_exceeded(agent, agent_total, limit)
         return usd, priced
+
+    def after_estimate(self, agent, provider, model, usd):
+        log.warning("no usage in the %s response for agent %s; charging the estimate $%.4f", provider, agent, usd)
+        self.store.count_unparsed(provider)
+        return self.after_usage(agent, model, None, False, usd)
 
     def check_loop(self, agent, payload):
         """Refuse an agent that keeps sending the same request."""
@@ -538,6 +546,7 @@ class Gateway:
             body = json.dumps(payload).encode()
         free = adapter.zero_cost
         resv = self.reserve_budget(agent, 0.0 if free else self.estimate(request_model, payload, body, rest_path))
+        resv.estimate = 0.0 if free else self.estimate(request_model, payload, body, rest_path)
         try:
             self.forward(req, agent, provider, adapter, rest_path, query, started, body, orig_body,
                          request_model, route, resv)
@@ -675,6 +684,11 @@ class Gateway:
             if usage:
                 usd, priced = self.after_usage(agent, model, usage, adapter.zero_cost)
                 entry.update(usage=usage, cost_usd=round(usd, 6), priced=priced)
+            elif req.command == "POST" and 200 <= resp.status < 300 and resv.estimate > 0:
+                # A successful generation whose usage we could not read: it
+                # was billed, so count the conservative estimate, not $0
+                usd, priced = self.after_estimate(agent, provider, model, resv.estimate)
+                entry.update(cost_usd=round(usd, 6), priced=False, usage_estimated=True)
             self.store.count_request(agent, resp.status)
             self.write_log(agent, entry)
         except Exception:
