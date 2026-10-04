@@ -537,7 +537,7 @@ in
         # Reaches the orchestrator socket (group agentos) and nothing else of
         # that group: the gateway admin socket and the AgentOS state are hidden
         SupplementaryGroups = [ "agentos" ];
-        InaccessiblePaths = [ "-/run/agentos-gateway" "-/run/redis-agentos" "-/var/lib/agentos" ];
+        InaccessiblePaths = [ "-/run/agentos-gateway" "-/run/redis-agentos" "-/run/pullrun" "-/var/lib/agentos" ];
         ExecStart = "${chat.bridge}/bin/agentos-openclaw-bridge ${chat.policy}";
         Restart = "on-failure";
         RestartSec = 3;
