@@ -42,7 +42,8 @@ in
       UMask = "0077";
     };
     script = ''
-      mkdir -p ${stateDir} /run/issue.d
+      mkdir -p ${stateDir}
+      install -d -m 0755 /run/issue.d
       if [ ! -e ${doneFile} ]; then
         pw="$(openssl rand -base64 12 | tr '/+' 'xy')"
         printf '%s\n' "$pw" > ${stateFile}
@@ -60,7 +61,7 @@ in
           echo "You must change it at the first login (also kept in ${stateFile}, root only)."
           echo
         } | tee ${issueFile} > /dev/console || true
-        chmod 644 ${issueFile}
+        chmod 0600 ${issueFile}
       else
         rm -f ${stateFile} ${issueFile}
       fi

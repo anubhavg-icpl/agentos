@@ -12,6 +12,9 @@ timestamps and clock times inside text, so a loop whose tool output embeds
 Two loop shapes are recognised from the fingerprints of recent requests:
 the same request K times in a row (store.loop_hit) and two requests
 alternating A, B, A, B, ... (alternation_run).
+
+Tool-call argument subtrees ("input", "arguments", Gemini "args") are hashed
+verbatim: two calls differing only in a commit hash or id are different.
 """
 
 import hashlib
@@ -39,14 +42,27 @@ def scrub(text):
     return text
 
 
-def _normalise(obj):
+# Tool-call argument subtrees: ids and hashes in there are the question
+# itself (a different commit hash is a different call), so they are kept
+# verbatim instead of being scrubbed.
+TOOL_ARG_KEYS = {"input", "arguments", "args"}
+
+
+def _normalise(obj, raw=False):
     if isinstance(obj, dict):
-        return {k: ("<volatile>" if k in VOLATILE_KEYS and not isinstance(v, (dict, list)) else _normalise(v))
-                for k, v in sorted(obj.items()) if k not in IGNORED_KEYS}
+        out = {}
+        for k, v in sorted(obj.items()):
+            if k in IGNORED_KEYS:
+                continue
+            if not raw and k in VOLATILE_KEYS and not isinstance(v, (dict, list)):
+                out[k] = "<volatile>"
+            else:
+                out[k] = _normalise(v, raw or k in TOOL_ARG_KEYS)
+        return out
     if isinstance(obj, list):
-        return [_normalise(v) for v in obj]
+        return [_normalise(v, raw) for v in obj]
     if isinstance(obj, str):
-        return scrub(obj.strip())
+        return obj if raw else scrub(obj.strip())
     return obj
 
 

@@ -137,17 +137,27 @@ class Netns:
             fcntl.flock(f, fcntl.LOCK_EX)
             yield
 
-    def setup(self, agent_id):
-        """Create the namespace; returns the container's address."""
+    def setup(self, agent_id, sweep=False):
+        """Create the namespace; returns the container's address.
+
+        The whole setup runs under the state lock, so a concurrent sweep or
+        teardown never sees (and deletes) a half-built namespace or veth.
+        With `sweep`, stale agents are cleared first, under the same lock.
+        """
+        with self._locked():
+            if sweep:
+                self._sweep_locked(keep=(agent_id,))
+            return self._setup_locked(agent_id)
+
+    def _setup_locked(self, agent_id):
         n = names(agent_id)
-        self.teardown(agent_id)  # leftovers of an earlier run with the same id
+        self._teardown_locked(agent_id)  # leftovers of an earlier run with the same id
         try:
-            with self._locked():
-                addr = allocate_ip(self.used_addresses(), self.network, self.gateway)
-                d = self.dir(agent_id)
-                os.makedirs(d, mode=0o755)
-                with open(os.path.join(d, "ip"), "w") as f:
-                    f.write(str(addr) + "\n")
+            addr = allocate_ip(self.used_addresses(), self.network, self.gateway)
+            d = self.dir(agent_id)
+            os.makedirs(d, mode=0o755)
+            with open(os.path.join(d, "ip"), "w") as f:
+                f.write(str(addr) + "\n")
             self._files(agent_id, d)
             ns = n["ns"]
             r = self.run
@@ -166,7 +176,7 @@ class Netns:
                 r(["ip", "netns", "exec", ns, _tool("sysctl"), "-q", "-w", "net.ipv6.conf.all.disable_ipv6=1"], check=False)
             return addr
         except Exception:
-            self.teardown(agent_id)
+            self._teardown_locked(agent_id)
             raise
 
     def _files(self, agent_id, d):
@@ -188,19 +198,26 @@ class Netns:
 
     def teardown(self, agent_id):
         """Remove everything setup created. Safe to call repeatedly."""
+        with self._locked():
+            self._teardown_locked(agent_id)
+
+    def _teardown_locked(self, agent_id):
         n = names(agent_id)
         # Deleting one end of a veth pair removes the other
         self.run(["ip", "link", "del", n["host_if"]], check=False)
         self.run(["ip", "netns", "del", n["ns"]], check=False)
-        with self._locked():
-            shutil.rmtree(self.dir(agent_id), ignore_errors=True)
+        shutil.rmtree(self.dir(agent_id), ignore_errors=True)
 
     def sweep(self, keep=()):
         """Remove namespaces, state and veths of agents with no live unit.
 
         `keep` are ids that must stay (the agent being set up). Returns the
-        ids and interfaces removed.
+        ids and interfaces removed. Serialized with setup and teardown.
         """
+        with self._locked():
+            return self._sweep_locked(keep)
+
+    def _sweep_locked(self, keep=()):
         ids = set()
         for d in (self.netns_dir, self.state_dir):
             try:
@@ -221,7 +238,7 @@ class Netns:
             if self.is_live(agent_id):
                 live_ifs.add(names(agent_id)["host_if"])
                 continue
-            self.teardown(agent_id)
+            self._teardown_locked(agent_id)
             removed.append(agent_id)
         for veth in self.list_veths():
             if veth not in live_ifs:
@@ -249,8 +266,7 @@ def main(argv=None):
                 print("agentos-netns: removed stale " + item)
         elif args.action == "setup":
             # Clear leftovers of crashed agents before taking a new address
-            ns.sweep(keep=(args.agent,))
-            ns.setup(args.agent)
+            ns.setup(args.agent, sweep=True)
         else:
             ns.teardown(args.agent)
     except subprocess.CalledProcessError as exc:

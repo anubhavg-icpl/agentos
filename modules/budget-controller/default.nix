@@ -149,7 +149,7 @@ in
     defaultMaxTokens = lib.mkOption {
       type = lib.types.ints.positive;
       default = 4096;
-      description = "Output allowance assumed for the reservation when a request sets no max_tokens";
+      description = "Output allowance reserved for a request that sets no output limit. The gateway also forwards it as the request's limit (max_tokens, max_completion_tokens or generationConfig.maxOutputTokens), so a client that needs longer replies must set its own.";
     };
 
     pricingFile = lib.mkOption {

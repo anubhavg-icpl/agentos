@@ -55,13 +55,25 @@ class Reservation:
     released (Redis down) expires on its own at its deadline.
     """
 
-    def __init__(self, store=None, keys=(), rid=None, usd=0.0):
+    def __init__(self, store=None, keys=(), rid=None, usd=0.0, hold_sec=900):
         self.store = store
         self.keys = keys
         self.rid = rid
         self.usd = usd
-        self.released = store is None
+        self.hold_sec = hold_sec
+        # a zero-cost request holds nothing until grow() gives it something
+        self.released = store is None or usd <= 0
         self.estimate = usd
+
+    def renew(self):
+        """Push the hold's deadline out by its lease; call while the request is
+        still in flight so a long stream cannot outlive its hold. Never raises."""
+        if self.released:
+            return
+        try:
+            self.store.renew(self)
+        except redis.RedisError as exc:
+            log.warning("cannot renew budget reservation %s: %s", self.rid, exc)
 
     def release(self):
         if self.released:
@@ -152,7 +164,48 @@ class Store:
                     pipe.expire(k, DAY_TTL)
 
         self.r.transaction(txn, *spend_keys, *hold_keys)
-        return Reservation(self if usd > 0 else None, hold_keys, rid, usd)
+        return Reservation(self, hold_keys, rid, usd, hold_sec)
+
+    def grow(self, resv, usd, agent_limit, global_limit):
+        """Atomically raise `resv`'s hold to `usd` (never lowers it).
+
+        Used before a fallback attempt that may cost more than the primary
+        was estimated at. Same check as reserve(): refuses (BudgetRefused)
+        when spend + the other holds + usd would exceed a limit, leaving the
+        existing hold untouched.
+        """
+        if usd <= resv.usd:
+            return
+        spend_keys = tuple(PREFIX + "spend:" + k[len(PREFIX + "resv:"):] for k in resv.keys)
+        hold_keys = tuple(resv.keys)
+
+        def txn(pipe):
+            now = self.clock()
+            spent = [float(pipe.get(k) or 0.0) for k in spend_keys]
+            held = []
+            for k in hold_keys:
+                entries = pipe.hgetall(k)
+                entries.pop(resv.rid, None)
+                held.append(self._live(entries, now)[0])
+            for scope, i, limit in (("agent", 0, agent_limit), ("global", 1, global_limit)):
+                if spent[i] + held[i] + usd > limit:
+                    raise BudgetRefused(scope, spent[i], held[i], limit)
+            pipe.multi()
+            for k in hold_keys:
+                pipe.hset(k, resv.rid, "%r:%r" % (float(usd), now + resv.hold_sec))
+                pipe.expire(k, DAY_TTL)
+
+        self.r.transaction(txn, *spend_keys, *hold_keys)
+        resv.usd = usd
+        resv.released = False
+
+    def renew(self, resv):
+        now = self.clock()
+        value = "%r:%r" % (float(resv.usd), now + resv.hold_sec)
+        p = self.r.pipeline()
+        for k in resv.keys:
+            p.hset(k, resv.rid, value)
+        p.execute()
 
     def reserved(self, agent=None, date=None):
         """USD currently held by in-flight requests (one agent, or all)."""

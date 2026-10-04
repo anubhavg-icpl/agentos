@@ -112,6 +112,14 @@ class OpenAICompatible(OpenAI):
     name = "openai-compatible"
     free = True
 
+    def inject_key(self, headers, key):
+        # Local servers do not need the caller's credentials, and must never
+        # receive the ones meant for another provider: send only the key
+        # configured for this provider, if any.
+        self.strip_credentials(headers)
+        if key:
+            headers["Authorization"] = "Bearer " + key
+
 
 class AzureOpenAI(OpenAI):
     name = "azure-openai"
