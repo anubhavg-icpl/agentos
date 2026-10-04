@@ -15,6 +15,11 @@ let
   cfg = config.agentos.provisioning;
 in
 {
+  imports = [
+    (lib.mkRemovedOptionModule [ "agentos" "provisioning" "enableAutoDetect" ]
+      "The provisioner service was a stub and is removed; `agentos-env` always auto-detects. See docs/ROADMAP.md.")
+  ];
+
   options.agentos.provisioning = {
     enable = lib.mkEnableOption "AgentOS environment provisioning";
 
@@ -39,12 +44,6 @@ in
         "python-3.11" "python-3.12" "node-22" "go" "rust-stable"
       ];
       description = "Which dev environment images to pre-build";
-    };
-
-    enableAutoDetect = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Auto-detect project type from files in workspace";
     };
   };
 
@@ -139,30 +138,6 @@ in
         packages = with pkgs; [ jdk21 maven gradle ];
       }
     '';
-
-    # ─ Provisioning service ──────────────────────────────────────────
-    systemd.services.agentos-provisioner = lib.mkIf config.agentos.plannedServices.enable {
-      description = "AgentOS Environment Provisioner";
-      after = [ "network.target" ];
-      wantedBy = [ "multi-user.target" ];
-
-      environment = {
-        AGENTOS_ENV_TEMPLATES = "/etc/agentos/env-templates";
-        AGENTOS_AUTO_DETECT = lib.boolToString cfg.enableAutoDetect;
-      };
-
-      serviceConfig = {
-        Type = "simple";
-        User = "agentos";
-        Group = "agentos";
-        ExecStart = "${pkgs.agentos.provisioner}/bin/agentos-provisioner";
-        Restart = "on-failure";
-        RestartSec = 10;
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/agentos" ];
-      };
-    };
 
     # ─ Provisioning CLI ──────────────────────────────────────────────
     environment.systemPackages = [

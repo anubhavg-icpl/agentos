@@ -3,11 +3,9 @@
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Manages MCP (Model Context Protocol) tool servers:
-#   - Auto-discovery of MCP servers on the network
-#   - Per-agent tool permissions
-#   - Tool version management
-#   - Health checking for tool servers
-#   - A marketplace-like registry of available tools
+#   - A list of MCP tool servers in /etc/agentos/mcp-tools.json
+#   - `agentos-tools` to list, enable, disable and add servers
+# (A registry service with discovery and health checks is on the roadmap.)
 #
 # MCP tools let agents do things beyond file editing:
 #   - Browser automation (Puppeteer, Playwright)
@@ -23,14 +21,13 @@ let
   cfg = config.agentos.mcp-registry;
 in
 {
+  imports = [
+    (lib.mkRemovedOptionModule [ "agentos" "mcp-registry" "registryPort" ]
+      "The MCP registry service was a stub and is removed; the tool list is still written to /etc/agentos/mcp-tools.json. See docs/ROADMAP.md.")
+  ];
+
   options.agentos.mcp-registry = {
     enable = lib.mkEnableOption "AgentOS MCP tool registry";
-
-    registryPort = lib.mkOption {
-      type = lib.types.port;
-      default = 9945;
-      description = "Port for the MCP registry API";
-    };
 
     enableBuiltinTools = lib.mkOption {
       type = lib.types.bool;
@@ -189,30 +186,6 @@ in
       ];
     };
 
-    # ─ MCP Registry Service ──────────────────────────────────────────
-    systemd.services.agentos-mcp-registry = lib.mkIf config.agentos.plannedServices.enable {
-      description = "AgentOS MCP Tool Registry";
-      after = [ "network.target" ];
-      wantedBy = [ "multi-user.target" ];
-
-      environment = {
-        AGENTOS_MCP_REGISTRY_PORT = toString cfg.registryPort;
-        AGENTOS_MCP_TOOLS_CONFIG = "/etc/agentos/mcp-tools.json";
-      };
-
-      serviceConfig = {
-        Type = "simple";
-        User = "agentos";
-        Group = "agentos";
-        ExecStart = "${pkgs.agentos.mcp-registry}/bin/agentos-mcp-registry";
-        Restart = "on-failure";
-        RestartSec = 3;
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/agentos" ];
-      };
-    };
-
     # ─ MCP tool management CLI ───────────────────────────────────────
     environment.systemPackages = [
       (pkgs.writeShellScriptBin "agentos-tools" ''
@@ -239,7 +212,6 @@ in
           install -D -m 644 "$tmp" "$STATE"
           rm -f "$tmp"
         }
-        REGISTRY="http://localhost:${toString cfg.registryPort}"
 
         case "''${1:-list}" in
           list)
@@ -262,7 +234,6 @@ in
             info "Enabling tool: $TOOL"
             ${pkgs.jq}/bin/jq --arg n "$TOOL" '.tools |= map(if .name == $n then .enabled = true else . end)' "$CONFIG" | save
             ok "Enabled: $TOOL"
-            systemctl try-restart agentos-mcp-registry || true
             ;;
 
           disable)
@@ -274,16 +245,6 @@ in
             info "Disabling tool: $TOOL"
             ${pkgs.jq}/bin/jq --arg n "$TOOL" '.tools |= map(if .name == $n then .enabled = false else . end)' "$CONFIG" | save
             ok "Disabled: $TOOL"
-            systemctl try-restart agentos-mcp-registry || true
-            ;;
-
-          status)
-            info "MCP Registry status:"
-            ${pkgs.curl}/bin/curl -s "$REGISTRY/health" 2>/dev/null && echo "" || warn "Registry not responding"
-            echo ""
-            echo "Registered tools:"
-            ${pkgs.curl}/bin/curl -s "$REGISTRY/tools" 2>/dev/null | \
-              ${pkgs.jq}/bin/jq -r '.[] | "  \(.name): \(.status)"' 2>/dev/null || echo "  (no response)"
             ;;
 
           add)
@@ -296,26 +257,13 @@ in
             info "Adding custom tool: $NAME"
             ${pkgs.jq}/bin/jq --arg n "$NAME" --arg c "$CMD" '.tools += [{name: $n, command: $c, enabled: true, category: "custom"}]' "$CONFIG" | save
             ok "Added: $NAME"
-            systemctl try-restart agentos-mcp-registry || true
-            ;;
-
-          test)
-            TOOL="''${2:-}"
-            if [ -z "$TOOL" ]; then
-              echo "Usage: agentos-tools test <tool-name>"
-              exit 1
-            fi
-            info "Testing tool: $TOOL"
-            ${pkgs.curl}/bin/curl -s "$REGISTRY/tools/$TOOL/health" 2>/dev/null | ${pkgs.jq}/bin/jq . || warn "Test failed"
             ;;
 
           *)
-            echo "Usage: agentos-tools <list|enable|disable|status|add|test> [args]"
+            echo "Usage: agentos-tools <list|enable|disable|add> [args]"
             ;;
         esac
       '')
     ];
-
-    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ cfg.registryPort ];
   };
 }
