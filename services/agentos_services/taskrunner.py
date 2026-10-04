@@ -252,9 +252,11 @@ class TaskRunner:
             return None
         return marker if isinstance(marker, dict) else None
 
-    def try_publish(self, task, workdir, branch, base_sha):
+    def try_publish(self, task, workdir, branch, base_sha, skip_reason=None):
         """Returns (result fields, error). The error is set only when the publish
-        was asked for explicitly: such a task then fails, with the agent's output kept."""
+        was asked for explicitly: such a task then fails, with the agent's output kept.
+        With skip_reason (a failed verification) a requested publish is not attempted
+        and the task keeps the agent's status."""
         popts = P.settings(self.cfg)
         try:
             spec = P.resolve_spec(task, popts, self.publish_marker(task["id"]))
@@ -262,6 +264,8 @@ class TaskRunner:
             return {"publish": {"status": "error", "error": str(exc)}}, str(exc)
         if spec is None:
             return {}, None
+        if skip_reason:
+            return {"publish": {"status": "skipped", "error": skip_reason}}, None
         try:
             info = self.publisher(popts).publish(spec, task["id"], workdir, branch, base_sha)
         except P.PublishError as exc:
@@ -303,6 +307,72 @@ class TaskRunner:
         self.tasks.finish(task_id, T.SUCCEEDED, pr_url=info["pr_url"], branch=info["branch"],
                           publish=dict(info, status="published"), exit_code=0)
         return 0
+
+    # ── verify contract (docs/orchestration.md) ────────────────────────
+    GATEWAY_ENV = ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
+
+    def run_verify(self, task, workdir, writable, env):
+        """Run task["verify"]["cmd"] as an argv (never a shell) in the agent's sandbox
+        and user, in workdir, without the gateway credentials. Never raises."""
+        verify = task["verify"]
+        cmd0, timeout = verify["cmd"][0], verify["timeout_sec"]
+        started = self.clock()
+
+        def outcome(status, code, tail=""):
+            return {"status": status, "exit_code": code, "output_tail": tail,
+                    "duration_sec": round(self.clock() - started, 1)}
+
+        if "/" in cmd0:
+            exe = cmd0 if os.path.isabs(cmd0) else os.path.join(workdir, cmd0)
+            exe = exe if os.path.isfile(exe) and os.access(exe, os.X_OK) else None
+        else:
+            exe = shutil.which(cmd0, path=self.opts["agent_path"])
+        if not exe:
+            return outcome("error", None, "%s is not installed" % cmd0)
+        venv = {k: v for k, v in env.items() if k not in self.GATEWAY_ENV}
+        unit = "agentos-verify-%s.service" % task["id"]
+        cmd = [self.systemd_run] + self.sandbox_args(unit, workdir, writable, venv, timeout) + ["--", exe] + verify["cmd"][1:]
+        tail_max = int(self.opts["result_tail_kb"]) * 1024
+        tail = bytearray()
+        try:
+            self.proc = proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except OSError as exc:
+            return outcome("error", None, "could not start the sandbox: %s" % exc)
+
+        def pump():
+            while True:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                tail.extend(chunk)
+                if len(tail) > tail_max:
+                    del tail[:len(tail) - tail_max]
+
+        pumper = threading.Thread(target=pump, daemon=True)
+        pumper.start()
+        reason = None
+        while True:
+            try:
+                rc = proc.wait(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                if self.cancel.is_set():
+                    reason = "cancelled"
+                elif self.clock() - started > timeout:
+                    reason = "timed out after %ds" % timeout
+                if reason:
+                    self.stop_unit(unit)
+                    try:
+                        rc = proc.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        rc = proc.wait()
+                    break
+        pumper.join(timeout=10)
+        text = tail.decode(errors="replace")
+        if reason:
+            return outcome("error", None, (text + "\n[agentos: verify %s]" % reason).strip()[-tail_max:])
+        return outcome("passed" if rc == 0 else "failed", rc, text)
 
     # ── the run ────────────────────────────────────────────────────────
     def run(self, task_id):
@@ -420,8 +490,13 @@ class TaskRunner:
         }
         if error:
             result["error"] = error
+        skip = None
+        if outcome == T.SUCCEEDED and task.get("verify"):
+            result["verify"] = self.run_verify(task, workdir, writable, env)
+            if result["verify"]["status"] != "passed":
+                skip = "verify failed"
         if outcome == T.SUCCEEDED:
-            fields, publish_error = self.try_publish(task, workdir, branch, self.base_sha)
+            fields, publish_error = self.try_publish(task, workdir, branch, self.base_sha, skip_reason=skip)
             result.update(fields)
             if publish_error:
                 outcome, result["error"] = T.FAILED, "publish failed: %s" % publish_error

@@ -144,12 +144,14 @@ Agents without an entry are refused at submit time. Verify the defaults against 
 
 ## Verify contract (taskrunner)
 
+Status: implemented.
+
 The orchestrator validates and stores `verify` and hands it to the runner in the task record; it never runs it (it has no privileges and the argv comes from a user). `taskrunner.py` can run it, because it already has everything needed: the working directory (`workdir`), the writable paths and `sandbox_args()`. The contract for the runner:
 
 1. Only when the agent exited 0 (outcome `succeeded`) and `task["verify"]` is set. Re-validate it with `tasks.validate_verify` (`validate_record` already does).
 2. Run `verify["cmd"]` as an argument vector (`systemd-run ... -- argv`, never a shell) in a second transient unit, `agentos-verify-<task-id>`, with the same sandbox as the agent (`sandbox_args(unit, workdir, writable, env, timeout=verify["timeout_sec"])`) and the agent user, in `workdir` (the task's worktree for isolated tasks), with the agent's environment minus the gateway credentials. Enforce `verify["timeout_sec"]` and stop the unit on cancel.
 3. Record the outcome in the task result **before** `finish()`: `result["verify"] = {"status": "passed" | "failed" | "error", "exit_code": int | null, "output_tail": str, "duration_sec": float}`; `failed` is a non-zero exit, `error` is a timeout or a failure to start. Task status stays that of the agent: a failed verification does not turn a `succeeded` task into `failed` (so retries and dependents are unaffected); consumers such as the judge read `result.verify.status`.
-4. Until the runner implements this, tasks carry `verify` but results have no `verify` key, and the judge sees `verify: not_reported`.
+4. **Implemented** in `taskrunner.py` (`run_verify`). The runner also resolves `cmd[0]` against the agent `PATH` (or the worktree for a path containing `/`); a missing program is `error` with exit code `null`. Unit `agentos-verify-<task-id>` is stopped on timeout or cancel and the `output_tail` is bounded by `result_tail_kb`. Verification runs before the publish step. If it is not `passed` (`failed` or `error`), publishing is not attempted and the result records `publish: {status: "skipped", error: "verify failed"}`; following point 3, the task status is not changed, even for an explicit publish request, so the PR is simply withheld. A task whose agent failed has no `verify` key, and a task without `verify` keeps `not_reported`/`none` in the judge prompt only when the runner is older than this contract.
 
 Retries add one more requirement, which the runner already meets: when `task["attempt"] > 1`, `prepare_workspace` removes the previous attempt's worktree and branch before it creates them again.
 
