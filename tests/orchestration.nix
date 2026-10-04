@@ -235,7 +235,7 @@ pkgs.testers.runNixOSTest {
         assert group.startswith("wf-"), out
         machine.wait_until_succeeds(
             f"su - ops -c 'agentos-task workflow status {group} --json' | "
-            "jq -e '[.tasks[] | select(.node != \"cleanup\") | .status] | all(. == \"succeeded\")'",
+            "jq -e '.tasks | (length == 4) and all(.[]; if .node == \"cleanup\" then .status == \"skipped\" else .status == \"succeeded\" end)'",
             timeout=240,
         )
         wfs = json.loads(ops(f"agentos-task workflow status {group} --json"))
