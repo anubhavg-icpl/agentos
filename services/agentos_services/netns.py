@@ -140,34 +140,35 @@ class Netns:
     def setup(self, agent_id):
         """Create the namespace; returns the container's address."""
         n = names(agent_id)
-        self.teardown(agent_id)  # leftovers of an earlier run with the same id
-        try:
-            with self._locked():
+        with self._locked():
+            self._teardown_locked(agent_id)  # leftovers of an earlier run with the same id
+            try:
                 addr = allocate_ip(self.used_addresses(), self.network, self.gateway)
                 d = self.dir(agent_id)
                 os.makedirs(d, mode=0o755)
                 with open(os.path.join(d, "ip"), "w") as f:
                     f.write(str(addr) + "\n")
-            self._files(agent_id, d)
-            ns = n["ns"]
-            r = self.run
-            r(["ip", "netns", "add", ns])
-            r(["ip", "link", "add", n["host_if"], "type", "veth", "peer", "name", n["peer_if"]])
-            r(["ip", "link", "set", n["peer_if"], "netns", ns, "name", "eth0"])
-            r(["ip", "-n", ns, "addr", "add", "%s/%d" % (addr, self.network.prefixlen), "dev", "eth0"])
-            r(["ip", "-n", ns, "link", "set", "lo", "up"])
-            r(["ip", "-n", ns, "link", "set", "eth0", "up"])
-            r(["ip", "-n", ns, "route", "add", "default", "via", str(self.gateway)])
-            r(["ip", "link", "set", n["host_if"], "master", self.bridge])
-            r(["bridge", "link", "set", "dev", n["host_if"], "isolated", "on"])
-            r(["ip", "link", "set", n["host_if"], "up"])
-            # The egress policy is IPv4 only, so the container gets no IPv6
-            with contextlib.suppress(FileNotFoundError):
-                r(["ip", "netns", "exec", ns, _tool("sysctl"), "-q", "-w", "net.ipv6.conf.all.disable_ipv6=1"], check=False)
-            return addr
-        except Exception:
-            self.teardown(agent_id)
-            raise
+                self._files(agent_id, d)
+                ns = n["ns"]
+                r = self.run
+                r(["ip", "netns", "add", ns])
+                r(["ip", "link", "add", n["host_if"], "type", "veth", "peer", "name", n["peer_if"]])
+                r(["ip", "link", "set", n["peer_if"], "netns", ns, "name", "eth0"])
+                r(["ip", "-n", ns, "addr", "add", "%s/%d" % (addr, self.network.prefixlen), "dev", "eth0"])
+                r(["ip", "-n", ns, "link", "set", "lo", "up"])
+                r(["ip", "-n", ns, "link", "set", "eth0", "up"])
+                r(["ip", "-n", ns, "route", "add", "default", "via", str(self.gateway)])
+                r(["ip", "link", "set", n["host_if"], "master", self.bridge])
+                r(["bridge", "link", "set", "dev", n["host_if"], "isolated", "on"])
+                r(["ip", "link", "set", n["host_if"], "up"])
+                # The egress policy is IPv4 only, so the container gets no IPv6
+                with contextlib.suppress(FileNotFoundError):
+                    r(["ip", "netns", "exec", ns, _tool("sysctl"), "-q", "-w",
+                       "net.ipv6.conf.all.disable_ipv6=1"], check=False)
+                return addr
+            except Exception:
+                self._teardown_locked(agent_id)
+                raise
 
     def _files(self, agent_id, d):
         """The container's own /etc/{resolv.conf,passwd,group,hosts,nsswitch.conf}."""
@@ -188,12 +189,15 @@ class Netns:
 
     def teardown(self, agent_id):
         """Remove everything setup created. Safe to call repeatedly."""
+        with self._locked():
+            self._teardown_locked(agent_id)
+
+    def _teardown_locked(self, agent_id):
         n = names(agent_id)
         # Deleting one end of a veth pair removes the other
         self.run(["ip", "link", "del", n["host_if"]], check=False)
         self.run(["ip", "netns", "del", n["ns"]], check=False)
-        with self._locked():
-            shutil.rmtree(self.dir(agent_id), ignore_errors=True)
+        shutil.rmtree(self.dir(agent_id), ignore_errors=True)
 
     def sweep(self, keep=()):
         """Remove namespaces, state and veths of agents with no live unit.
@@ -201,6 +205,10 @@ class Netns:
         `keep` are ids that must stay (the agent being set up). Returns the
         ids and interfaces removed.
         """
+        with self._locked():
+            return self._sweep_locked(keep)
+
+    def _sweep_locked(self, keep):
         ids = set()
         for d in (self.netns_dir, self.state_dir):
             try:
@@ -221,7 +229,7 @@ class Netns:
             if self.is_live(agent_id):
                 live_ifs.add(names(agent_id)["host_if"])
                 continue
-            self.teardown(agent_id)
+            self._teardown_locked(agent_id)
             removed.append(agent_id)
         for veth in self.list_veths():
             if veth not in live_ifs:

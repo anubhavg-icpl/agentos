@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentos_services.usage import Pricing, UsageParser
+from agentos_services.usage import Pricing, UsageParser, output_cap
 
 from conftest import PRICING
 
@@ -100,6 +100,12 @@ def test_pricing_longest_prefix_wins():
     pricing = Pricing({"models": {"gpt-4o": {"input_per_1m": 2.5}, "gpt-4o-mini": {"input_per_1m": 0.15}}})
     assert pricing.rates("gpt-4o-mini-2024-07-18")[0]["input_per_1m"] == 0.15
     assert pricing.rates("gpt-4o-2024-08-06")[0]["input_per_1m"] == 2.5
+
+
+def test_output_cap_counts_requested_candidates():
+    assert output_cap({"max_tokens": 100, "n": 3}) == 300
+    assert output_cap({"generationConfig": {"maxOutputTokens": 100, "candidateCount": 2}},
+                      api="gemini") == 200
 
 
 def test_cost_all_token_kinds():

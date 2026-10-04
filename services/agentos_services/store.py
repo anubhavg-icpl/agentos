@@ -28,6 +28,7 @@ Events are published on the "agentos:events" channel as JSON.
 
 import json
 import logging
+import threading
 import time
 import uuid
 
@@ -55,23 +56,37 @@ class Reservation:
     released (Redis down) expires on its own at its deadline.
     """
 
-    def __init__(self, store=None, keys=(), rid=None, usd=0.0):
+    def __init__(self, store=None, keys=(), rid=None, usd=0.0, hold_sec=0):
         self.store = store
         self.keys = keys
         self.rid = rid
         self.usd = usd
+        self.hold_sec = hold_sec
         self.released = store is None
         self.estimate = usd
+        self._lock = threading.Lock()
+
+    def renew(self):
+        with self._lock:
+            if self.released:
+                return False
+            try:
+                self.store.renew(self)
+                return True
+            except redis.RedisError as exc:
+                log.warning("cannot renew budget reservation %s: %s", self.rid, exc)
+                return False
 
     def release(self):
-        if self.released:
-            return
-        self.released = True
-        try:
-            self.store.r.hdel(self.keys[0], self.rid)
-            self.store.r.hdel(self.keys[1], self.rid)
-        except redis.RedisError as exc:
-            log.warning("cannot release budget reservation %s: %s", self.rid, exc)
+        with self._lock:
+            if self.released:
+                return
+            self.released = True
+            try:
+                self.store.r.hdel(self.keys[0], self.rid)
+                self.store.r.hdel(self.keys[1], self.rid)
+            except redis.RedisError as exc:
+                log.warning("cannot release budget reservation %s: %s", self.rid, exc)
 
 
 class BudgetRefused(Exception):
@@ -152,7 +167,15 @@ class Store:
                     pipe.expire(k, DAY_TTL)
 
         self.r.transaction(txn, *spend_keys, *hold_keys)
-        return Reservation(self if usd > 0 else None, hold_keys, rid, usd)
+        return Reservation(self if usd > 0 else None, hold_keys, rid, usd, hold_sec)
+
+    def renew(self, reservation):
+        """Extend both budget holds while the request remains in flight."""
+        value = "%r:%r" % (float(reservation.usd), self.clock() + reservation.hold_sec)
+        pipe = self.r.pipeline()
+        for key in reservation.keys:
+            pipe.hset(key, reservation.rid, value)
+        pipe.execute()
 
     def reserved(self, agent=None, date=None):
         """USD currently held by in-flight requests (one agent, or all)."""

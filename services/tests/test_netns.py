@@ -2,6 +2,7 @@ import ipaddress
 import os
 import pwd
 import subprocess
+import threading
 
 import pytest
 
@@ -99,3 +100,50 @@ def test_sweep_removes_only_stale(tmp_path):
     assert (tmp_path / "net" / "live").exists() and (tmp_path / "net" / "mine").exists()
     assert ["ip", "link", "del", "avhdeadbeef"] in rec.calls
     assert ["ip", "netns", "del", "agentos-dead"] in rec.calls
+
+
+def test_sweep_cannot_delete_a_veth_created_during_discovery(tmp_path):
+    discovered = threading.Event()
+    resume_sweep = threading.Event()
+    veth_added = threading.Event()
+    interfaces = set()
+    deleted_active_veth = threading.Event()
+    active_if = names("active")["host_if"]
+
+    class CoordinatedRunner(Recorder):
+        def __call__(self, cmd, check=True):
+            super().__call__(cmd, check)
+            if cmd[:3] == ["ip", "link", "add"]:
+                interfaces.add(cmd[3])
+                veth_added.set()
+            elif cmd[:3] == ["ip", "link", "del"]:
+                if cmd[3] == active_if and active_if in interfaces:
+                    deleted_active_veth.set()
+                interfaces.discard(cmd[3])
+
+    ns = make(tmp_path, CoordinatedRunner())
+    (tmp_path / "net/stale").mkdir(parents=True)
+
+    def is_live(agent_id):
+        if agent_id == "stale":
+            discovered.set()
+            resume_sweep.wait(2)
+        return False
+
+    ns.is_live = is_live
+    ns.list_veths = lambda: list(interfaces)
+    sweep_result = []
+    sweep_thread = threading.Thread(target=lambda: sweep_result.extend(ns.sweep()))
+    sweep_thread.start()
+    assert discovered.wait(2)
+
+    setup_thread = threading.Thread(target=lambda: ns.setup("active"))
+    setup_thread.start()
+    veth_added.wait(0.2)
+    resume_sweep.set()
+    setup_thread.join(2)
+    sweep_thread.join(2)
+
+    assert not setup_thread.is_alive() and not sweep_thread.is_alive()
+    assert active_if in interfaces
+    assert not deleted_active_veth.is_set()

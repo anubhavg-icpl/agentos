@@ -21,6 +21,7 @@ def provs(upstream, tmp_path, **extra):
 
 
 GEMINI = "/agent/g1/gemini/v1beta/models/gemini-test:generateContent"
+ANTHROPIC = "/agent/a1/anthropic/v1/messages"
 
 
 def test_gemini_key_usage_and_pricing(make_gateway, upstream, store, tmp_path):
@@ -46,6 +47,27 @@ def test_gemini_streaming_usage_and_legacy_key_param(make_gateway, upstream, sto
     assert seen["path"] == "/v1beta/models/gemini-test:streamGenerateContent?alt=sse"   # placeholder dropped
     assert seen["headers"]["x-goog-api-key"] == "real-key"
     assert store.spend("g1") == pytest.approx((600 + 1600 + 100) / 1e6)
+
+
+def test_gemini_fallback_drops_client_query_key(make_gateway, upstream, upstream2, tmp_path):
+    primary_key = tmp_path / "gemini.key"
+    backup_key = tmp_path / "gemini-backup.key"
+    primary_key.write_text("primary-key\n")
+    backup_key.write_text("backup-key\n")
+    upstream.fail_status = 500
+    gw = make_gateway(providers={
+        "gemini": {"base_url": upstream.url, "api": "gemini", "key_file": str(primary_key),
+                   "fallbacks": ["backup"]},
+        "backup": {"base_url": upstream2.url, "api": "gemini", "key_file": str(backup_key)},
+    })
+    path = GEMINI + "?key=client-secret&alt=sse"
+    status, _, _ = request(gw, "POST", path, {"contents": [{"parts": [{"text": "hi"}]}]})
+    assert status == 200
+    assert "key=client-secret" in upstream.requests[-1]["path"]
+    fallback = upstream2.requests[-1]
+    assert "key=" not in fallback["path"]
+    assert "alt=sse" in fallback["path"]
+    assert fallback["headers"]["x-goog-api-key"] == "backup-key"
 
 
 def test_gemini_client_key_is_kept_and_model_routes_in_path(make_gateway, upstream, store, tmp_path):
@@ -140,6 +162,38 @@ def test_cost_routing_can_choose_the_local_provider(make_gateway, upstream, stor
     assert entry["provider"] == "local" and entry["routed_provider"] == "local"
     described = json.loads(request(gw, "GET", "/_agentos/routing?agent=r1&provider=openai&model=gpt-test", admin=True)[2])
     assert described["effective"]["routed_provider"] == "local"
+
+
+def test_cheapest_routing_skips_unreachable_provider_target(make_gateway, upstream, tmp_path):
+    providers = provs(upstream, tmp_path)
+    providers["anthropic"] = {"base_url": upstream.url, "api": "anthropic"}
+    gw = make_gateway(
+        providers=providers,
+        routing={"strategy": "cheapest", "groups": [["claude-test", "llama3.1"]],
+                 "targets": {"llama3.1": "local"}})
+    body = {"model": "claude-test", "messages": [{"role": "user", "content": "hi"}]}
+    assert request(gw, "POST", ANTHROPIC, body)[0] == 200
+    assert upstream.requests[-1]["body"]["model"] == "claude-test"
+
+
+def test_default_output_limits_are_forwarded(make_gateway, upstream, tmp_path):
+    providers = provs(upstream, tmp_path)
+    providers["anthropic"] = {"base_url": upstream.url, "api": "anthropic"}
+    providers["openai"] = {"base_url": upstream.url, "api": "openai"}
+    gw = make_gateway(providers=providers)
+
+    assert request(gw, "POST", ANTHROPIC, {"messages": []})[0] == 200
+    assert upstream.requests[-1]["body"]["max_tokens"] == 4096
+
+    assert request(gw, "POST", "/agent/o1/openai/v1/chat/completions", {"model": "gpt-test", "messages": []})[0] == 200
+    assert upstream.requests[-1]["body"]["max_tokens"] == 4096
+
+    assert request(gw, "POST", "/agent/o1/openai/v1/responses",
+                   {"model": "gpt-test", "input": [], "stream": True})[0] == 200
+    assert upstream.requests[-1]["body"]["max_output_tokens"] == 4096
+
+    assert request(gw, "POST", GEMINI, {"contents": []})[0] == 200
+    assert upstream.requests[-1]["body"]["generationConfig"]["maxOutputTokens"] == 4096
 
 
 def test_routing_never_moves_across_wire_formats(make_gateway, upstream, tmp_path):

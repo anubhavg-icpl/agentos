@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 
 import pytest
 
@@ -66,6 +67,26 @@ def test_reservation_released_after_streamed_response(make_gateway, store):
     assert store.spend("a1") > 0
 
 
+def test_gateway_renews_hold_for_long_running_request(make_gateway, upstream, store):
+    gw = make_gateway(limits={"max_requests_per_minute": 0, "loop_detection": False})
+    upstream.delay = 0.8
+    reserve = store.reserve
+
+    def short_hold(agent, usd, agent_limit, global_limit, hold_sec=900):
+        return reserve(agent, usd, agent_limit, global_limit, hold_sec=0.3)
+
+    gw.store.reserve = short_hold
+    results = []
+    request_thread = threading.Thread(target=lambda: results.append(
+        request(gw, "POST", ANTHROPIC, big())[0]))
+    request_thread.start()
+    time.sleep(0.45)
+    assert store.reserved("a1") > 0
+    request_thread.join(3)
+    assert not request_thread.is_alive() and results == [200]
+    assert store.reserved("a1") == 0
+
+
 def test_reservation_released_after_upstream_error(make_gateway, upstream, store):
     gw = make_gateway()
     upstream.fail_status = 500
@@ -96,6 +117,18 @@ def test_stale_reservations_expire(store):
     store.reserve("a1", 2.0, 5.0, 100.0)
     assert store.reserved("a1") == 2.0
     held.release()
+
+
+def test_live_reservation_can_be_renewed(store):
+    now = [1000.0]
+    store.clock = lambda: now[0]
+    held = store.reserve("a1", 4.0, 5.0, 100.0, hold_sec=10)
+    now[0] += 8
+    assert held.renew()
+    now[0] += 5
+    assert store.reserved("a1") == 4.0
+    held.release()
+    assert not held.renew()
 
 
 def test_input_size_is_part_of_the_estimate(make_gateway):

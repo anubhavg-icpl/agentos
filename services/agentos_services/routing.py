@@ -27,10 +27,11 @@ log = logging.getLogger("agentos.routing")
 
 
 class Router:
-    def __init__(self, cfg, pricing, providers=None):
+    def __init__(self, cfg, pricing, providers=None, can_switch=None):
         self.cfg = cfg or {}
         self.pricing = pricing
         self.providers = providers or {}
+        self.can_switch = can_switch
 
     # ── providers ──────────────────────────────────────────────────────
     def provider_for(self, model):
@@ -62,6 +63,10 @@ class Router:
         return float(rates.get("input_per_1m", 0.0)) + float(rates.get("output_per_1m", 0.0))
 
     def _allowed(self, source, target, provider):
+        target_provider = self.provider_for(target)
+        if (target_provider and target_provider != provider and provider and self.can_switch
+                and not self.can_switch(provider, target_provider)):
+            return False
         want = self.vendor(source)
         if want is None and provider in {m.get("provider") for m in self.pricing.models.values()}:
             want = provider

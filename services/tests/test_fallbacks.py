@@ -13,13 +13,13 @@ def gw(make_gateway, upstream, upstream2, tmp_path):
     key = tmp_path / "backup.key"
     key.write_text("sk-backup\n")
 
-    def make(fallbacks, primary_extra=None, **backup):
+    def make(fallbacks, primary_extra=None, budget=None, **backup):
         provs = {
             "openai": dict({"base_url": upstream.url, "api": "openai", "fallbacks": fallbacks}, **(primary_extra or {})),
             "backup": dict({"base_url": upstream2.url, "api": "openai", "key_file": str(key)}, **backup),
             "local": {"base_url": upstream2.url, "api": "openai-compatible"},
         }
-        gw = make_gateway(providers=provs)
+        gw = make_gateway(providers=provs, **({"budget": budget} if budget is not None else {}))
         return gw
     return make
 
@@ -119,3 +119,14 @@ def test_no_fallbacks_configured_is_unchanged(make_gateway, upstream):
     upstream.fail_status = 500
     assert request(g, "POST", OPENAI, BODY)[0] == 500
     assert len(upstream.requests) == 1
+
+
+def test_paid_fallback_cost_is_reserved_before_zero_cost_primary(gw, upstream, upstream2, store):
+    g = gw([{"provider": "backup", "model": "claude-pricey"}],
+           primary_extra={"api": "openai-compatible"},
+           budget={"default_daily_usd": 0.05})
+    body = dict(BODY, max_tokens=1000)
+    status, _, _ = request(g, "POST", "/agent/f1/openai/v1/chat/completions", body)
+    assert status == 402
+    assert upstream.requests == [] and upstream2.requests == []
+    assert store.reserved("f1") == 0

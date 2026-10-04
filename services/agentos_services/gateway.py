@@ -104,7 +104,7 @@ class Gateway:
         self.clock = clock
         self.log_dir = cfg["gateway"]["log_dir"]
         self._log_lock = threading.Lock()
-        self.router = Router(cfg["routing"], pricing, cfg["providers"])
+        self.router = Router(cfg["routing"], pricing, cfg["providers"], self.can_switch)
         self.recorder = Recorder(cfg["recording"]["dir"], cfg["recording"]["max_body_bytes"])
         self.bus = Bus(cfg, store, clock)
         for name, prov in cfg["providers"].items():
@@ -554,37 +554,73 @@ class Gateway:
                     provider = target
                     adapter = adapter_for(self.cfg["providers"][provider])
         rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
-        if isinstance(payload, dict) and adapter.prepare(payload, rest_path):
+        default_max_tokens = int(self.cfg["budget"].get("default_max_tokens", 4096))
+        if isinstance(payload, dict) and adapter.prepare(payload, rest_path, default_max_tokens):
             edited = True
         if edited:
             body = json.dumps(payload).encode()
-        free = adapter.zero_cost
-        resv = self.reserve_budget(agent, 0.0 if free else self.estimate(request_model, payload, body, rest_path))
-        resv.estimate = 0.0 if free else self.estimate(request_model, payload, body, rest_path)
+        primary_estimate, estimate = self.estimate_chain(
+            provider, adapter, request_model, payload, body, rest, rest_path, default_max_tokens)
+        resv = self.reserve_budget(agent, estimate)
+        resv.estimate = primary_estimate
+        stop_renewal = threading.Event()
+        renewal = None
+        if resv.store is not None:
+            interval = max(0.1, min(30.0, resv.hold_sec / 3.0))
+
+            def renew_while_live():
+                while not stop_renewal.wait(interval):
+                    resv.renew()
+
+            renewal = threading.Thread(target=renew_while_live, daemon=True)
+            renewal.start()
         try:
             self.forward(req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
-                         request_model, route, resv)
+                         request_model, route, resv, default_max_tokens)
         finally:
+            if renewal:
+                stop_renewal.set()
+                renewal.join()
             resv.release()
 
     def can_switch(self, source, target):
         """Cost routing may move a request to another provider only when it
         speaks the same wire format and can authenticate."""
         providers = self.cfg["providers"]
-        if target not in providers:
+        if source not in providers or target not in providers:
             return False
         a, b = adapter_for(providers[source]), adapter_for(providers[target])
         return a.wire == b.wire and not a.model_in_path and not b.model_in_path and (
             b.zero_cost or self.provider_key(target) is not None)
 
-    def estimate(self, model, payload, body, rest_path):
+    def estimate(self, model, payload, body, rest_path, adapter=None):
         """Estimated USD of a request, held against the budget while it runs."""
         if not isinstance(payload, dict) or not any(k in payload for k in GENERATION_KEYS):
             return 0.0
         if rest_path.endswith("embeddings"):
             return estimate_cost(self.pricing, model, len(body or b""), 0)
-        cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)))
+        cap = output_cap(payload, int(self.cfg["budget"].get("default_max_tokens", 4096)),
+                         adapter.name if adapter else None, rest_path)
         return estimate_cost(self.pricing, model, len(body or b""), cap)
+
+    def estimate_attempt(self, adapter, model, payload, body, rest_path):
+        return 0.0 if adapter.zero_cost else self.estimate(model, payload, body, rest_path, adapter)
+
+    def estimate_chain(self, provider, adapter, model, payload, body, rest, rest_path, default_max_tokens):
+        primary = self.estimate_attempt(adapter, model, payload, body, rest_path)
+        maximum = primary
+        for name, fallback, fallback_model in self.fallbacks_for(provider):
+            fallback_body, fallback_rest = self.fallback_body(
+                fallback, payload, rest, fallback_model, body, default_max_tokens)
+            try:
+                fallback_payload = json.loads(fallback_body) if fallback_body is not None else None
+            except (TypeError, ValueError):
+                fallback_payload = None
+            attempt_model = (fallback_model or fallback.request_model(fallback_payload, fallback_rest) or model)
+            fallback_path = "/".join(urllib.parse.quote(part, safe=":") for part in fallback_rest)
+            maximum = max(maximum, self.estimate_attempt(
+                fallback, attempt_model, fallback_payload, fallback_body, fallback_path))
+        return primary, maximum
 
     def fallbacks_for(self, provider):
         """Usable fallbacks of a provider: [(name, adapter, model-or-None)].
@@ -612,14 +648,14 @@ class Gateway:
             out.append((name, ad, model))
         return out
 
-    def fallback_body(self, adapter, payload, rest, model, body):
+    def fallback_body(self, adapter, payload, rest, model, body, default_max_tokens=4096):
         """Request body and path for a fallback attempt."""
         rest = list(rest)
         if isinstance(payload, dict):
             payload = json.loads(json.dumps(payload))
             if model:
                 rest = adapter.set_model(payload, rest, model)
-            adapter.prepare(payload, "/".join(rest))
+            adapter.prepare(payload, "/".join(rest), default_max_tokens)
             return json.dumps(payload).encode(), rest
         if model:
             rest = adapter.set_model(None, rest, model)
@@ -631,7 +667,7 @@ class Gateway:
         prov = self.cfg["providers"][provider]
         base = urllib.parse.urlsplit(prov["base_url"])
         target = base.path.rstrip("/") + "/" + rest_path
-        query = adapter.query_for(query)
+        query = adapter.query_for(query, strip=strip)
         if query:
             target += "?" + query
         headers = {}
@@ -658,7 +694,7 @@ class Gateway:
             raise
 
     def forward(self, req, agent, provider, adapter, rest, payload, query, started, body, orig_body,
-                request_model, route, resv):
+                request_model, route, resv, default_max_tokens=4096):
         rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
         record_seq = None
         captured = bytearray()
@@ -676,8 +712,15 @@ class Gateway:
                 if i == 0:
                     att_body, att_rest = body, rest
                 else:
-                    att_body, att_rest = self.fallback_body(ad, payload, rest, fb_model, body)
+                    att_body, att_rest = self.fallback_body(
+                        ad, payload, rest, fb_model, body, default_max_tokens)
                 att_rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in att_rest)
+                try:
+                    att_payload = json.loads(att_body) if att_body is not None else None
+                except (TypeError, ValueError):
+                    att_payload = None
+                attempt_model = fb_model or ad.request_model(att_payload, att_rest) or request_model
+                resv.estimate = self.estimate_attempt(ad, attempt_model, att_payload, att_body, att_rest_path)
                 try:
                     conn, resp = self.open_upstream(req, name, ad, att_rest_path, query, att_body,
                                                     strip=bool(i or (route and route.get("routed_provider"))))

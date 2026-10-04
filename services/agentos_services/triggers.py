@@ -373,7 +373,7 @@ class TriggerService:
         """The submit bodies to try, in order: [(style, body)]."""
         repo = rule["repo"]
         origin = "gh:%s#%d" % (repo, number)
-        dedupe = "%s:%s" % (origin, event)
+        dedupe = "gh:" + hashlib.sha256(("%s#%d:%s" % (repo, number, event)).encode()).hexdigest()
         prompt = render_prompt(rule["prompt"], values, int(self.opts["max_prompt_bytes"]))
         base = {"agent": rule["agent"], "workspace": rule["workspace"], "prompt": prompt, "origin": origin}
         for key in ("budget_usd", "timeout_sec"):

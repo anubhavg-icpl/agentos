@@ -270,22 +270,26 @@ DEFAULT_MAX_OUTPUT_TOKENS = 4096
 GENERATION_KEYS = ("messages", "input", "contents", "prompt")
 
 
-def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS):
+def output_cap(payload, default=DEFAULT_MAX_OUTPUT_TOKENS, api=None, rest_path=None):
     """Total output allowance across all requested candidates."""
     if not isinstance(payload, dict):
         return default
     gen = payload.get("generationConfig")
     gen = gen if isinstance(gen, dict) else {}
-    cap = default
-    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
-        value = payload.get(key)
-        if isinstance(value, (int, float)) and value > 0:
-            cap = int(value)
-            break
-    else:
+    if api == "gemini":
         value = gen.get("maxOutputTokens")
-        if isinstance(value, (int, float)) and value > 0:
-            cap = int(value)
+    elif api == "anthropic":
+        value = payload.get("max_tokens")
+    elif rest_path and rest_path.endswith("responses"):
+        value = payload.get("max_output_tokens")
+    elif api:
+        value = payload.get("max_tokens", payload.get("max_completion_tokens"))
+    else:
+        value = next((payload[key] for key in
+                      ("max_tokens", "max_completion_tokens", "max_output_tokens") if key in payload), None)
+        if value is None:
+            value = gen.get("maxOutputTokens")
+    cap = int(value) if isinstance(value, (int, float)) and value > 0 else default
     count = gen.get("candidateCount", payload.get("n", 1))
     if isinstance(count, int) and not isinstance(count, bool) and count > 0:
         cap *= count

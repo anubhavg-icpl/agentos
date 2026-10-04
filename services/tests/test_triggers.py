@@ -6,6 +6,7 @@ import threading
 import pytest
 
 from agentos_services import config as configmod
+from agentos_services import tasks as T
 from agentos_services import triggers as TR
 
 SECRET = b"s3cret-for-tests"
@@ -84,7 +85,7 @@ def test_valid_signature_submits_a_task(hook):
     status, out = hook.post(issue_payload())
     assert status == 200 and out["results"][0]["status"] == "submitted"
     body, = hook.orch.bodies
-    assert body["origin"] == "gh:acme/widgets#7" and body["dedupe_key"] == "gh:acme/widgets#7:issues"
+    assert body["origin"] == "gh:acme/widgets#7" and T._KEY.fullmatch(body["dedupe_key"])
     assert body["agent"] == "claude" and body["workspace"] == "widgets"
     assert "Title: Crash on start" in body["prompt"]
 
@@ -207,7 +208,16 @@ def test_command_prefix_and_argument_extraction():
     assert h.post(comment_payload("/agentosfix"), event="issue_comment")[1]["status"] == "ignored"
     assert h.post(comment_payload("/agentos fix the tests"), event="issue_comment")[1]["status"] == "ok"
     assert h.orch.bodies[-1]["prompt"] == "Do: fix the tests (issue 9)"
-    assert h.orch.bodies[-1]["dedupe_key"] == "gh:acme/widgets#9:issue_comment"
+    assert T._KEY.fullmatch(h.orch.bodies[-1]["dedupe_key"])
+
+
+def test_dedupe_key_is_validator_compatible():
+    h = Hook(make_cfg({"fix": rule(repo="acme_team/widgets_repo")}))
+    payload = issue_payload()
+    payload["repository"]["full_name"] = "acme_team/widgets_repo"
+    h.post(payload)
+    key = h.orch.bodies[-1]["dedupe_key"]
+    assert key.startswith("gh:") and T._KEY.fullmatch(key)
 
 
 def test_check_run_needs_a_same_repo_pull_request():
@@ -336,7 +346,7 @@ def test_publish_rule_submits_one_task_with_a_publish_block():
     body = h.orch.bodies[0]
     assert out["results"][0]["style"] == "fields"
     assert body["gate"] is True and body["publish"]["repo"] == REPO
-    assert body["origin"] == "gh:acme/widgets#7" and body["dedupe_key"] == "gh:acme/widgets#7:issues"
+    assert body["origin"] == "gh:acme/widgets#7" and T._KEY.fullmatch(body["dedupe_key"])
 
 
 def test_workflow_style_submits_a_two_node_workflow():
@@ -349,7 +359,7 @@ def test_workflow_style_submits_a_two_node_workflow():
     assert out["results"][0]["style"] == "workflow"
     assert run["id"] == "run" and run["gate"] is True and "origin" not in run
     assert pub["kind"] == "publish" and pub["depends_on"] == ["run"] and pub["publish"]["repo"] == REPO
-    assert body["origin"] == "gh:acme/widgets#7" and body["dedupe_key"] == "gh:acme/widgets#7:issues"
+    assert body["origin"] == "gh:acme/widgets#7" and T._KEY.fullmatch(body["dedupe_key"])
 
 
 def test_todays_orchestrator_rejects_unknown_fields_so_we_fall_back():
