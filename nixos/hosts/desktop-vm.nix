@@ -60,7 +60,7 @@ in
           echo "You must change it at the first login (also kept in ${stateFile}, root only)."
           echo
         } | tee ${issueFile} > /dev/console || true
-        chmod 644 ${issueFile}
+        chmod 600 ${issueFile}
       else
         rm -f ${stateFile} ${issueFile}
       fi
