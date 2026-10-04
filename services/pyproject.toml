@@ -22,6 +22,7 @@ agentos-netns = "agentos_services.netns:main"
 agentos-orchestrator = "agentos_services.orchestrator:main"
 agentos-task-runner = "agentos_services.taskrunner:main"
 agentos-scheduler = "agentos_services.scheduler:main"
+agentos-triggers = "agentos_services.triggers:main"
 
 [tool.setuptools.packages.find]
 include = ["agentos_services*"]

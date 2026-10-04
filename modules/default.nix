@@ -45,6 +45,7 @@
 
     # Automation
     ./scheduler
+    ./triggers
     ./notifications
 
     # Pre-installed toolchains

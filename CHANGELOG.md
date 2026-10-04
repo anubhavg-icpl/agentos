@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Event triggers and issue-to-PR** (`agentos.triggers`, `agentos-triggers`, docs/triggers.md): signed GitHub webhooks (issues, comments, check runs, review comments) start tasks by declarative rules; a `publish` step pushes `agent/<task-id>` and opens a PR with a token the agent never sees. `agentos.git-automation.autoPR` now publishes finished tasks of configured repositories. VM test `triggers`.
 - **Per-agent gateway tokens.** `agentos spawn` generates a token and registers its hash through the admin socket; agents call `/agent/<id>:<token>/<provider>/`. An agent can no longer spend under another agent's id, get a fresh budget by inventing ids, or impersonate others on the message bus. Tokens are revoked when the agent is reaped.
 - **Container isolation** (`agentos spawn --isolation container`): own root filesystem, PID/IPC/UTS namespaces and a network namespace on the `agentos0` bridge that can only reach the gateway.
 - **GPU scheduling** (`agentos spawn --gpu N`, `agentos-gpu`) with exclusive per-device locks, released by the daemon when an agent dies.
