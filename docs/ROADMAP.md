@@ -16,6 +16,10 @@ releases as work lands; [CHANGELOG.md](../CHANGELOG.md) records what shipped.
   by root and never visible to the agent ([triggers.md](triggers.md)).
 - OpenClaw as an opt-in chat front end that submits AgentOS tasks through a
   policy bridge and spends through the gateway ([openclaw.md](openclaw.md)).
+- Agent stack: n8n, Open WebUI + Ollama, Flowise, Langflow, AnythingLLM and
+  LobeChat from the agent-fleet repo on the host, each with its own gateway
+  agent id and budget ([agent-stack.md](agent-stack.md)). OpenMuse waits for
+  an upstream image.
 - Pullrun packaged, with an experimental `--isolation pullrun` mode
   ([pullrun.md](pullrun.md)).
 

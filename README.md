@@ -482,6 +482,7 @@ agentos/
 | [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
 | [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
 | [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
+| [docs/agent-stack.md](docs/agent-stack.md) | agent-fleet apps (n8n, Open WebUI, Flowise, Langflow, AnythingLLM, LobeChat, OpenMuse) on the host, routed through the model gateway |
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
 | [docs/agent-fleet-web.md](docs/agent-fleet-web.md) | agent-fleet in-browser chat and hub served on loopback (wllama vendored), Hugging Face deploy tool |
@@ -512,6 +513,7 @@ agentos/
 - [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
 - [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
 - [x] OpenClaw chat front end, opt-in ([docs](docs/openclaw.md))
+- [x] agent-fleet app stack on the host, opt-in ([docs](docs/agent-stack.md))
 - [x] Pullrun packaged, experimental `--isolation pullrun` ([docs](docs/pullrun.md))
 
 What comes next, release by release: [docs/ROADMAP.md](docs/ROADMAP.md).

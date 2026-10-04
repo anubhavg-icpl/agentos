@@ -173,6 +173,8 @@
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
           # Local inference backend registered as a gateway provider.
           local-ai = import ./tests/local-ai.nix { inherit pkgs agentosModules; };
+          # n8n native, Flowise as a container, secrets and gateway routing.
+          agent-stack = import ./tests/agent-stack.nix { inherit pkgs agentosModules; };
           # Eval-only: key-only sshd on the live ISO, no fixed VM password.
           hardening = import ./tests/hardening.nix { inherit pkgs self; };
         });

@@ -59,6 +59,7 @@
     ./ai-ml
     ./gpu
     ./local-ai
+    ./agent-stack
 
     # VIBE integration (853 modes, 5340 skills)
     ./vibe-integration
