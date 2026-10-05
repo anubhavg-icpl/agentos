@@ -110,6 +110,21 @@ def enforce(eff, name, version, fields, runtime, spent_today=0.0, reserved=0.0, 
     rule = lambda key: "%s.%s" % (name, key)       # noqa: E731
     applied = []
 
+    if fields.get("kind") == "publish":
+        # A publish task runs no agent and spends no budget: only the publish
+        # rules apply (agent, model and budget rules would act on placeholders)
+        if eff.get("publish_enable") is False:
+            raise PolicyError(rule("publish.enable"), "publishing a pull request is not allowed")
+        ra = eff.get("require_approval") or {}
+        mode = ra.get("mode", "never")
+        if mode not in APPROVAL_MODES:
+            raise PolicyError(rule("require_approval"), "unknown mode %r" % mode)
+        if mode in ("always", "publish") and not fields.get("gate"):
+            fields["gate"] = True
+            applied.append("gate forced by require_approval=%s" % mode)
+        return {"name": name, "version": version, "applied": applied,
+                "max_parallel": eff.get("max_parallel")}
+
     agents = eff.get("allowed_agents")
     if agents is not None and fields["agent"] not in agents:
         raise PolicyError(rule("allowed_agents"), "agent %r is not allowed (allowed: %s)" % (
@@ -129,7 +144,8 @@ def enforce(eff, name, version, fields, runtime, spent_today=0.0, reserved=0.0, 
     if iso == "container" and runtime.get("default_isolation", "sandbox") != "container":
         raise PolicyError(rule("isolation"), "container isolation is required but the host runs agents in a sandbox")
 
-    if fields.get("publish") is not None and eff.get("publish_enable") is False:
+    publishing = fields.get("publish") is not None or fields.get("kind") == "publish"
+    if publishing and eff.get("publish_enable") is False:
         raise PolicyError(rule("publish.enable"), "publishing a pull request is not allowed")
 
     model = fields.get("model")
@@ -163,7 +179,7 @@ def enforce(eff, name, version, fields, runtime, spent_today=0.0, reserved=0.0, 
     if mode not in APPROVAL_MODES:
         raise PolicyError(rule("require_approval"), "unknown mode %r" % mode)
     gate = (mode == "always"
-            or (mode == "publish" and fields.get("publish") is not None)
+            or (mode == "publish" and publishing)
             or (mode == "costAbove" and (budget is None or budget > float(ra.get("threshold_usd", 0)))))
     if gate and not fields.get("gate"):
         fields["gate"] = True
@@ -180,6 +196,6 @@ def day_spent(tasks, name, now):
     for t in tasks:
         pol = t.get("policy") or {}
         if pol.get("name") == name and t.get("created_at", 0) >= start and t.get("status") not in ("cancelled", "skipped") \
-                and t.get("role") != "judge":
+                and t.get("role") != "judge" and t.get("kind") != "publish":
             total += float(t.get("budget_usd") or 0)
     return total

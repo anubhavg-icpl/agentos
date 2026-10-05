@@ -176,6 +176,11 @@ rec {
   codebuff = up.codebuff;
   pi-coding-agent = up.pi-coding-agent;
 
+  # herdr: persistent terminal workspaces for the agents above (agentos.herdr,
+  # docs/herdr.md). Not an agent, so not part of all-agents; the module
+  # installs it. nixpkgs-unstable's package (0.9.x), built from source there.
+  herdr = up.herdr;
+
 
   # ════════════════════════════════════════════════════════════════════
   # NPM LAUNCHERS (fetched from registry.npmjs.org on first run)
@@ -269,6 +274,9 @@ rec {
   # and the CLI that publishes them to Hugging Face Spaces
   agent-fleet-web = pkgs.callPackage ../nixos/packages/agent-fleet-web.nix { };
   agent-fleet-deploy = pkgs.callPackage ../nixos/packages/agent-fleet-deploy.nix { inherit agent-fleet-web; };
+
+  # Agent skill packs (agentos.skills, docs/skills.md), exposed as skills-<pack>
+} // lib.mapAttrs' (name: lib.nameValuePair "skills-${name}") (import ../nixos/packages/skills { inherit pkgs; }) // {
 
   # Service daemons. These are placeholders with no source code yet;
   # they are only referenced when agentos.daemons.enable = true.

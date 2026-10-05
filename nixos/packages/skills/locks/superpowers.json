@@ -1,0 +1,17 @@
+{
+ "brainstorming": "skills/brainstorming",
+ "diagnosing-superpowers": "skills/diagnosing-superpowers",
+ "dispatching-parallel-agents": "skills/dispatching-parallel-agents",
+ "executing-plans": "skills/executing-plans",
+ "finishing-a-development-branch": "skills/finishing-a-development-branch",
+ "receiving-code-review": "skills/receiving-code-review",
+ "requesting-code-review": "skills/requesting-code-review",
+ "subagent-driven-development": "skills/subagent-driven-development",
+ "systematic-debugging": "skills/systematic-debugging",
+ "test-driven-development": "skills/test-driven-development",
+ "using-git-worktrees": "skills/using-git-worktrees",
+ "using-superpowers": "skills/using-superpowers",
+ "verification-before-completion": "skills/verification-before-completion",
+ "writing-plans": "skills/writing-plans",
+ "writing-skills": "skills/writing-skills"
+}

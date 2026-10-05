@@ -290,6 +290,34 @@ vibe search "rag"          # Search the library
 
 ---
 
+## Agent Skills
+
+`agentos.skills` installs skill packs pinned to upstream commits: Reticle, Chisle (opt-in), UI Skills, Ouroboros, Caliper, Anti-Slop, img2threejs, FWC SwiftUI, and the Karpathy guidelines and skills. Every skill is checked against the Agent Skills spec at build time. The packs link their skills into the skills directory of every agent CLI for the agent user and any users you list: `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, `~/.gemini/skills`, `~/.config/opencode/skills` and more. Each pack's tools go on the PATH and its MCP servers into the MCP registry. Enable or disable packs and targets per option; skills you wrote yourself are never overwritten. Twenty-two more packs bring in popular community collections (Superpowers, gstack, Anthropic's open skills, Matt Pocock's skills, Everything Claude Code, the scientific skills, ui-ux-pro-max, Impeccable, Hyperframes, Composio's app automations and more); they are all opt-in, only redistributable skills are included, and `agentos.skills.collections = [ "community" ]` or `enableAll = true` switches them on (evaluation warns above 300 skills because each costs about 100 tokens of context).
+
+```bash
+agentos-skills list        # packs, skills, tools, MCP servers, licenses
+agentos-skills doctor      # which links exist or are broken, per user and CLI
+```
+
+Full reference: [docs/skills.md](docs/skills.md)
+
+---
+
+## herdr
+
+`agentos.herdr` adds [herdr](https://herdr.dev), persistent terminal workspaces whose panes show whether an agent is working, blocked or idle. The agent user gets a sandboxed headless herdr server that operators attach to; `agentos-herdr status` and loopback Prometheus metrics report panes per state, and a blocked agent can raise an `agentos.notifications` message. An AgentOS plugin shows orchestrator tasks, factory items and budgets inside herdr and approves or cancels gated tasks. Plugins are declared with pinned commits (`agentos.herdr.plugins`) or managed with `agentos-herdr-plugins`: browse the marketplace, review exactly which commands a plugin runs, install pinned, update with a manifest diff. herdr does not sandbox plugins; installing the whole marketplace (`marketplace.installAll`) is off by default.
+
+```bash
+agentos-herdr status                       # panes and agents per user
+sudo agentos-herdr attach                  # the agent user's herdr
+agentos-herdr-plugins catalog              # marketplace: stars, licence, head commit
+agentos-herdr-plugins show owner/repo      # every command the plugin will run
+```
+
+Full reference: [docs/herdr.md](docs/herdr.md)
+
+---
+
 ## MCP Server Registry
 
 <div align="center">
@@ -369,6 +397,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | networking | Metering model gateway, agent bridge, NAT | automatic |
 | context | Qdrant vector DB, persistent memory | `agentos-memory` |
 | orchestration | Multi-agent coordination † | `agentos-orchestrate` |
+| factory | Software factory: planner, builder, verify, reviewer, fix loop, QA, then PR or auto-merge | `agentos-factory` |
 | policy | Typed policy-as-code and RBAC roles on the orchestrator socket | `agentos-task policy show`, `whoami` |
 | mcp-registry | 14 core MCP tools | `agentos-tools` |
 | mcp-servers | 36 MCP servers (8 categories) | `agentos-mcp` |
@@ -392,6 +421,8 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | editors | Neovim (LSP configured), Helix | automatic |
 | ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
 | vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
+| skills | Skill packs linked into every agent CLI | `agentos-skills` |
+| herdr | Persistent agent workspaces, status bridge, plugin marketplace | `agentos-herdr`, `agentos-herdr-plugins` |
 
 † Planned service, not implemented yet ([status](docs/STATUS.md)).
 
@@ -467,6 +498,8 @@ agentos/
 │   ├── circuit-breaker/            #   Rate limiting + loop detection
 │   ├── mcp-servers/                #   36 preconfigured MCP servers
 │   ├── vibe-integration/           #   5340 skills auto-installer
+│   ├── skills/                     #   Skill packs linked into every agent CLI
+│   ├── herdr/                      #   herdr workspaces, status bridge, plugins
 │   ├── context/                    #   Qdrant vector memory
 │   ├── orchestration/              #   Multi-agent coordination
 │   ├── policy/                     #   Policy-as-code and RBAC
@@ -534,6 +567,7 @@ agentos/
 - [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
 - [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
 - [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
+- [x] Software factory: work items through plan, build, verify, review, fix loop and QA to a pull request ([docs](docs/factory.md))
 - [x] Signed provenance for AI-authored commits, verifiable offline ([docs](docs/provenance.md))
 - [x] Hash-chained, signed audit log with SIEM export ([docs](docs/audit.md))
 - [x] DLP in the gateway: mask or block secrets and PII in prompts ([docs](docs/dlp.md))

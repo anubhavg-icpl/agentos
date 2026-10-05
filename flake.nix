@@ -154,6 +154,12 @@
             inherit pkgs;
             host = hostFor system "agentos";
           };
+          # Every skill pack and the combined bundle build, skills have front
+          # matter, no name collisions, pack.json is valid (no VM).
+          skills-eval = import ./tests/skills-eval.nix {
+            inherit pkgs;
+            packs = lib.filterAttrs (n: _: lib.hasPrefix "skills-" n) self.packages.${system};
+          };
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           # Boots a VM with the AgentOS service stack and drives an agent
@@ -167,16 +173,23 @@
           orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
           # GitHub webhooks -> tasks -> pushed branch and pull request.
           triggers = import ./tests/triggers.nix { inherit pkgs agentosModules; };
+          # Software factory: fake roles take an item to a pull request with evidence.
+          factory = import ./tests/factory.nix { inherit pkgs agentosModules; };
           # Container-isolated agents in their own network namespace.
           container = import ./tests/container.nix { inherit pkgs agentosModules; };
           # Pullrun daemon: operators-only socket, agents in Pullrun containers.
           pullrun = import ./tests/pullrun.nix { inherit pkgs agentosModules; };
+          # Skill packs linked into the agent user's CLI skills directories.
+          skills = import ./tests/skills.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
           # agent-fleet chat and hub: static server on loopback, wasm/COOP/COEP.
           agent-fleet-web = import ./tests/agent-fleet-web.nix { inherit pkgs agentosModules; };
           # OpenClaw chat gateway wired to the model gateway and orchestrator.
           openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
+          # herdr: agent-user server, status bridge and metrics, AgentOS and
+          # declared plugins linked.
+          herdr = import ./tests/herdr.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
           # Local inference backend registered as a gateway provider.

@@ -1,0 +1,7 @@
+{
+ "freehire-search": ".agents/skills/freehire-search",
+ "job-application-assistant": ".claude/skills/job-application-assistant",
+ "job-scraper": ".claude/skills/job-scraper",
+ "linkedin-search": ".agents/skills/linkedin-search",
+ "upskill": ".claude/skills/upskill"
+}

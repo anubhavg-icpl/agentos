@@ -6,6 +6,11 @@ A task is one non-interactive agent run:
      group, isolate, origin, status, result, created_at, started_at,
      finished_at}
 
+A task has a `kind`: "agent" (default) runs a coding agent; "publish" runs no
+agent, the root task runner publishes the branch of `source_task` (see
+taskrunner.run_publish_task). `start_from` (kind agent, isolate: true) starts
+the task's branch from the tip of an earlier task's branch.
+
 Status flow: [awaiting_approval ->] queued -> running -> succeeded | failed |
 timeout | cancelled, or queued -> skipped (a dependency did not succeed, or
 the node's `when` is false) / cancelled. A failed or timed-out task with
@@ -115,7 +120,10 @@ SUBMIT_FIELDS = {
     "depends_on", "after", "swarm", "group", "isolate", "origin",
     "gate", "max_retries", "backoff_sec", "verify", "judge", "priority",
     "concurrency_key", "dedupe_key", "publish", "model",
+    "start_from", "kind", "source_task",
 }
+KINDS = ("agent", "publish")
+MERGE_METHODS = ("squash", "merge", "rebase")
 _PLACEHOLDER = re.compile(r"\{(prompt|workspace|task_id)\}")
 _PREV = re.compile(r"\{prev_result\}")
 RESERVED_ORIGIN = "openclaw"
@@ -158,6 +166,17 @@ def validate_fields(body, runtime, opts, check_workspace=True, partial=False, no
     unknown = sorted(set(body) - SUBMIT_FIELDS)
     if unknown:
         raise ValidationError("unknown field(s): %s" % ", ".join(unknown))
+
+    kind = body.get("kind", "agent")
+    if kind not in KINDS:
+        raise ValidationError("kind must be one of: %s" % ", ".join(KINDS))
+    if kind == "publish":
+        # No agent runs: fill in what the record format needs
+        body = dict(body)
+        if body.get("agent") is None:
+            body["agent"] = sorted(runtime.get("agents", {}))[0] if runtime.get("agents") else None
+        if body.get("prompt") is None:
+            body["prompt"] = "publish %s" % (body.get("source_task") or "the branch of the previous node")
 
     agent = body.get("agent")
     if not isinstance(agent, str) or not configmod.valid_agent_id(agent) or agent not in runtime.get("agents", {}):
@@ -204,6 +223,28 @@ def validate_fields(body, runtime, opts, check_workspace=True, partial=False, no
     if not isinstance(isolate, bool):
         raise ValidationError("isolate must be a boolean")
     out["isolate"] = isolate
+
+    out["kind"] = kind
+    start_from = body.get("start_from")
+    if start_from is not None:
+        if not isinstance(start_from, str) or not configmod.valid_agent_id(start_from):
+            raise ValidationError("start_from must be a task id")
+        if kind != "agent":
+            raise ValidationError("start_from is only for tasks of kind agent")
+        if not isolate:
+            raise ValidationError("start_from needs isolate: true (the task runs in a worktree of its own)")
+    out["start_from"] = start_from
+    source = body.get("source_task")
+    if source is not None and (not isinstance(source, str) or not configmod.valid_agent_id(source)):
+        raise ValidationError("source_task must be a task id")
+    if kind == "publish":
+        if isolate:
+            raise ValidationError("a publish task does not take isolate")
+        if source is None and (node_refs is None or not deps):
+            raise ValidationError("a publish task needs source_task (the task whose branch is published)")
+    elif source is not None:
+        raise ValidationError("source_task is only for tasks of kind publish")
+    out["source_task"] = source
 
     origin = body.get("origin")
     if origin is not None and (not isinstance(origin, str) or len(origin) > 100 or not origin.isprintable()):
@@ -257,21 +298,31 @@ def validate_publish(block):
     pushed is decided by root-owned configuration (see publish.py)."""
     if block is None:
         return None
-    if not isinstance(block, dict) or set(block) - {"repo", "title", "body"}:
-        raise ValidationError("publish must be an object with only repo, title and body")
+    if not isinstance(block, dict) or set(block) - {"repo", "title", "body", "merge"}:
+        raise ValidationError("publish must be an object with only repo, title, body and merge")
     out = {}
     repo = block.get("repo")
     if repo is not None:
         if not isinstance(repo, str) or not _REPO.fullmatch(repo):
             raise ValidationError("publish.repo must look like owner/name")
         out["repo"] = repo
-    for key, cap in (("title", 200), ("body", 4000)):
+    for key, cap in (("title", 200), ("body", 60000)):
         value = block.get(key)
         if value is None:
             continue
         if not isinstance(value, str) or "\0" in value or len(value) > cap:
             raise ValidationError("publish.%s must be a string of at most %d characters" % (key, cap))
         out[key] = value
+    if block.get("merge") is not None:
+        merge = block["merge"]
+        if not isinstance(merge, dict) or set(merge) - {"method", "require_checks"}:
+            raise ValidationError("publish.merge must be an object with method and require_checks")
+        if merge.get("method") not in MERGE_METHODS:
+            raise ValidationError("publish.merge.method must be one of: %s" % ", ".join(MERGE_METHODS))
+        require = merge.get("require_checks", True)
+        if not isinstance(require, bool):
+            raise ValidationError("publish.merge.require_checks must be a boolean")
+        out["merge"] = {"method": merge["method"], "require_checks": require}
     return out
 
 

@@ -84,7 +84,7 @@ let
             expr = ''
               systemd_unit_state{name=~"agentos-(model-gateway|daemon|orchestrator|dashboard|scheduler)\\.service",state="active"} == 0
               or
-              up{job=~"agentos-(daemon|gateway)"} == 0
+              up{job=~"agentos-(daemon|gateway|factory)"} == 0
               or
               up{job="systemd"} == 0
             '';
@@ -130,6 +130,27 @@ let
             severity = "warning";
             summary = "Oldest queued task is {{ $value | humanizeDuration }} old";
             description = "Tasks wait longer than ${toString cfg.queueAgeSeconds}s: workers are saturated, the orchestrator is stuck, or tasks await approval.";
+          })
+          # Series of the factory service (metrics port, agentos.factory.metricsPort);
+          # they exist only where agentos.factory is enabled, so these never fire elsewhere
+          (alert "AgentOSFactoryBlocked" {
+            expr = ''sum by (line) (agentos_factory_items{state="blocked"}) > 0'';
+            for = "30m";
+            severity = "warning";
+            summary = "Factory line {{ $labels.line }} has {{ $value }} blocked item(s)";
+            description = "Items waited 30 minutes in the blocked state: a budget, fix-round or approval limit was hit and a human has to decide.";
+          })
+          (alert "AgentOSFactoryStuck" {
+            expr = ''max by (line, state) (agentos_factory_item_age_seconds{state=~"${lib.concatStringsSep "|" cfg.factoryActiveStates}"}) > ${toString cfg.factoryStuckSeconds}'';
+            severity = "warning";
+            summary = "A factory item on line {{ $labels.line }} has sat in {{ $labels.state }} for {{ $value | humanizeDuration }}";
+            description = "An item in an active state was not updated for more than ${toString cfg.factoryStuckSeconds}s: its task, a worker or the factory loop is stuck.";
+          })
+          (alert "AgentOSFactoryBudgetBurn" {
+            expr = "sum by (line) (increase(agentos_factory_cost_usd_total[1h])) > ${num cfg.factoryBudgetBurnUSDPerHour}";
+            severity = "warning";
+            summary = "Factory line {{ $labels.line }} spent {{ $value | printf \"%.2f\" }} USD in the last hour";
+            description = "The line spends more than ${num cfg.factoryBudgetBurnUSDPerHour} USD per hour; check for a fix loop that does not converge.";
           })
           (alert "AgentOSStateDiskUsage" {
             expr = "agentos_state_disk_used_ratio > ${num cfg.diskUsedRatio}";
@@ -210,6 +231,21 @@ in
         type = lib.types.int;
         default = 600;
         description = "Age in seconds of the oldest queued task that triggers AgentOSOrchestratorQueueAge.";
+      };
+      factoryActiveStates = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "planning" "building" "reviewing" "fixing" "qa" "publishing" ];
+        description = "Factory item states in which AgentOSFactoryStuck applies (the states of agentos_factory_item_age_seconds that mean work is in progress).";
+      };
+      factoryStuckSeconds = lib.mkOption {
+        type = lib.types.int;
+        default = 7200;
+        description = "Seconds an item may stay in an active state without an update before AgentOSFactoryStuck fires.";
+      };
+      factoryBudgetBurnUSDPerHour = lib.mkOption {
+        type = lib.types.either lib.types.int lib.types.float;
+        default = 50;
+        description = "Spend of one factory line per hour (USD) that triggers AgentOSFactoryBudgetBurn.";
       };
       diskUsedRatio = lib.mkOption {
         type = lib.types.float;

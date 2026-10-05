@@ -1,0 +1,21 @@
+{
+ "embedded-captions": "skills/embedded-captions",
+ "faceless-explainer": "skills/faceless-explainer",
+ "figma": "skills/figma",
+ "general-video": "skills/general-video",
+ "hyperframes": "skills/hyperframes",
+ "hyperframes-animation": "skills/hyperframes-animation",
+ "hyperframes-audio": "skills/hyperframes-audio",
+ "hyperframes-cli": "skills/hyperframes-cli",
+ "hyperframes-core": "skills/hyperframes-core",
+ "hyperframes-creative": "skills/hyperframes-creative",
+ "hyperframes-keyframes": "skills/hyperframes-keyframes",
+ "hyperframes-registry": "skills/hyperframes-registry",
+ "hyperframes-studio": "skills/hyperframes-studio",
+ "media-use": "skills/media-use",
+ "motion-graphics": "skills/motion-graphics",
+ "pr-to-video": "skills/pr-to-video",
+ "product-launch-video": "skills/product-launch-video",
+ "remotion-to-hyperframes": "skills/remotion-to-hyperframes",
+ "slideshow": "skills/slideshow"
+}

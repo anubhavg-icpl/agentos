@@ -89,6 +89,16 @@ approval gates, retries and priorities, driven by `agentos-task`. GitHub
 webhooks can create tasks and publish pull requests. See
 [orchestration.md](orchestration.md) and [triggers.md](triggers.md).
 
+### 7a. Software factory (`modules/factory`)
+`agentos.factory.lines.<name>` runs work items (GitHub issues or
+`agentos-factory`) through planner, builder, verify, reviewer, a fix loop and
+QA against the acceptance criteria, then opens a pull request (`supervised`,
+`approval-first`) or merges it (`dark`, which needs `allowAutoMerge` on the
+repository, a verify command, a QA role and a plan approval or scope guard).
+Every step is an orchestrator task. Metrics `agentos_factory_*`, alerts
+`AgentOSFactoryBlocked`, `AgentOSFactoryStuck`, `AgentOSFactoryBudgetBurn`.
+See [factory.md](factory.md).
+
 ---
 
 ## Tool Ecosystem
@@ -287,6 +297,40 @@ vibe                     # Interactive picker
 vibe list                # List all assets
 vibe search "security"   # Search
 ```
+
+---
+
+## Agent Skills (`modules/skills`)
+
+`agentos.skills` links skill packs (nixos/packages/skills, pinned sources) into every agent CLI's user-level skills directory, for the agent user and `agentos.skills.users`.
+
+- Packs: `fwc-swiftui-skills`, `ui-skills`, `img2threejs`; one `agentos.skills.packs.<name>.enable` option per pack.
+- Targets (`agentos.skills.targets`): `.agents/skills`, `.claude/skills`, `.codex/skills`, `.config/opencode/skills`, `.gemini/skills`, `.copilot/skills`, `.cursor/skills`, `.factory/skills`, `.config/agents/skills` (Amp), `.config/goose/skills`, `.qwen/skills`, `.config/crush/skills`.
+- A name used by two packs fails the build. Skills a user wrote are not overwritten; stale links of ours are removed.
+- Pack tools are added to the PATH; pack MCP servers to `agentos.mcp-registry.extraToolServers`.
+
+```bash
+agentos-skills list
+agentos-skills doctor
+agentos-skills path <skill>
+```
+
+See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skills`.
+
+---
+
+## herdr (`modules/herdr`)
+
+`agentos.herdr` integrates [herdr](https://herdr.dev), persistent terminal workspaces in which panes are marked working, blocked or idle.
+
+- A headless herdr server for the agent user (`agentos-herdr-server-agentos-agent`, sandboxed, not restarted by rebuilds); operators attach with `agentos-herdr attach`.
+- Management bridge `agentos-herdr status|metrics|monitor`: panes and agents per user and state, loopback Prometheus metrics (`agentos_herdr_panes{user,state}`, scraped by `agentos.observability`), and a notification through `agentos.notifications` when an agent stays blocked.
+- The AgentOS herdr plugin (`integrations/herdr-plugin`): orchestrator tasks, factory items, budgets, approve and cancel for gated tasks.
+- Declarative plugins (`agentos.herdr.plugins`, pinned to a commit, idempotent, uninstalls only what it installed) and `agentos-herdr-plugins` (marketplace catalog, review, pinned install, `install-all`, update with manifest diff).
+- Opt-in daily marketplace sweep (`marketplace.installAll`): unreviewed third-party code, off by default, warned about for the agent user.
+- Skill pack `herdr`, `packages.<system>.herdr`, desktop launcher entry.
+
+See [herdr.md](herdr.md). VM test `herdr`; unit tests `services/tests/test_herdr_*.py`.
 
 ---
 

@@ -1,0 +1,18 @@
+{
+ "cavecrew": "skills/cavecrew",
+ "caveman": "skills/caveman",
+ "caveman-commit": "skills/caveman-commit",
+ "caveman-compress": "skills/caveman-compress",
+ "caveman-explore": "skills/caveman-explore",
+ "caveman-help": "skills/caveman-help",
+ "caveman-review": "skills/caveman-review",
+ "caveman-stats": "skills/caveman-stats",
+ "investigate-first": "skills/investigate-first",
+ "lean-build": "skills/lean-build",
+ "megacave": "skills/megacave",
+ "migration": "skills/migration",
+ "safe-refactor": "skills/safe-refactor",
+ "surgical-patch": "skills/surgical-patch",
+ "ultracave": "skills/ultracave",
+ "verify-and-stop": "skills/verify-and-stop"
+}

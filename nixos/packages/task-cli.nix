@@ -38,7 +38,9 @@ writeShellApplication {
                           [--group <name>] [--isolate] [--wait] [--json]
                           [--gate] [--priority <n>] [--retries <n>] [--backoff <sec>]
                           [--concurrency-key <k>] [--dedupe-key <k>] [--verify '["cmd","arg"]']
-                          [--judge-agent <name> --judge-prompt <text>]
+                          [--judge-agent <name> --judge-prompt <text>] [--start-from <task-id>]
+      agentos-task publish <source-task-id> --repo <owner/name> --title <text> [--body <text> | --body-file <file>]
+                          [--merge squash|merge|rebase] [--no-require-checks] [--wait] [--json]
       agentos-task list [--status <s>] [--group <name>] [--json]
       agentos-task show <task-id|group> [--json]
       agentos-task logs <task-id> [-f]
@@ -66,6 +68,11 @@ writeShellApplication {
                      at most one running task per concurrency key; a submit whose dedupe key is held by an
                      unfinished task prints that task's id instead of queueing a new one
       --verify       JSON argv run in the task's worktree after success (needs taskrunner support)
+      --start-from   branch agent/<id> of this task is created from the tip of agent/<that task> (same
+                     workspace; needs --isolate): a fix round continues the previous round's work
+      publish        no agent runs: pushes the branch of a succeeded task and opens the pull request
+                     (agentos.git-automation.publish). --merge asks to merge it once checks are green;
+                     honoured only for repositories with allowAutoMerge, otherwise the PR stays open
       --judge-*      with --swarm: after all members finish a judge task gets {results}; its first output
                      line "winner: <task-id>" is recorded on the group
       workflow       file.json is {"nodes": {"name": {"agent": ..., "workspace": ..., "prompt": ...,
@@ -108,7 +115,7 @@ writeShellApplication {
 
     cmd_submit() {
       local agent="" workspace="$PWD" prompt="" have_prompt=0 budget="" timeout="" swarm="" group="" isolate=false wait=0 raw=0
-      local gate=false priority="" retries="" backoff="" ckey="" dkey="" verify="null" jagent="" jprompt=""
+      local start_from="" gate=false priority="" retries="" backoff="" ckey="" dkey="" verify="null" jagent="" jprompt=""
       local after=()
       while [ $# -gt 0 ]; do
         case "$1" in
@@ -124,6 +131,7 @@ writeShellApplication {
           --swarm) swarm="''${2:?--swarm needs a value}"; shift 2 ;;
           --group) group="''${2:?--group needs a value}"; shift 2 ;;
           --isolate) isolate=true; shift ;;
+          --start-from) start_from="''${2:?--start-from needs a value}"; shift 2 ;;
           --gate) gate=true; shift ;;
           --priority) priority="''${2:?--priority needs a value}"; shift 2 ;;
           --retries) retries="''${2:?--retries needs a value}"; shift 2 ;;
@@ -152,9 +160,10 @@ writeShellApplication {
         --arg budget "$budget" --arg timeout "$timeout" --arg swarm "$swarm" --arg group "$group" \
         --argjson isolate "$isolate" --argjson gate "$gate" --argjson verify "$verify" \
         --arg priority "$priority" --arg retries "$retries" --arg backoff "$backoff" \
-        --arg ckey "$ckey" --arg dkey "$dkey" --arg jagent "$jagent" --arg jprompt "$jprompt" --args '
+        --arg ckey "$ckey" --arg dkey "$dkey" --arg start_from "$start_from" --arg jagent "$jagent" --arg jprompt "$jprompt" --args '
         {agent: $agent, workspace: $workspace, prompt: $prompt, isolate: $isolate, depends_on: $ARGS.positional}
         + (if $gate then {gate: true} else {} end)
+        + (if $start_from != "" then {start_from: $start_from} else {} end)
         + (if $priority != "" then {priority: ($priority | tonumber)} else {} end)
         + (if $retries != "" then {max_retries: ($retries | tonumber)} else {} end)
         + (if $backoff != "" then {backoff_sec: ($backoff | tonumber)} else {} end)
@@ -185,6 +194,50 @@ writeShellApplication {
       fi
       if [ "$wait" -eq 1 ]; then
         wait_for "$(jq -r '.group // .tasks[0].id' <<<"$resp")"
+      fi
+    }
+
+    cmd_publish() {
+      local source="''${1:-}" repo="" title="" body="" merge="" require=true wait=0 raw=0
+      [ -n "$source" ] || die "Usage: agentos-task publish <source-task-id> --repo <owner/name> --title <text> [--body <text> | --body-file <file>] [--merge squash|merge|rebase]"
+      valid_id "$source" || die "invalid id: $source"
+      shift
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --repo) repo="''${2:?--repo needs a value}"; shift 2 ;;
+          --title) title="''${2:?--title needs a value}"; shift 2 ;;
+          --body) body="''${2:?--body needs a value}"; shift 2 ;;
+          --body-file)
+            [ -r "''${2:?--body-file needs a value}" ] || die "cannot read $2"
+            body=$(cat "$2"); shift 2 ;;
+          --merge) merge="''${2:?--merge needs squash, merge or rebase}"; shift 2 ;;
+          --no-require-checks) require=false; shift ;;
+          --wait) wait=1; shift ;;
+          --json) raw=1; shift ;;
+          *) die "unknown option: $1 (see: agentos-task help)" ;;
+        esac
+      done
+      [ -n "$repo" ] || die "--repo is required"
+      [ -n "$title" ] || die "--title is required"
+      case "$merge" in ""|squash|merge|rebase) ;; *) die "--merge must be squash, merge or rebase" ;; esac
+      # The publish task lives in the workspace of the task it publishes
+      local ws payload resp
+      ws=$(api GET "/tasks/$source" | jq -r '.workspace')
+      payload=$(jq -cn --arg source "$source" --arg ws "$ws" --arg repo "$repo" --arg title "$title" \
+        --arg body "$body" --arg merge "$merge" --argjson require "$require" '
+        {kind: "publish", source_task: $source, workspace: $ws,
+         publish: ({repo: $repo, title: $title}
+           + (if $body != "" then {body: $body} else {} end)
+           + (if $merge != "" then {merge: {method: $merge, require_checks: $require}} else {} end))}')
+      resp=$(api POST /tasks "$payload")
+      if [ "$raw" -eq 1 ]; then
+        echo "$resp"
+      else
+        jq -r '.tasks[].id' <<<"$resp"
+        ok "queued the publish task; follow with: agentos-task show $(jq -r '.tasks[0].id' <<<"$resp")"
+      fi
+      if [ "$wait" -eq 1 ]; then
+        wait_for "$(jq -r '.tasks[0].id' <<<"$resp")"
       fi
     }
 
@@ -250,6 +303,8 @@ writeShellApplication {
         "agent:     \(.agent)",
         "workspace: \(.workspace)",
         "branch:    \(.result.branch // "-")",
+        (if .start_from then "start from: \(.start_from)" else empty end),
+        (if .result.pr_url then "pr:        \(.result.pr_url)\(if .result.publish.merge then "   merge: " + .result.publish.merge.status + (if (.result.publish.merge.reason // "") != "" then " (" + .result.publish.merge.reason + ")" else "" end) else "" end)" else empty end),
         "group:     \(.group // "-")",
         "after:     \(if (.depends_on | length) > 0 then (.depends_on | join(", ")) else "-" end)",
         "budget:    \(if .budget_usd then "$\(.budget_usd)" else "gateway default" end)   timeout: \(.timeout_sec)s",
@@ -386,6 +441,7 @@ writeShellApplication {
       approve|reject) cmd_decide "$@" ;;
       workflow|wf) shift; cmd_workflow "$@" ;;
       submit|run) shift; cmd_submit "$@" ;;
+      publish) shift; cmd_publish "$@" ;;
       list|ls) shift; cmd_list "$@" ;;
       show|status) shift; cmd_show "$@" ;;
       logs) shift; cmd_logs "$@" ;;

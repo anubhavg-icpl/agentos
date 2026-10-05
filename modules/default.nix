@@ -23,11 +23,13 @@
     # Agent intelligence
     ./context
     ./orchestration
+    ./factory
     ./policy
     ./openclaw
 
     # Tool ecosystem
     ./mcp-registry
+    ./skills
     ./mcp-servers
     ./pullrun
 
@@ -44,6 +46,7 @@
     ./provisioning
     ./editors
     ./desktop
+    ./herdr
 
     # Automation
     ./scheduler

@@ -40,6 +40,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -62,7 +63,11 @@ DEFAULTS = {
         "commit_name": "AgentOS",
         "commit_email": "agentos@localhost",
         "draft": False,
-        # "owner/name" -> {url, base, workspaces[]}
+        # Auto-merge (dark mode): a task's `merge` request is honoured only for a
+        # repository with allow_auto_merge = true. The wait for checks is bounded.
+        "merge_wait_sec": 1800,
+        "merge_poll_sec": 20,
+        # "owner/name" -> {url, base, workspaces[], allow_auto_merge}
         "repos": {},
     },
 }
@@ -71,6 +76,8 @@ _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$")
 _BRANCH = re.compile(r"^agent/[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _BASE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
 _ORIGIN = re.compile(r"^gh:([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)#(\d+)")
+_METHODS = ("squash", "merge", "rebase")
+_GOOD_CONCLUSIONS = ("success", "neutral", "skipped")
 _SAFE_URL = re.compile(r"^(https://|http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?/|file:///|/)")
 
 
@@ -159,9 +166,14 @@ def resolve_spec(task, opts, marker=None):
     if not _REPO.match(repo):
         raise PublishError("invalid repository name", "config")
     title = clean_text(block.get("title"), 200) or "AgentOS: %s" % task.get("id", "change")
-    body = clean_text(block.get("body"), 4000, multiline=True)
+    body = clean_text(block.get("body"), 60000, multiline=True)
+    merge = block.get("merge")
+    if merge is not None:
+        if not isinstance(merge, dict) or merge.get("method") not in _METHODS:
+            raise PublishError("merge.method must be one of: %s" % ", ".join(_METHODS), "config")
+        merge = {"method": merge["method"], "require_checks": merge.get("require_checks", True) is not False}
     return {"repo": repo, "title": title, "body": body, "issue": issue, "explicit": explicit,
-            "draft": bool(block.get("draft", opts.get("draft")))}
+            "draft": bool(block.get("draft", opts.get("draft"))), "merge": merge}
 
 
 # ── git ──────────────────────────────────────────────────────────────────
@@ -202,8 +214,9 @@ def default_opener():
 class Publisher:
     audit = auditmod.NullClient()       # the task runner sets a real client
 
-    def __init__(self, opts, token, git=None, opener=None, home=None):
+    def __init__(self, opts, token, git=None, opener=None, home=None, sleep=time.sleep, monotonic=time.monotonic):
         self.opts = opts
+        self.sleep, self.monotonic = sleep, monotonic
         self.token = token
         self.git = git or make_git()
         self.opener = opener or default_opener()
@@ -354,6 +367,121 @@ class Publisher:
                 return existing[0]["html_url"], existing[0].get("number")
         message = data.get("message") if isinstance(data, dict) else None
         raise PublishError("GitHub refused the pull request (HTTP %s): %s" % (status, self._redact(clean_text(message, 200))), "api")
+
+    # -- auto-merge
+    def _checks(self, repo, sha):
+        """('ok'|'wait'|'fail'|'none', reason) from the check runs and the combined status of `sha`."""
+        runs, page = [], 1
+        while page <= 10:
+            st, data = self.api("GET", "/repos/%s/commits/%s/check-runs?per_page=100&page=%d" % (repo, sha, page))
+            if st != 200 or not isinstance(data, dict):
+                raise PublishError("could not read the check runs (HTTP %s)" % st, "api")
+            got = data.get("check_runs") or []
+            runs += got
+            if not got or len(runs) >= int(data.get("total_count") or 0):
+                break
+            page += 1
+        st, combined = self.api("GET", "/repos/%s/commits/%s/status" % (repo, sha))
+        if st != 200 or not isinstance(combined, dict):
+            raise PublishError("could not read the commit status (HTTP %s)" % st, "api")
+        pending = False
+        for run in runs:
+            name = clean_text(run.get("name"), 80) or "a check"
+            if run.get("status") != "completed":
+                pending = True
+            elif run.get("conclusion") not in _GOOD_CONCLUSIONS:
+                return "fail", "check %s concluded %s" % (name, clean_text(str(run.get("conclusion")), 30))
+        statuses = int(combined.get("total_count") or len(combined.get("statuses") or []))
+        state = combined.get("state")
+        if statuses:
+            if state in ("failure", "error"):
+                return "fail", "commit status is %s" % state
+            if state != "success":
+                pending = True
+        if pending:
+            return "wait", "checks are still running"
+        if not runs and not statuses:
+            return "none", "no checks or statuses reported"
+        return "ok", ""
+
+    def merge_pr(self, spec, info, task_id=None):
+        """Merge the PR just opened, if the task asked for it and the root config allows it.
+
+        Returns {status: merged|skipped|error, reason, sha}. Never raises and never
+        fails the task: a PR that is not merged simply stays open. The merge goes
+        through only when every check run is success/neutral/skipped, the combined
+        status is success, the PR targets the configured base and is mergeable, and
+        its head is still the commit that was pushed (the API gets that sha)."""
+        req = spec.get("merge")
+        if not req:
+            return None
+        repo, number = info.get("repo") or spec["repo"], info.get("pr_number")
+        out = {"status": "skipped", "reason": "", "sha": None, "method": req["method"]}
+        try:
+            self._merge(spec, info, req, repo, number, out)
+        except PublishError as exc:
+            out.update(status="error", reason=self._redact(str(exc)))
+        except Exception:
+            log.exception("merge of %s#%s crashed", repo, number)
+            out.update(status="error", reason="internal error")
+        log.info("task %s: merge %s#%s: %s %s", task_id, repo, number, out["status"], out["reason"])
+        self.audit.emit("publish.merge", None, task=task_id, repo=repo, pr_number=number, method=req["method"],
+                        status=out["status"], reason=out["reason"], sha=out["sha"], head_sha=info.get("pushed_sha"))
+        return out
+
+    def _merge(self, spec, info, req, repo, number, out):
+        conf = self.opts["repos"].get(repo) or {}
+        if not conf.get("allow_auto_merge"):
+            out["reason"] = "auto-merge is not enabled for %s (publish.repos.<repo>.allow_auto_merge)" % repo
+            return
+        head, base = info.get("pushed_sha"), info.get("base") or conf.get("base") or "main"
+        if not isinstance(number, int) or not head or base != (conf.get("base") or "main"):
+            out["reason"] = "no pull request number or head commit to merge"
+            return
+        wait = max(0, min(int(self.opts.get("merge_wait_sec") or 0), 24 * 3600))
+        poll = max(1, int(self.opts.get("merge_poll_sec") or 20))
+        deadline = self.monotonic() + wait
+        while True:
+            st, pr = self.api("GET", "/repos/%s/pulls/%d" % (repo, number))
+            if st != 200 or not isinstance(pr, dict):
+                raise PublishError("could not read the pull request (HTTP %s)" % st, "api")
+            problem = None
+            if pr.get("state") != "open" or pr.get("merged"):
+                problem = "the pull request is not open"
+            elif (pr.get("base") or {}).get("ref") != base:
+                problem = "the pull request does not target %s" % base
+            elif (pr.get("head") or {}).get("sha") != head:
+                problem = "the branch moved after it was pushed; not merging an unreviewed head"
+            elif pr.get("draft"):
+                problem = "the pull request is a draft"
+            elif pr.get("mergeable") is False:
+                problem = "the pull request is not mergeable (conflicts)"
+            if problem:
+                out["reason"] = problem
+                return
+            verdict, why = self._checks(repo, head)
+            if verdict == "fail":
+                out["reason"] = why
+                return
+            if verdict == "ok" or (verdict == "none" and not req["require_checks"]):
+                if pr.get("mergeable") is not None:
+                    break
+                why = "mergeability is still being computed"
+            elif verdict == "none":
+                why = "no checks or statuses reported yet"
+            if self.monotonic() + poll > deadline:
+                out["reason"] = "timed out after %ds waiting: %s" % (wait, why)
+                return
+            self.sleep(poll)
+        st, data = self.api("PUT", "/repos/%s/pulls/%d/merge" % (repo, number),
+                            {"merge_method": req["method"], "sha": head})
+        message = clean_text(data.get("message") if isinstance(data, dict) else "", 200)
+        if st == 200 and isinstance(data, dict) and data.get("merged", True):
+            out.update(status="merged", reason="", sha=data.get("sha"))
+        elif st in (405, 409, 422):
+            out["reason"] = "GitHub refused the merge (HTTP %s): %s" % (st, self._redact(message))
+        else:
+            raise PublishError("GitHub merge failed (HTTP %s): %s" % (st, self._redact(message)), "api")
 
     # -- entry point
     def publish(self, spec, task_id, workdir, branch, base_sha=None, attest=None):
