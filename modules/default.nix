@@ -34,6 +34,8 @@
     ./budget-controller
     ./circuit-breaker
     ./secrets-manager
+    ./backup
+    ./upgrade
 
     # Developer experience
     ./git-automation

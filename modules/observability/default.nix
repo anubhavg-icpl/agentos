@@ -6,6 +6,8 @@ let
   cfg = config.agentos.observability;
 in
 {
+  imports = [ ./alerts.nix ];
+
   options.agentos.observability = {
     enable = lib.mkEnableOption "AgentOS observability";
 

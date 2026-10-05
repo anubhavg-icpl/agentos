@@ -51,6 +51,7 @@ import json
 import logging
 import os
 import re
+import signal
 import socketserver
 import sys
 import threading
@@ -65,6 +66,7 @@ from .loops import alternation_run, fingerprint
 from .providers import adapter_for
 from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
+from . import health as healthmod
 from .store import BudgetRefused, Store, connect
 from .usage import GENERATION_KEYS, Pricing, UsageParser, apply_output_cap, estimate_cost, output_cap
 
@@ -113,6 +115,34 @@ class Gateway:
             except ValueError as exc:
                 raise ValueError("provider %r: %s" % (name, exc))
         self._replay_lock = threading.Lock()
+        self.listeners = []
+        self.counters = {"loop_detections": 0, "circuit_opens": 0}
+        self.responses = {}
+        self._count_lock = threading.Lock()
+        self.health = healthmod.Health("gateway", {"redis": healthmod.redis_check(store)})
+
+    def count_response(self, status):
+        with self._count_lock:
+            self.responses[int(status)] = self.responses.get(int(status), 0) + 1
+
+    def bump(self, name):
+        with self._count_lock:
+            self.counters[name] += 1
+
+    def metrics_text(self):
+        with self._count_lock:
+            responses, counters = dict(self.responses), dict(self.counters)
+        lines = ["# HELP agentos_gateway_responses_total Responses sent by the gateway, by HTTP status",
+                 "# TYPE agentos_gateway_responses_total counter"]
+        for code in sorted(responses):
+            lines.append('agentos_gateway_responses_total{code="%d"} %d' % (code, responses[code]))
+        lines += ["# HELP agentos_gateway_loop_detections_total Requests refused by loop detection",
+                  "# TYPE agentos_gateway_loop_detections_total counter",
+                  "agentos_gateway_loop_detections_total %d" % counters["loop_detections"],
+                  "# HELP agentos_gateway_circuit_opens_total Circuit breakers opened",
+                  "# TYPE agentos_gateway_circuit_opens_total counter",
+                  "agentos_gateway_circuit_opens_total %d" % counters["circuit_opens"]]
+        return "\n".join(lines) + "\n"
 
     # ── helpers ────────────────────────────────────────────────────────
     def provider_key(self, provider):
@@ -254,6 +284,7 @@ class Gateway:
         if alt >= 4:
             run = alternation_run(self.store.loop_history(agent, fp, window, alt * 2))
             if run >= alt:
+                self.bump("loop_detections")
                 if run == alt:
                     self.store.publish({"type": "loop_detected", "agent": agent, "count": run,
                                         "kind": "alternation", "window_sec": limits["loop_window_sec"]})
@@ -264,6 +295,7 @@ class Gateway:
                     {"Retry-After": "30"},
                 )
         if count >= threshold:
+            self.bump("loop_detections")
             if count == threshold:
                 self.store.publish({"type": "loop_detected", "agent": agent, "count": count,
                                     "window_sec": limits["loop_window_sec"]})
@@ -284,6 +316,7 @@ class Gateway:
         max_failures = int(limits["max_consecutive_failures"])
         if max_failures > 0 and failures >= max_failures:
             until = self.store.open_circuit(agent, float(limits["cooldown_sec"]))
+            self.bump("circuit_opens")
             self.store.publish({"type": "circuit_open", "agent": agent, "failures": failures, "until": until})
 
     # ── request handling ───────────────────────────────────────────────
@@ -325,6 +358,11 @@ class Gateway:
         parts = [urllib.parse.unquote(p) for p in path.path.split("/") if p]
         authed = None
         try:
+            if len(parts) == 1 and parts[0] in healthmod.HEALTH_PATHS and req.command in ("GET", "HEAD"):
+                status, obj = self.health.respond(parts[0])
+                return send_json(req, status, obj)
+            if parts == ["metrics"] and req.command == "GET":
+                return self.metrics(req)
             if parts[:1] == ["_agentos"]:
                 return self.api(req, parts[1:], urllib.parse.parse_qs(path.query), admin)
             if len(parts) >= 3 and parts[0] == "agent" and parts[2] == "bus":
@@ -364,6 +402,20 @@ class Gateway:
                 except redis.RedisError as err:
                     log.error("cannot count request: %s", err)
                 self.write_log(authed, {"method": req.command, "path": redact(path.path), "status": exc.status, "error": exc.error_type})
+
+    def metrics(self, req):
+        # Prometheus scrapes over loopback; agents on the bridge must not read it
+        addr = req.client_address
+        local = not isinstance(addr, tuple) or addr[0] in ("127.0.0.1", "::1")
+        if not local:
+            raise HTTPError(403, "permission_error", "metrics are only served to loopback clients")
+        data = self.metrics_text().encode()
+        req.send_response(200)
+        req.send_header("Content-Type", "text/plain; version=0.0.4")
+        req.send_header("Content-Length", str(len(data)))
+        req.send_header("Connection", "close")
+        req.end_headers()
+        req.wfile.write(data)
 
     def api(self, req, parts, query, admin):
         if req.command == "GET" and parts == ["health"]:
@@ -919,12 +971,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "agentos-gateway"
 
+    _status = 0
+
+    def send_response(self, code, message=None):
+        self._status = code
+        super().send_response(code, message)
+
     def _dispatch(self):
         self.close_connection = True
+        gw = self.server.gateway
         try:
-            self.server.gateway.dispatch(self, self.server.admin)
+            gw.dispatch(self, self.server.admin)
         except Exception:  # never let one request kill the server
             log.exception("error handling %s %s", self.command, redact(self.path))
+        probe = self.path.split("?")[0].strip("/") in healthmod.HEALTH_PATHS + ("metrics",)
+        if not probe:
+            gw.count_response(self._status or 500)
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _dispatch
 
@@ -969,6 +1031,10 @@ def serve(cfg, store=None, pricing=None):
         os.chmod(sock_path, 0o660)
         unix.gateway = gw
         servers.append(unix)
+    gw.listeners = servers
+    gw.health.add("listening", healthmod.listening_check(lambda: gw.listeners))
+    if sock_path:
+        gw.health.add("admin_socket", healthmod.socket_check(sock_path))
     for srv in servers:
         threading.Thread(target=srv.serve_forever, daemon=True).start()
     return gw, servers
@@ -984,8 +1050,21 @@ def main(argv=None):
     cfg = configmod.load(args.config)
     _, servers = serve(cfg)
     log.info("listening on %s port %s", ", ".join(listen_addresses(cfg)), cfg["gateway"]["port"])
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    sock_path = cfg["gateway"].get("admin_socket")
+    port = int(cfg["gateway"]["port"])
+    first = listen_addresses(cfg)[0]
+    host = "127.0.0.1" if first in ("0.0.0.0", "") else first
+
+    def probe():
+        # Liveness through the real serving path; Redis is /readyz's concern
+        if sock_path:
+            return healthmod.unix_probe(sock_path, "/healthz")
+        return healthmod.http_probe(host, port, "/healthz")
+
     try:
-        threading.Event().wait()
+        healthmod.watchdog_loop(stop, probe)
     except KeyboardInterrupt:
         pass
     finally:

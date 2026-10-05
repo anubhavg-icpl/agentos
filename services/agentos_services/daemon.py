@@ -25,6 +25,8 @@ import time
 import urllib.request
 
 from . import config as configmod
+from . import health as healthmod
+from . import tasks as T
 from .gpu import Registry as GpuRegistry
 from .store import Store, connect
 
@@ -71,6 +73,12 @@ class Daemon:
         self.history_dir = os.path.join(self.state_dir, "history")
         self._lock = threading.Lock()
         self.gpus = GpuRegistry(cfg["gpu"]["lock_dir"], clock=clock)
+        self.reap_beat = healthmod.Heartbeat(clock)
+        self.health = healthmod.Health("daemon", {
+            "redis": healthmod.redis_check(store),
+            "reaper": healthmod.heartbeat_check(
+                self.reap_beat, max(30.0, 5 * float(cfg["daemon"]["reap_interval_sec"]))),
+        })
 
     # ── registry ───────────────────────────────────────────────────────
     def _path(self, agent_id):
@@ -276,7 +284,47 @@ class Daemon:
                [({"agent": a, "status": k}, n) for a, v in snap["agents"].items() for k, n in v["requests"].items()])
         metric("agentos_model_spend_usd_today", "gauge", "USD spent today per model",
                [({"model": m}, v) for m, v in snap["models"].items()])
+        self._operational_metrics(metric)
         return "\n".join(lines) + "\n"
+
+    def _operational_metrics(self, metric):
+        """Series the alert rules (modules/observability) are written against."""
+        now = self.clock()
+        try:
+            self.store.r.ping()
+            redis_up = 1
+        except Exception:
+            redis_up = 0
+        metric("agentos_redis_up", "gauge", "1 if the control-plane Redis answers PING", [({}, redis_up)])
+        circuits, queue_age, by_status = [], 0.0, {}
+        if redis_up:
+            try:
+                prefix = self.store._k("cb", "open", "")
+                for key in self.store.r.scan_iter(match=prefix + "*", count=200):
+                    agent = key[len(prefix):]
+                    if self.store.circuit_open_until(agent):
+                        circuits.append(({"agent": agent}, 1))
+                for task in T.TaskStore(self.store).active():
+                    by_status[task["status"]] = by_status.get(task["status"], 0) + 1
+                    if task["status"] == T.QUEUED:
+                        queue_age = max(queue_age, now - float(task["created_at"]))
+            except Exception as exc:
+                log.warning("metrics: cannot read circuits and tasks: %s", exc)
+        metric("agentos_circuit_open", "gauge", "1 while an agent's circuit breaker is open", circuits)
+        metric("agentos_orchestrator_queue_oldest_age_seconds", "gauge",
+               "Age of the oldest queued task (0 when the queue is empty)", [({}, round(queue_age, 1))])
+        metric("agentos_orchestrator_tasks", "gauge", "Active tasks by status",
+               [({"status": k}, v) for k, v in sorted(by_status.items())])
+        path = self.cfg["daemon"].get("disk_path", "/var/lib/agentos")
+        try:
+            st = os.statvfs(path)
+            used = 1.0 - (st.f_bavail / st.f_blocks) if st.f_blocks else 0.0
+            metric("agentos_state_disk_used_ratio", "gauge", "Fraction of the filesystem holding the state directory in use",
+                   [({"path": path}, round(used, 4))])
+        except OSError as exc:
+            log.warning("metrics: statvfs %s: %s", path, exc)
+        metric("agentos_daemon_reaper_age_seconds", "gauge", "Seconds since the reaper loop last ran",
+               [({}, round(self.reap_beat.age(), 1))])
 
     # ── main loops ─────────────────────────────────────────────────────
     def listen_forever(self, stop):
@@ -301,12 +349,23 @@ class Daemon:
                 self.reap()
             except Exception:
                 log.exception("reaper error")
+            self.reap_beat.beat()
             stop.wait(interval)
 
 
 class MetricsHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.split("?")[0] != "/metrics":
+        route = self.path.split("?")[0]
+        if route.strip("/") in healthmod.HEALTH_PATHS:
+            status, obj = self.server.daemon_obj.health.respond(route.strip("/"))
+            body = json.dumps(obj).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if route != "/metrics":
             self.send_error(404)
             return
         body = self.server.daemon_obj.metrics().encode()
@@ -340,11 +399,19 @@ def main(argv=None):
     threads.append(threading.Thread(target=metrics.serve_forever, daemon=True))
     for t in threads:
         t.start()
+    daemon.health.add("listening", healthmod.listening_check(lambda: [metrics]))
+
+    def threads_alive():
+        if not all(t.is_alive() for t in threads):
+            raise RuntimeError("a daemon thread died")
+
+    daemon.health.add("threads", threads_alive)
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     log.info("agent daemon running; state in %s", daemon.state_dir)
+    host = "127.0.0.1" if cfg["daemon"]["metrics_listen"] in ("0.0.0.0", "") else cfg["daemon"]["metrics_listen"]
+    port = int(cfg["daemon"]["metrics_port"])
     try:
-        while not stop.is_set():
-            stop.wait(1)
+        healthmod.watchdog_loop(stop, lambda: daemon.reap_beat.age() < 60 and healthmod.http_probe(host, port, "/healthz"))
     except KeyboardInterrupt:
         stop.set()
     metrics.shutdown()

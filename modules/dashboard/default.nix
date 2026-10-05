@@ -65,7 +65,11 @@ in
       restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
 
       serviceConfig = {
-        Type = "simple";
+        Type = "notify";
+        NotifyAccess = "all";
+        # The service sends READY=1 once listening and WATCHDOG=1 while healthy
+        WatchdogSec = 30;
+        TimeoutStartSec = 60;
         User = "agentos";
         Group = "agentos";
         SupplementaryGroups = [ "redis-agentos" ];

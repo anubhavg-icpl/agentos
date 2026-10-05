@@ -49,6 +49,7 @@ from . import rbac as rbacmod
 from . import tasks as T
 from . import unixapi
 from .store import Store, connect
+from . import health as healthmod
 from .unixapi import ApiError, serve_unix
 
 log = logging.getLogger("agentos.orchestrator")
@@ -113,6 +114,11 @@ class Orchestrator:
         self._seq = 0
         self.policy = policymod.Policy.from_config(cfg)
         self.rbac = rbacmod.Rbac(cfg)
+        self.tick_beat = healthmod.Heartbeat(clock)   # last successful scheduling pass
+        self.health = healthmod.Health("orchestrator", {
+            "redis": healthmod.redis_check(self.tasks.store),
+            "loop": healthmod.heartbeat_check(self.tick_beat, self.tick_limit()),
+        })
 
     def runtime(self):
         return self._runtime if self._runtime is not None else T.load_runtime(self.opts["runtime_file"])
@@ -560,14 +566,22 @@ class Orchestrator:
         log.info("started %s (%s in %s)", task["id"], task["agent"], task["workspace"])
         return True
 
-    def loop(self, stop):
+    def loop(self, stop, notify=None):
         interval = float(self.opts["tick_sec"])
+        notify = notify or (lambda msg: None)
         while not stop.is_set():
             try:
                 self.tick()
+                self.tick_beat.beat()
             except Exception:
                 log.exception("scheduling error")
+            # A hung tick never gets here, so systemd restarts the service;
+            # a failing tick (Redis down) shows in /readyz instead.
+            notify("WATCHDOG=1")
             stop.wait(interval)
+
+    def tick_limit(self):
+        return max(30.0, 5 * float(self.opts["tick_sec"]))
 
     # ── API ────────────────────────────────────────────────────────────
     def group_view(self, name):
@@ -594,6 +608,8 @@ class Orchestrator:
 
     def app(self, method, parts, query, body):
         peer = unixapi.peer_credentials()
+        if method == "GET" and len(parts) == 1 and parts[0] in healthmod.HEALTH_PATHS:
+            return self.health.respond(parts[0])
         if method == "GET" and parts == ["health"]:
             active = self.tasks.active()
             return 200, {
@@ -667,12 +683,15 @@ def main(argv=None):
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     server = serve_unix(orch.opts["socket"], orch.app)
+    orch.health.add("socket", healthmod.socket_check(orch.opts["socket"]))
+    healthmod.sd_notify("READY=1")
     log.info("orchestrator listening on %s (max %s workers)", orch.opts["socket"], orch.opts["max_workers"])
     try:
-        orch.loop(stop)
+        orch.loop(stop, healthmod.sd_notify)
     except KeyboardInterrupt:
         pass
     finally:
+        healthmod.sd_notify("STOPPING=1")
         server.shutdown()
 
 

@@ -140,7 +140,11 @@ in
       path = [ config.systemd.package ]; # systemctl
 
       serviceConfig = {
-        Type = "simple";
+        Type = "notify";
+        NotifyAccess = "all";
+        # The service sends READY=1 once listening and WATCHDOG=1 while healthy
+        WatchdogSec = 60;
+        TimeoutStartSec = 60;
         User = "agentos";
         Group = "agentos";
         SupplementaryGroups = [ "redis-agentos" ];
