@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nestlo · the operating system your coding agents live on</title>
+  <meta name="description" content="Nestlo is an open-source, NixOS-based operating system for AI coding agents: a sandbox and a budget per agent, a metering model gateway, default-deny egress, a signed audit log and persistent cloud VMs.">
+  <meta name="theme-color" content="#0c1012">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="nestlo · the operating system your coding agents live on">
+  <meta property="og:description" content="A sandbox and a budget per agent, a metering gateway, default-deny egress, signed audit, cloud VMs. Built on NixOS.">
+  <meta property="og:image" content="og-card.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="./" aria-label="nestlo home">
+      <img src="logo.svg" alt="" width="28" height="23">
+      <span>nestlo</span>
+    </a>
+    <nav>
+      <a href="#install">install</a>
+      <a href="https://github.com/anubhavg-icpl/nestlo/tree/main/docs">docs</a>
+      <a href="https://github.com/anubhavg-icpl/nestlo/releases">releases</a>
+      <a class="gh" href="https://github.com/anubhavg-icpl/nestlo" aria-label="nestlo on github">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span>github</span>
+      </a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <img class="hero-logo" src="logo.svg" alt="nestlo" width="96" height="80">
+      <h1>the operating system your coding agents live on.</h1>
+      <p class="lede">claude code, codex, gemini cli and 17 more, each in its own sandbox with its own budget, behind a gateway that meters every model call. declared in one nix file. rebuilds the same way every time.</p>
+      <div class="cmd" data-copy="nix build github:anubhavg-icpl/nestlo#iso-image">
+        <span class="prompt">$</span>
+        <code>nix build github:anubhavg-icpl/nestlo#iso-image</code>
+        <button class="copy" type="button" aria-label="copy command">copy</button>
+      </div>
+      <p class="alt">or grab the signed iso from <a href="https://github.com/anubhavg-icpl/nestlo/releases/latest">releases</a> · <a href="#install">try it in a vm</a> · <a href="https://github.com/anubhavg-icpl/nestlo">source</a></p>
+    </section>
+
+    <!-- a nestlo session, drawn in html: the agent rail, two panes, the gateway -->
+    <section class="demo" aria-label="a nestlo session">
+      <div class="window">
+        <div class="titlebar">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="title">admin@nestlo — tuios</span>
+        </div>
+        <div class="screen">
+          <aside class="rail">
+            <div class="ws active"><span class="n">1</span> api <span class="dot amber"></span><div class="sub">main</div></div>
+            <div class="ws"><span class="n">2</span> infra <span class="dot teal"></span><div class="sub">deploy-k3s</div></div>
+            <div class="ws"><span class="n">3</span> docs <div class="sub">main</div></div>
+            <div class="rail-h">agents</div>
+            <div class="ag"><span class="st teal">●</span> claude <span class="r working">working</span></div>
+            <div class="ag"><span class="st amber">●</span> codex <span class="r blocked">blocked</span></div>
+            <div class="ag"><span class="st dim">●</span> gemini <span class="r">idle</span></div>
+            <div class="ag"><span class="st teal">●</span> aider <span class="r working">working</span></div>
+            <div class="rail-h">budget today</div>
+            <div class="bar"><span style="width:38%"></span></div>
+            <div class="sub">$1.92 of $5.00</div>
+          </aside>
+          <div class="pane">
+            <div class="ph">claude · api <span class="tag">sandboxed</span></div>
+<pre class="term" id="term-left"><span class="c-dim">$</span> nestlo spawn claude --workspace api --budget 5
+<span class="c-teal">✓</span> agent <b>a7f3</b> started as nestlo-agent · egress: gateway only
+<span class="c-dim">$</span> nestlo list
+<span class="c-dim">ID    AGENT   STATUS    SPEND   BUDGET</span>
+a7f3  claude  <span class="c-teal">working</span>   $1.12   $5.00
+b19c  codex   <span class="c-amber">blocked</span>   $0.64   $3.00
+c022  gemini  idle      $0.16   $2.00
+<span class="c-dim">$</span> nestlo logs a7f3 --tail 3
+14:02:11  anthropic  claude-sonnet  2.1k→640  <span class="c-amber">$0.014</span>
+14:02:19  anthropic  claude-sonnet  3.4k→910  <span class="c-amber">$0.021</span>
+14:02:31  <span class="c-red">loop?</span> same tool call ×3 · <span class="c-dim">watching</span>
+<span class="c-dim">$</span> <span class="cursor"></span></pre>
+          </div>
+          <div class="pane focus">
+            <div class="ph">codex · infra <span class="tag amber">needs input</span></div>
+<pre class="term"><span class="c-dim">›</span> migrate the gateway config to the new provider table
+
+  <b>Edit</b>(modules/gateway/default.nix)
+  <span class="c-dim">└</span> 14 lines changed
+  <b>Bash</b>(nix flake check --no-build)
+  <span class="c-dim">└</span> <span class="c-teal">all checks evaluate</span>
+
+<span class="c-amber">◆ approval needed</span>
+  push to <b>origin/deploy-k3s</b>?
+  policy <span class="c-dim">four-eyes</span> · audit <span class="c-dim">#41823 signed</span>
+
+  <span class="c-teal">[y]</span> approve   <span class="c-red">[n]</span> deny   <span class="c-dim">[d] diff</span></pre>
+          </div>
+        </div>
+        <div class="statusline">
+          <span class="c-teal">nestlo</span> <span class="c-dim">›</span> 4 agents <span class="c-dim">›</span> gateway <span class="c-teal">ok</span> <span class="c-dim">›</span> egress <span class="c-teal">deny-by-default</span> <span class="c-dim">›</span> audit chain <span class="c-teal">verified</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="points">
+      <ul>
+        <li><b>a sandbox per agent</b> — every agent runs as an unprivileged user in its own systemd sandbox or container, with memory, cpu and process limits. it writes to its workspace and nothing else. <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/containers.md">sandboxes →</a></li>
+        <li><b>a budget per agent</b> — every model call goes through a metering gateway that prices it, enforces daily budgets, spots loops and stops the agent when the money runs out. api keys never enter the sandbox. <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/gateway-features.md">gateway →</a></li>
+        <li><b>default-deny egress</b> — only allowlisted domains resolve. agents reach model providers through the gateway, nowhere else.</li>
+        <li><b>evidence for everything</b> — a hash-chained, signed audit log, signed provenance on agent commits, dlp on prompts, policy as code and four-eyes approval. <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/audit.md">audit →</a></li>
+        <li><b>never hunt for the stuck one</b> — every pane says working, blocked or idle. when an agent waits for an answer, nestlo tells you, in the terminal or on your phone. <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/tuios.md">tuios →</a> · <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/herdr.md">herdr →</a></li>
+        <li><b>vms for people and agents</b> — nestlo cloud gives every user persistent vms with their own disks, a private https url, sharing, custom domains, and integrations that inject secrets at the network edge. <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/cloud.md">cloud →</a></li>
+        <li><b>work, not just chat</b> — an orchestrator, a scheduler, github triggers and a software factory turn issues into reviewed pull requests. <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/factory.md">factory →</a></li>
+        <li><b>runs what you already run</b> — claude code, codex, gemini cli, cursor, opencode, aider, goose and the rest, pre-installed and pinned. nestlo doesn't wrap them; it fences them. <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/AGENTS.md">agents →</a></li>
+        <li><b>one file, one rebuild</b> — the whole machine is a nixos flake. roll forward, roll back, rebuild it bit for bit on another box.</li>
+      </ul>
+    </section>
+
+    <section class="install" id="install">
+      <h2>install</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="vm">try in a vm</button>
+        <button role="tab" aria-selected="false" data-tab="iso">install</button>
+        <button role="tab" aria-selected="false" data-tab="agent">first agent</button>
+        <button role="tab" aria-selected="false" data-tab="cloud">cloud vm</button>
+      </div>
+<pre class="block" data-panel="vm"><span class="c-dim">$</span> git clone https://github.com/anubhavg-icpl/nestlo && cd nestlo
+<span class="c-dim">$</span> nix build .#vm-image
+<span class="c-dim">$</span> cp result/*.qcow2 nestlo.qcow2 && chmod u+w nestlo.qcow2
+<span class="c-dim">$</span> qemu-system-x86_64 -m 8192 -enable-kvm -bios OVMF.fd \
+    -drive file=nestlo.qcow2,if=virtio</pre>
+<pre class="block" data-panel="iso" hidden><span class="c-dim">#</span> the iso is signed and attached to every release
+<span class="c-dim">$</span> nix build .#iso-image
+<span class="c-dim">$</span> sudo dd if=result/iso/nestlo-*.iso of=/dev/sdX bs=4M status=progress
+<span class="c-dim">#</span> boot the stick, then (erases the disk; only ssh keys can log in):
+<span class="c-dim">$</span> sudo nestlo-install /dev/nvme0n1 --ssh-key "ssh-ed25519 AAAA… you@laptop"</pre>
+<pre class="block" data-panel="agent" hidden><span class="c-dim">$</span> ssh admin@nestlo
+<span class="c-dim">$</span> nestlo workspace create api --from https://github.com/me/api.git
+<span class="c-dim">$</span> nestlo spawn claude --workspace api --budget 5
+<span class="c-dim">$</span> nestlo list          <span class="c-dim"># agents, status, spend today</span>
+<span class="c-dim">$</span> nestlo logs &lt;id&gt;     <span class="c-dim"># every model call with tokens and cost</span></pre>
+<pre class="block" data-panel="cloud" hidden><span class="c-dim">$</span> ssh lobby@cloud.example.com new --name web
+<span class="c-dim">$</span> ssh -t lobby@cloud.example.com ssh web    <span class="c-dim"># a shell in the vm</span>
+<span class="c-dim">$</span> open https://web.cloud.example.com/       <span class="c-dim"># its private https url</span></pre>
+      <p class="after">needs <a href="https://nixos.org/download">nix</a> with flakes, on x86_64-linux or aarch64-linux. then: <code>nestlo spawn</code>, walk away, <code>nestlo list</code> when you're back. <a href="https://github.com/anubhavg-icpl/nestlo#quickstart">quick start →</a></p>
+    </section>
+
+    <section class="inside">
+      <h2>what's inside</h2>
+      <div class="cols">
+        <div>
+          <h3>run agents safely</h3>
+          <ul>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/AGENTS.md">20 agents</a>, pinned</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/containers.md">sandboxes and containers</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/gateway-features.md">metering gateway</a>: budgets, loops, routing, replay</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/local-ai.md">local models</a>, <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/local-ai-backends.md">localai and vllm</a>, <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/gpu.md">gpu scheduling</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/openshell.md">openshell</a> sandboxed runtime</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/agent-runtime-security.md">runtime security</a> (tetragon ebpf)</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/agent-security.md">red-team, mcp scan, pr review</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>get work done</h3>
+          <ul>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/orchestration.md">orchestrator and scheduler</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/triggers.md">github triggers</a>: issue → pr</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/factory.md">software factory</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/tuios.md">tuios</a> and <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/herdr.md">herdr</a> workspaces</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/orca.md">agent orca</a> on k3s</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/a2a.md">a2a and acp</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/skills.md">skill packs</a>, 36 mcp servers, <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/agentgateway.md">agentgateway</a>, <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/toolhive.md">toolhive</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>run it like production</h3>
+          <ul>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/cloud.md">nestlo cloud</a>: vms, https, teams</li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/audit.md">audit log</a> and <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/dlp.md">dlp</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/provenance.md">provenance</a>, <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/policy.md">policy and rbac</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/agent-identity.md">spiffe identity and cedar</a>, <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/openbao.md">openbao</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/llm-observability.md">genai tracing</a>, <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/beacon.md">agent beacon</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/operations.md">backups, alerts, runbooks</a></li>
+            <li><a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/dashboard.md">web dashboard</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="compare">
+      <h2>how it compares</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>nestlo</th><th>agent on your laptop</th><th>hosted agent cloud</th></tr></thead>
+          <tbody>
+            <tr><td>sandbox per agent</td><td class="y">yes</td><td class="n">no</td><td class="y">yes</td></tr>
+            <tr><td>budget per agent</td><td class="y">yes, enforced</td><td class="n">no</td><td class="m">per seat</td></tr>
+            <tr><td>keys stay out of the agent</td><td class="y">yes</td><td class="n">no</td><td class="m">varies</td></tr>
+            <tr><td>default-deny egress</td><td class="y">yes</td><td class="n">no</td><td class="m">varies</td></tr>
+            <tr><td>signed audit log</td><td class="y">yes</td><td class="n">no</td><td class="m">vendor's</td></tr>
+            <tr><td>your hardware, your models</td><td class="y">yes</td><td class="y">yes</td><td class="n">no</td></tr>
+            <tr><td>reproducible from one file</td><td class="y">yes</td><td class="n">no</td><td class="n">no</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="docs">
+      <h2>docs</h2>
+      <p>everything lives in <a href="https://github.com/anubhavg-icpl/nestlo/tree/main/docs">docs/</a>:
+        <a href="https://github.com/anubhavg-icpl/nestlo#quickstart">quick start</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/FEATURES.md">features</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/AGENTS.md">agents</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/gateway-features.md">gateway</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/cloud.md">cloud</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/orchestration.md">orchestration</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/audit.md">audit</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/policy.md">policy</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/operations.md">operations</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/docs/aarch64.md">aarch64</a> ·
+        <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/CHANGELOG.md">changelog</a>
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <img src="logo.svg" alt="" width="36" height="30">
+    <p>nestlo is free software under the <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/LICENSE">mit license</a>. built on <a href="https://nixos.org">nixos</a>.</p>
+    <p class="c-dim">formerly agentos · <a href="https://github.com/anubhavg-icpl/nestlo">github</a> · <a href="https://github.com/anubhavg-icpl/nestlo/issues">issues</a> · <a href="https://github.com/anubhavg-icpl/nestlo/blob/main/SECURITY.md">security</a></p>
+  </footer>
+  <script src="main.js" defer></script>
+</body>
+</html>
