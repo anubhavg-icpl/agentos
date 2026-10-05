@@ -1124,8 +1124,9 @@ def serve_lobby(svc, path, allowed_uids):
                 if B.peer_uid(sock) not in allowed_uids:
                     raise C.CommandError("not allowed", 403)
                 req, fds = B.recv_request(sock)
+                # the VM helper got its own copies of any fds; ours are closed
+                # below, or sshd would wait for them before ending the session
                 result = lobby.handle(req, fds)
-                fds = []
                 reply = {"result": result}
             except C.CommandError as exc:
                 reply = {"error": exc.message, "status": exc.status}

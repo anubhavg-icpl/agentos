@@ -468,6 +468,8 @@ in
       # ─ the VM network ───────────────────────────────────────────────
       networking.bridges.${bridge}.interfaces = [ ];
       networking.interfaces.${bridge}.ipv4.addresses = [{ address = gatewayIp; inherit prefixLength; }];
+      # dhcpcd would configure the VMs' host-side veths (and route 169.254.0.0/16 to them)
+      networking.dhcpcd.denyInterfaces = [ bridge "vb-avm-*" ];
       # Port 80 of the bridge address and of the metadata address go to the
       # integrations proxy (Caddy has port 80 on every other address)
       systemd.services.agentos-cloud-redirect = {

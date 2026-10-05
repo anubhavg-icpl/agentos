@@ -899,3 +899,25 @@ def test_every_cloud_audit_event_is_a_known_type():
     emitted = set(re.findall(r'emit\("(cloud\.[a-z.]+)"', src))
     emitted |= {"cloud.vm.attach", "cloud.vm.tunnel"}          # emit("cloud.vm.%s" % op)
     assert emitted and emitted <= A.EVENT_TYPES, emitted - A.EVENT_TYPES
+
+
+def test_lobby_socket_closes_forwarded_fds(env, tmp_path):
+    """sshd ends a session only when every copy of its pipes is closed."""
+    import socket as so
+    path = str(tmp_path / "l.sock")
+    srv = S.serve_lobby(env.svc, path, {os.getuid()})
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    env.run(env.alice, "new --name web")
+    r, w = os.pipe()
+    s = so.socket(so.AF_UNIX, so.SOCK_STREAM)
+    s.connect(path)
+    import array
+    msg = json.dumps({"op": "attach", "key": env.alice_fp, "vm": "web", "argv": ["true"]}).encode() + b"\n"
+    s.sendmsg([msg], [(so.SOL_SOCKET, so.SCM_RIGHTS, array.array("i", [w, w, w]))])
+    assert json.loads(s.makefile().readline())["result"] == {"exit": 0}
+    s.close()
+    os.close(w)
+    os.set_blocking(r, False)
+    time.sleep(0.2)
+    assert os.read(r, 10) == b""      # EOF: the service kept no copy of the write end
+    srv.shutdown()
