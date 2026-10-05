@@ -4,8 +4,8 @@ from test_herdr_plugins import SHA_A, SHA_B, env, gh, herdr, manifest, run, stat
 from test_policy import TASK, _clear_peer, call, rorch  # noqa: F401
 from orchfix import cfg, clock, runtime, systemctl, taskstore  # noqa: F401
 
-from agentos_services import herdr_bridge as hb
-from agentos_services import policy as P
+from nestlo_services import herdr_bridge as hb
+from nestlo_services import policy as P
 
 
 # ── herdr plugins ──────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ def test_update_of_a_root_source_keeps_the_root_plugin(env, gh, herdr, capsys):
 
 def test_notify_json_keeps_arguments_with_spaces():
     assert hb.notify_argv('["/opt/my tools/notify", "a b"]', None) == ["/opt/my tools/notify", "a b"]
-    assert hb.notify_argv(None, "agentos-notify test") == ["agentos-notify", "test"]
+    assert hb.notify_argv(None, "nestlo-notify test") == ["nestlo-notify", "test"]
     assert hb.notify_argv(None, None) is None
     for bad in ("[]", "{}", "[1]", "not json"):
         with pytest.raises(SystemExit):

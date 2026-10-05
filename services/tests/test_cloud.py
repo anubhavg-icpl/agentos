@@ -1,4 +1,4 @@
-"""AgentOS Cloud: tokens, plans, commands, the web/API/proxy service, the lobby and the backend."""
+"""Nestlo Cloud: tokens, plans, commands, the web/API/proxy service, the lobby and the backend."""
 
 import base64
 import http.client
@@ -15,12 +15,12 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 
-from agentos_services.cloud import backend as B
-from agentos_services.cloud import commands as C
-from agentos_services.cloud import plans as P
-from agentos_services.cloud import server as S
-from agentos_services.cloud import tokens as TK
-from agentos_services.cloud.state import State, secret_box
+from nestlo_services.cloud import backend as B
+from nestlo_services.cloud import commands as C
+from nestlo_services.cloud import plans as P
+from nestlo_services.cloud import server as S
+from nestlo_services.cloud import tokens as TK
+from nestlo_services.cloud.state import State, secret_box
 
 DOMAIN = "cloud.test"
 NOW = 1_800_000_000
@@ -94,7 +94,7 @@ class Audit:
 
 def cfg(**over):
     c = dict(S.DEFAULTS)
-    c.update(domain=DOMAIN, verify_dns=False, images={"agentos": "/nix/store/x-image"}, gateway_url=None)
+    c.update(domain=DOMAIN, verify_dns=False, images={"nestlo": "/nix/store/x-image"}, gateway_url=None)
     c.update(over)
     return c
 
@@ -156,7 +156,7 @@ def test_token_tamper_and_permission_rules(env):
         with pytest.raises(TK.TokenError):
             TK.parse_permissions(bad)
     with pytest.raises(TK.TokenError, match="8 KB"):
-        TK.decode("agentos0." + "a" * 9000, "v0@x", now=NOW)
+        TK.decode("nestlo0." + "a" * 9000, "v0@x", now=NOW)
     assert TK.allows({}, "ls") and not TK.allows({}, "rm") and TK.allows({"cmds": ["rm"]}, "rm")
     assert not TK.allows({"cmds": ["ssh-key"]}, "ssh-key list")
 
@@ -172,7 +172,7 @@ def test_verify_other_key_types_with_ssh_keygen(tmp_path, keytype):
     sig = subprocess.run([keygen, "-Y", "sign", "-f", path, "-n", "v0@" + DOMAIN], input=perms,
                          capture_output=True, check=True).stdout.decode()
     blob = "".join(sig.strip().splitlines()[1:-1])
-    tok = "agentos0.%s.%s" % (TK.b64url(perms), TK.b64url(base64.b64decode(blob)))
+    tok = "nestlo0.%s.%s" % (TK.b64url(perms), TK.b64url(base64.b64decode(blob)))
     pub = open(path + ".pub").read()
     perms_out, fp = TK.decode(tok, "v0@" + DOMAIN, now=NOW)
     assert fp == TK.fingerprint(TK.parse_public_key(pub)[1]) and perms_out["cmds"] == ["ls"]
@@ -290,7 +290,7 @@ def test_sharing_roles_and_links(env):
     with pytest.raises(C.CommandError, match="owner"):
         env.run(env.bob, "share set-public web")
     link = env.run(env.alice, "share add-link web")
-    assert link["url"].startswith("https://web.cloud.test/__agentos/share/")
+    assert link["url"].startswith("https://web.cloud.test/__nestlo/share/")
     show = env.run(env.alice, "share show web")
     assert show["visibility"] == "private" and show["users"] == [{"email": "bob@example.com", "role": "root"}]
     env.run(env.alice, "share remove-link web " + link["token"])
@@ -351,7 +351,7 @@ def test_ssh_keys_and_api_tokens(env):
     with pytest.raises(C.CommandError, match="unknown command"):
         env.run(env.alice, "ssh-key generate-api-key --cmds=launch")
     short = env.run(env.alice, "token-exchange " + tok["token"])["token"]
-    assert short.startswith("agentos1.") and env.st.short_token(short)["token"] == tok["token"]
+    assert short.startswith("nestlo1.") and env.st.short_token(short)["token"] == tok["token"]
 
 
 def test_token_scoped_commands(env):
@@ -534,12 +534,12 @@ def test_exec_timeout(env, web):
 def login(env, web, user, host):
     """Magic link on the lobby, then the cross-domain hop to `host`; returns the host cookie."""
     code = env.st.put_once("magic", {"uid": user["id"]}, ttl=600)
-    s, h, _ = req(web, "GET", "/__agentos/magic/" + code)
+    s, h, _ = req(web, "GET", "/__nestlo/magic/" + code)
     assert s == 302
     lobby_cookie = h["Set-Cookie"].split(";")[0]
-    assert req(web, "GET", "/__agentos/magic/" + code)[0] == 403        # one time only
-    s, h, _ = req(web, "GET", "/__agentos/login?next=http://%s/app" % host, headers={"Cookie": lobby_cookie})
-    assert s == 302 and h["Location"].startswith("http://%s/__agentos/callback?" % host)
+    assert req(web, "GET", "/__nestlo/magic/" + code)[0] == 403        # one time only
+    s, h, _ = req(web, "GET", "/__nestlo/login?next=http://%s/app" % host, headers={"Cookie": lobby_cookie})
+    assert s == 302 and h["Location"].startswith("http://%s/__nestlo/callback?" % host)
     path = h["Location"].split(host, 1)[1]
     s, h, _ = req(web, "GET", path, host=host)
     assert s == 302 and h["Location"] == "/app"
@@ -551,12 +551,12 @@ def test_forward_auth_private_public_and_identity(env, web):
     host = "web." + DOMAIN
     fwd = {"X-Forwarded-Host": host, "X-Forwarded-Uri": "/x", "X-Forwarded-Method": "GET"}
     s, h, _ = req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, Accept="text/html"))
-    assert s == 302 and "/__agentos/login?next=" in h["Location"]
+    assert s == 302 and "/__nestlo/login?next=" in h["Location"]
     assert req(web, "GET", "/__auth", host="127.0.0.1", headers=fwd)[0] == 401
     cookie, _ = login(env, web, env.alice, host)
     s, h, _ = req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, Cookie=cookie))
-    assert s == 200 and h["X-AgentOS-Upstream"] == "10.210.0.2:8000"
-    assert h["X-AgentOS-Email"] == "alice@example.com" and h["X-ExeDev-Email"] == "alice@example.com"
+    assert s == 200 and h["X-Nestlo-Upstream"] == "10.210.0.2:8000"
+    assert h["X-Nestlo-Email"] == "alice@example.com" and h["X-ExeDev-Email"] == "alice@example.com"
     # the cookie of one VM host is not valid on another host
     env.run(env.alice, "new --name other")
     assert req(web, "GET", "/__auth", host="127.0.0.1",
@@ -565,9 +565,9 @@ def test_forward_auth_private_public_and_identity(env, web):
     assert req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, Cookie=bob_cookie))[0] == 403
     env.run(env.alice, "share set-public web")
     s, h, _ = req(web, "GET", "/__auth", host="127.0.0.1", headers=fwd)
-    assert s == 200 and "X-AgentOS-Email" not in h
+    assert s == 200 and "X-Nestlo-Email" not in h
     s, h, _ = req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, **{"X-Forwarded-Host": "web-3000." + DOMAIN}))
-    assert h["X-AgentOS-Upstream"] == "10.210.0.2:3000"
+    assert h["X-Nestlo-Upstream"] == "10.210.0.2:3000"
     env.run(env.alice, "stop web")
     assert req(web, "GET", "/__auth", host="127.0.0.1", headers=fwd)[0] == 503
 
@@ -577,13 +577,13 @@ def test_vm_tokens_basic_and_bearer(env, web):
     tok = env.run(env.alice, "ssh-key generate-api-key --vm web --label deploy")["token"]
     assert tok and TK.decode(tok, "v0@web." + DOMAIN, now=NOW)
     fwd = {"X-Forwarded-Host": "web." + DOMAIN, "X-Forwarded-Uri": "/repo.git/info/refs"}
-    s, h, _ = req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, **{"X-AgentOS-Authorization": "Bearer " + tok}))
-    assert s == 200 and h["X-AgentOS-Email"] == "alice@example.com"
+    s, h, _ = req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, **{"X-Nestlo-Authorization": "Bearer " + tok}))
+    assert s == 200 and h["X-Nestlo-Email"] == "alice@example.com"
     basic = base64.b64encode(("git:" + tok).encode()).decode()
     assert req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, Authorization="Basic " + basic))[0] == 200
     ctx_tok = TK.make_token(env.alice_key, {"ctx": {"role": "deploy"}}, "v0@web." + DOMAIN)
     s, h, _ = req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, Authorization="Bearer " + ctx_tok))
-    assert s == 200 and json.loads(h["X-AgentOS-Token-Ctx"]) == {"role": "deploy"}
+    assert s == 200 and json.loads(h["X-Nestlo-Token-Ctx"]) == {"role": "deploy"}
     api_tok = TK.make_token(env.alice_key, {}, "v0@" + DOMAIN)
     assert req(web, "GET", "/__auth", host="127.0.0.1", headers=dict(fwd, Authorization="Bearer " + api_tok))[0] == 401
 
@@ -592,9 +592,9 @@ def test_share_link_flow(env, web):
     env.run(env.alice, "new --name web")
     link = env.run(env.alice, "share add-link web")
     host = "web." + DOMAIN
-    path = "/__agentos/share/" + link["token"]
+    path = "/__nestlo/share/" + link["token"]
     s, h, _ = req(web, "GET", path, host=host)
-    assert s == 302 and "/__agentos/login" in h["Location"]
+    assert s == 302 and "/__nestlo/login" in h["Location"]
     cookie, _ = login(env, web, env.bob, host)
     s, h, _ = req(web, "GET", path, host=host, headers={"Cookie": cookie})
     assert s == 302 and env.cloud.access(env.bob, env.st.vm_by_name("web")) == "web"
@@ -605,24 +605,24 @@ def test_share_link_flow(env, web):
 def test_login_rejects_open_redirects_and_tls_ask(env, web):
     _, lobby = login(env, web, env.alice, DOMAIN) if False else (None, None)
     code = env.st.put_once("magic", {"uid": env.alice["id"]}, ttl=600)
-    lobby = req(web, "GET", "/__agentos/magic/" + code)[1]["Set-Cookie"].split(";")[0]
-    s, h, _ = req(web, "GET", "/__agentos/login?next=http://evil.example/x", headers={"Cookie": lobby})
+    lobby = req(web, "GET", "/__nestlo/magic/" + code)[1]["Set-Cookie"].split(";")[0]
+    s, h, _ = req(web, "GET", "/__nestlo/login?next=http://evil.example/x", headers={"Cookie": lobby})
     assert s == 302 and h["Location"] == "/"
     env.run(env.alice, "new --name web")
     env.run(env.alice, "domain add web app.example.org")
-    assert req(web, "GET", "/__agentos/tls-ask?domain=app.example.org")[0] == 200
-    assert req(web, "GET", "/__agentos/tls-ask?domain=web.cloud.test")[0] == 200
-    assert req(web, "GET", "/__agentos/tls-ask?domain=web-8080.cloud.test")[0] == 200
-    assert req(web, "GET", "/__agentos/tls-ask?domain=nope.cloud.test")[0] == 403
-    assert req(web, "GET", "/__agentos/tls-ask?domain=evil.example")[0] == 403
+    assert req(web, "GET", "/__nestlo/tls-ask?domain=app.example.org")[0] == 200
+    assert req(web, "GET", "/__nestlo/tls-ask?domain=web.cloud.test")[0] == 200
+    assert req(web, "GET", "/__nestlo/tls-ask?domain=web-8080.cloud.test")[0] == 200
+    assert req(web, "GET", "/__nestlo/tls-ask?domain=nope.cloud.test")[0] == 403
+    assert req(web, "GET", "/__nestlo/tls-ask?domain=evil.example")[0] == 403
     # a login code is bound to its host
     code = env.st.put_once("login", {"uid": env.alice["id"], "host": "web." + DOMAIN}, ttl=60)
-    assert req(web, "GET", "/__agentos/callback?code=" + code, host="app.example.org")[0] == 403
+    assert req(web, "GET", "/__nestlo/callback?code=" + code, host="app.example.org")[0] == 403
 
 
 def test_home_page_and_key_form(env, web):
     code = env.st.put_once("magic", {"uid": env.alice["id"]}, ttl=600)
-    cookie = req(web, "GET", "/__agentos/magic/" + code)[1]["Set-Cookie"].split(";")[0]
+    cookie = req(web, "GET", "/__nestlo/magic/" + code)[1]["Set-Cookie"].split(";")[0]
     s, _, body = req(web, "GET", "/", headers={"Cookie": cookie})
     assert s == 200 and b"alice@example.com" in body
     csrf = env.svc.csrf(type("R", (), {"headers": {"Cookie": cookie}})())
@@ -631,10 +631,10 @@ def test_home_page_and_key_form(env, web):
     import urllib.parse
     form = urllib.parse.urlencode({"csrf": csrf, "key": key})
     hdr = {"Cookie": cookie, "Content-Type": "application/x-www-form-urlencoded"}
-    assert req(web, "POST", "/__agentos/keys", body=form, headers=hdr)[0] == 302
+    assert req(web, "POST", "/__nestlo/keys", body=form, headers=hdr)[0] == 302
     assert len(env.st.keys_of(env.alice["id"])) == 2
     bad = urllib.parse.urlencode({"csrf": "x", "key": key})
-    assert req(web, "POST", "/__agentos/keys", body=bad, headers=hdr)[0] == 403
+    assert req(web, "POST", "/__nestlo/keys", body=bad, headers=hdr)[0] == 403
 
 
 # ── integrations proxy ─────────────────────────────────────────────────
@@ -684,12 +684,12 @@ def test_http_proxy_injects_secrets(env, proxy):
     env.run(env.alice, "integrations add http-proxy --name api --target http://127.0.0.1:%d/v1 --bearer s3cret "
                        "--header 'X-Key: k' --attach tag:app --act-as-user" % up)
     s, _, b = req(port, "POST", "/charges?x=1", host="api.int." + DOMAIN, body=b"amount=5",
-                  headers={"Authorization": "Bearer fake", "X-AgentOS-Email": "forged@x"})
+                  headers={"Authorization": "Bearer fake", "X-Nestlo-Email": "forged@x"})
     assert s == 200 and json.loads(b) == {"ok": True}
     got = Echo.seen[-1]
     assert got["path"] == "/v1/charges?x=1" and got["body"] == b"amount=5"
     assert got["headers"]["Authorization"] == "Bearer s3cret" and got["headers"]["X-Key"] == "k"
-    assert got["headers"]["X-AgentOS-Email"] == "alice@example.com"
+    assert got["headers"]["X-Nestlo-Email"] == "alice@example.com"
     assert req(port, "GET", "/", host="nope.int." + DOMAIN)[0] == 404
     env.run(env.alice, "integrations detach api tag:app")
     assert req(port, "GET", "/", host="api.int." + DOMAIN)[0] == 404
@@ -731,7 +731,7 @@ def test_peer_integration(env, proxy):
     env.st.save_vm(db)
     env.run(env.alice, "integrations add peer --name db --vm db --port %d --attach vm:web" % up)
     s, _, _ = req(port, "GET", "/health", host="db.int." + DOMAIN)
-    assert s == 200 and Echo.seen[-1]["headers"]["X-AgentOS-Peer"] == "web"
+    assert s == 200 and Echo.seen[-1]["headers"]["X-Nestlo-Peer"] == "web"
 
 
 # ── lobby ──────────────────────────────────────────────────────────────
@@ -740,7 +740,7 @@ def test_lobby_operations(env):
     lobby = S.Lobby(env.svc)
     pub = TK.public_line(env.alice_key).split()
     lines = lobby.handle({"op": "authorized-keys", "type": pub[0], "key": pub[1]}, [])["lines"]
-    assert lines[0].startswith('command="/run/current-system/sw/bin/agentos-cloud-lobby --key %s",restrict,pty' % env.alice_fp)
+    assert lines[0].startswith('command="/run/current-system/sw/bin/nestlo-cloud-lobby --key %s",restrict,pty' % env.alice_fp)
     stranger = TK.public_line(ed25519.Ed25519PrivateKey.generate()).split()
     lines = lobby.handle({"op": "authorized-keys", "type": stranger[0], "key": stranger[1]}, [])["lines"]
     assert "--unregistered %s %s" % (stranger[0], stranger[1]) in lines[0]
@@ -796,24 +796,24 @@ def test_nspawn_create_composes_commands(tmp_path):
     image = tmp_path / "image"
     (image / "etc").mkdir(parents=True)
     rec = Recorder()
-    d = B.Nspawn({"state_dir": str(tmp_path / "state"), "bridge": "agentoscl0", "gateway_ip": "10.210.0.1",
-                  "images": {"agentos": str(image)}, "init": str(init)}, runner=rec)
-    spec = {"id": "0a1b2c3d", "name": "web", "image": "agentos", "cpu": 2, "memory_mb": 4096, "disk_gb": 20,
+    d = B.Nspawn({"state_dir": str(tmp_path / "state"), "bridge": "nestlocl0", "gateway_ip": "10.210.0.1",
+                  "images": {"nestlo": str(image)}, "init": str(init)}, runner=rec)
+    spec = {"id": "0a1b2c3d", "name": "web", "image": "nestlo", "cpu": 2, "memory_mb": 4096, "disk_gb": 20,
             "ip": "10.210.0.2", "env": {"FOO": "bar baz"}, "pool": "user-u1", "pool_cpu": 4, "pool_memory_mb": 8192,
             "authorized_keys": ["ssh-ed25519 AAAA x"], "hosts": ["llm.int.cloud.test"]}
     d.create(spec, setup="apt-get install -y git")
     flat = [" ".join(a) for a in rec.argvs]
     assert any(a.startswith("truncate -s 20G") for a in flat) and any(a.startswith("mkfs.ext4") for a in flat)
     run = next(a for a in rec.argvs if a[0] == "systemd-run")
-    assert "--slice=agentos-cloud-user_u1.slice" in run and "--property=CPUQuota=200%" in run
+    assert "--slice=nestlo-cloud-user_u1.slice" in run and "--property=CPUQuota=200%" in run
     assert "--property=MemoryMax=4096M" in run and "--private-users=pick" in run and "--as-pid2" in run
-    assert "--network-bridge=agentoscl0" in run and "--bind-ro=/nix/store" in run
-    assert any("set-property --runtime agentos-cloud-user_u1.slice CPUQuota=400% MemoryMax=8192M" in a for a in flat)
+    assert "--network-bridge=nestlocl0" in run and "--bind-ro=/nix/store" in run
+    assert any("set-property --runtime nestlo-cloud-user_u1.slice CPUQuota=400% MemoryMax=8192M" in a for a in flat)
     assert any(a.startswith("nsenter -t 4242 -n ip addr replace 10.210.0.2/16 dev host0") for a in flat)
     assert any("ip saddr != 10.210.0.2 drop" in a for a in flat)
     root = d.root("0a1b2c3d")
-    assert "export FOO='bar baz'" in open(os.path.join(root, ".agentos/env")).read()
-    assert open(os.path.join(root, ".agentos/setup")).read().startswith("#!/bin/sh\napt-get")
+    assert "export FOO='bar baz'" in open(os.path.join(root, ".nestlo/env")).read()
+    assert open(os.path.join(root, ".nestlo/setup")).read().startswith("#!/bin/sh\napt-get")
     assert "10.210.0.1 llm.int.cloud.test" in open(os.path.join(root, "etc/hosts")).read()
     assert open(os.path.join(root, "root/.ssh/authorized_keys")).read() == "ssh-ed25519 AAAA x\n"
     with pytest.raises(B.BackendError):
@@ -883,7 +883,7 @@ def test_llm_integration_catalog_and_routes(env, proxy, tmp_path):
     vid = env.st.vm_by_name("web")["id"]
     req(port, "POST", "/v1/messages", host="llm.int." + DOMAIN, body=b"{}")
     assert Echo.seen[-1]["path"] == "/agent/vm-%s/anthropic/v1/messages" % vid
-    assert Echo.seen[-1]["headers"]["x-agentos-token"] == "tok"
+    assert Echo.seen[-1]["headers"]["x-nestlo-token"] == "tok"
     req(port, "POST", "/v1/responses", host="llm.int." + DOMAIN, body=b"{}")
     assert Echo.seen[-1]["path"] == "/agent/vm-%s/openai/v1/responses" % vid
     req(port, "POST", "/anthropic/v1/messages", host="llm.int." + DOMAIN, body=b"{}")
@@ -892,7 +892,7 @@ def test_llm_integration_catalog_and_routes(env, proxy, tmp_path):
 
 def test_every_cloud_audit_event_is_a_known_type():
     import re
-    from agentos_services import audit as A
+    from nestlo_services import audit as A
     src = ""
     for name in ("commands.py", "server.py"):
         src += open(os.path.join(os.path.dirname(C.__file__), name)).read()
@@ -924,7 +924,7 @@ def test_lobby_socket_closes_forwarded_fds(env, tmp_path):
 
 
 def test_tokens_never_look_like_flags_and_double_dash(env):
-    from agentos_services.cloud import state as ST
+    from nestlo_services.cloud import state as ST
     assert all(ST.url_token(3)[0].isalnum() for _ in range(500))
     env.run(env.alice, "new --name web")
     vm = env.st.vm_by_name("web")
@@ -935,7 +935,7 @@ def test_tokens_never_look_like_flags_and_double_dash(env):
 
 
 def test_remote_command_keeps_shell_syntax():
-    from agentos_services.cloud import lobby as L
+    from nestlo_services.cloud import lobby as L
     assert L.remote_command("ssh web") == []
     assert L.remote_command("ssh web 'nohup x >/dev/null 2>&1 &'") == ["/bin/sh", "-c", "'nohup x >/dev/null 2>&1 &'"]
     assert L.remote_command("ssh  web   cat /etc/hostname") == ["/bin/sh", "-c", "cat /etc/hostname"]

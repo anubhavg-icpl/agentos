@@ -19,7 +19,7 @@ NixOS stores complete package closures in `/nix/store`, so the ISO includes ever
 
 ### Option 1: Minimal ISO (800 MB)
 ```nix
-agentos = {
+nestlo = {
   runtime.enable = true;
   security.enable = true;
   # Disable everything else
@@ -61,11 +61,11 @@ nix build .#iso-image
 
 The flake builds one ISO (`nix build .#iso-image`). It's a minimal installer:
 the live system has the installer and basic tools, not the agents or
-toolchains. `agentos-install` then installs the full `agentos` configuration
+toolchains. `nestlo-install` then installs the full `nestlo` configuration
 to disk, downloading packages from cache.nixos.org.
 
-The live ISO also carries the small Nestlo CLIs (`agentos`, `agentos-task`,
-`agentos-schedule`, `agentos-fleet`, `agentos-market`, `agentos-gpu`; shell
+The live ISO also carries the small Nestlo CLIs (`nestlo`, `nestlo-task`,
+`nestlo-schedule`, `nestlo-fleet`, `nestlo-market`, `nestlo-gpu`; shell
 scripts and a pure-Python package). `all-agents` is deliberately left out: the
 20 agents are over 1 GB compressed.
 

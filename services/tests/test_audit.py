@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from agentos_services import audit as A
-from agentos_services import tasks as T
+from nestlo_services import audit as A
+from nestlo_services import tasks as T
 from conftest import request
 from orchfix import cfg, clock, complete, orch, runtime, submit, systemctl, taskstore  # noqa: F401
 from test_daemon import FakeRunner, make_daemon, register  # noqa: F401
@@ -542,10 +542,10 @@ def test_gateway_in_strict_mode_refuses_while_audit_is_down(make_gateway, upstre
 def test_health_reports_audit_counters(make_gateway):
     gw = make_gateway()
     gw.audit = FakeAudit()
-    status, _, raw = request(gw, "GET", "/_agentos/health")
+    status, _, raw = request(gw, "GET", "/_nestlo/health")
     assert json.loads(raw)["audit"] == {"enabled": True}
     gw.audit = A.NullClient()
-    assert "audit" not in json.loads(request(gw, "GET", "/_agentos/health")[2])
+    assert "audit" not in json.loads(request(gw, "GET", "/_nestlo/health")[2])
 
 
 def test_orchestrator_audits_submit_approve_reject_cancel_and_finish(orch):
@@ -583,7 +583,7 @@ def test_task_retry_is_audited(orch):
 
 
 def test_orchestrator_in_strict_mode_refuses_changes_while_audit_is_down(orch):
-    from agentos_services.unixapi import ApiError
+    from nestlo_services.unixapi import ApiError
     orch.audit = DownAudit()
     with pytest.raises(ApiError) as exc:
         orch.submit({"agent": "fake", "workspace": "demo", "prompt": "x"})
@@ -593,13 +593,13 @@ def test_orchestrator_in_strict_mode_refuses_changes_while_audit_is_down(orch):
 
 def test_daemon_audits_spawn_kill_and_exit(make_daemon):
     fake = FakeAudit()
-    runner = FakeRunner(active={"agentos-agent-live.service", "agentos-agent-doomed.service"})
+    runner = FakeRunner(active={"nestlo-agent-live.service", "nestlo-agent-doomed.service"})
     d = make_daemon(runner)
     d.audit = fake
-    register(d, "live", unit="agentos-agent-live.service", operator="alice", workspace="/ws/a", isolation="sandbox",
+    register(d, "live", unit="nestlo-agent-live.service", operator="alice", workspace="/ws/a", isolation="sandbox",
              sandboxed=True)
-    register(d, "doomed", unit="agentos-agent-doomed.service")
-    register(d, "gone", unit="agentos-agent-gone.service")
+    register(d, "doomed", unit="nestlo-agent-doomed.service")
+    register(d, "gone", unit="nestlo-agent-gone.service")
     d.reap()
     spawned = {e[2]["agent"]: e for e in fake.of("agent.spawn")}
     assert set(spawned) == {"live", "doomed"} and spawned["live"][1] == "alice"

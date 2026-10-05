@@ -38,22 +38,22 @@ def test_records_request_response_pairs(recorded, tmp_path):
     # the recording does not contain credentials
     assert "sk-real-anthropic" not in json.dumps(first)
     # listing over the admin socket
-    listing = json.loads(request(recorded, "GET", "/_agentos/recordings", admin=True)[2])
+    listing = json.loads(request(recorded, "GET", "/_nestlo/recordings", admin=True)[2])
     assert listing["recordings"][0]["id"] == "rec1" and listing["recordings"][0]["requests"] == 2
-    detail = json.loads(request(recorded, "GET", "/_agentos/recordings/rec1", admin=True)[2])
+    detail = json.loads(request(recorded, "GET", "/_nestlo/recordings/rec1", admin=True)[2])
     assert [r["status"] for r in detail["requests"]] == [200, 200]
-    assert request(recorded, "GET", "/_agentos/recordings")[0] == 403
+    assert request(recorded, "GET", "/_nestlo/recordings")[0] == 403
 
 
 def test_replay_serves_from_recording_at_zero_cost(recorded, upstream, store, tmp_path):
     before = len(upstream.requests)
     spent = store.spend("rec1")
-    status, _, body = request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "rec1"}, admin=True)
+    status, _, body = request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "rec1"}, admin=True)
     assert status == 200 and json.loads(body)["replay"] == {"recording": "rec1", "pos": 0, "total": 2}
 
     status, headers, body = request(recorded, "POST", PLAY, turn("one"))
     assert status == 200 and json.loads(body)["content"][0]["text"] == "hi"
-    assert headers["X-AgentOS-Replay"] == "rec1/1"
+    assert headers["X-Nestlo-Replay"] == "rec1/1"
     status, headers, body = request(recorded, "POST", PLAY, turn("two", stream=True))
     assert status == 200 and headers["Content-Type"] == "text/event-stream"
     assert body.decode().count("data: ") == 4
@@ -69,7 +69,7 @@ def test_replay_serves_from_recording_at_zero_cost(recorded, upstream, store, tm
 
 
 def test_replay_diverged_reports_details_and_does_not_advance(recorded, upstream):
-    request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "rec1"}, admin=True)
+    request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "rec1"}, admin=True)
     before = len(upstream.requests)
     status, _, body = request(recorded, "POST", PLAY, turn("something else"))
     err = json.loads(body)["error"]
@@ -84,27 +84,27 @@ def test_replay_diverged_reports_details_and_does_not_advance(recorded, upstream
 
 
 def test_key_order_does_not_matter_for_the_hash(recorded):
-    request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "rec1"}, admin=True)
+    request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "rec1"}, admin=True)
     reordered = {"messages": [{"content": "one", "role": "user"}], "model": "claude-test"}
     assert request(recorded, "POST", PLAY, reordered)[0] == 200
 
 
 def test_replay_registration_rules(recorded, store):
-    assert request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "nope"}, admin=True)[0] == 404
-    assert request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "../x"}, admin=True)[0] == 400
-    assert request(recorded, "PUT", "/_agentos/replay/rec1", {"recording": "rec1"}, admin=True)[0] == 400
-    assert request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "rec1"})[0] == 403   # admin only
-    assert request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "rec1"}, admin=True)[0] == 200
-    assert json.loads(request(recorded, "GET", "/_agentos/replay/play1", admin=True)[2])["replay"]["pos"] == 0
-    assert request(recorded, "DELETE", "/_agentos/replay/play1", admin=True)[0] == 200
+    assert request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "nope"}, admin=True)[0] == 404
+    assert request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "../x"}, admin=True)[0] == 400
+    assert request(recorded, "PUT", "/_nestlo/replay/rec1", {"recording": "rec1"}, admin=True)[0] == 400
+    assert request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "rec1"})[0] == 403   # admin only
+    assert request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "rec1"}, admin=True)[0] == 200
+    assert json.loads(request(recorded, "GET", "/_nestlo/replay/play1", admin=True)[2])["replay"]["pos"] == 0
+    assert request(recorded, "DELETE", "/_nestlo/replay/play1", admin=True)[0] == 200
     assert store.replay_state("play1") is None
     # replay agents are not blocked by budgets, and normal traffic resumes after DELETE
     assert request(recorded, "POST", PLAY, turn("live"))[0] == 200
 
 
 def test_replay_ignores_budgets(recorded):
-    request(recorded, "PUT", "/_agentos/budget/play1", {"daily_usd": 0}, admin=True)
-    request(recorded, "PUT", "/_agentos/replay/play1", {"recording": "rec1"}, admin=True)
+    request(recorded, "PUT", "/_nestlo/budget/play1", {"daily_usd": 0}, admin=True)
+    request(recorded, "PUT", "/_nestlo/replay/play1", {"recording": "rec1"}, admin=True)
     assert request(recorded, "POST", PLAY, turn("one"))[0] == 200
 
 
@@ -112,10 +112,10 @@ def test_per_agent_recording_flag(make_gateway, tmp_path):
     gw = make_gateway(recording={"enabled": False, "dir": str(tmp_path / "rec")})
     assert request(gw, "POST", REC, turn("a"))[0] == 200
     assert not (tmp_path / "rec").exists()
-    assert request(gw, "PUT", "/_agentos/record/rec1", {"enabled": True}, admin=True)[0] == 200
+    assert request(gw, "PUT", "/_nestlo/record/rec1", {"enabled": True}, admin=True)[0] == 200
     assert request(gw, "POST", REC, turn("b"))[0] == 200
     assert os.listdir(tmp_path / "rec" / "rec1") == ["000001.json"]
-    assert request(gw, "DELETE", "/_agentos/record/rec1", admin=True)[0] == 200
+    assert request(gw, "DELETE", "/_nestlo/record/rec1", admin=True)[0] == 200
     request(gw, "POST", REC, turn("c"))
     assert os.listdir(tmp_path / "rec" / "rec1") == ["000001.json"]
 

@@ -1,4 +1,4 @@
-"""agentos-herdr-plugins against a fake GitHub API and a fake herdr binary."""
+"""nestlo-herdr-plugins against a fake GitHub API and a fake herdr binary."""
 
 import json
 import subprocess
@@ -6,7 +6,7 @@ import subprocess
 import pytest
 from herdrfix import FakeGitHub, FakeHerdr, manifest
 
-from agentos_services import herdr_plugins as hp
+from nestlo_services import herdr_plugins as hp
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -26,13 +26,13 @@ def herdr(tmp_path):
 
 @pytest.fixture
 def env(tmp_path, monkeypatch, gh, herdr):
-    monkeypatch.setenv("AGENTOS_HERDR_BIN", herdr.path)
+    monkeypatch.setenv("NESTLO_HERDR_BIN", herdr.path)
     monkeypatch.setenv("FAKE_HERDR_STATE", herdr.state)
-    monkeypatch.setenv("AGENTOS_HERDR_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("AGENTOS_HERDR_STATE", str(tmp_path / "state"))
-    monkeypatch.setenv("AGENTOS_HERDR_GITHUB_API", gh.url)
-    monkeypatch.setenv("AGENTOS_HERDR_GITHUB_RAW", gh.url)
-    monkeypatch.setenv("AGENTOS_HERDR_GIT_BASE", "file:///nonexistent")  # head commits come from the API fallback
+    monkeypatch.setenv("NESTLO_HERDR_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("NESTLO_HERDR_STATE", str(tmp_path / "state"))
+    monkeypatch.setenv("NESTLO_HERDR_GITHUB_API", gh.url)
+    monkeypatch.setenv("NESTLO_HERDR_GITHUB_RAW", gh.url)
+    monkeypatch.setenv("NESTLO_HERDR_GIT_BASE", "file:///nonexistent")  # head commits come from the API fallback
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("FAKE_HERDR_FAIL", raising=False)
     monkeypatch.delenv("FAKE_HERDR_VERSION", raising=False)

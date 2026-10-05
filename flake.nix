@@ -1,4 +1,4 @@
-# Nestlo (formerly AgentOS) - an operating system for coding agents
+# Nestlo - an operating system for coding agents
 # Top-level flake that ties together host configs, agent packages, and modules
 {
   description = "Nestlo - the open-source home for AI coding agents (NixOS)";
@@ -35,7 +35,7 @@
             inherit system;
             config.allowUnfree = true;
           };
-          agentos = self.packages.${system};
+          nestlo = self.packages.${system};
         };
 
       # One nixpkgs instance per system, shared by the packages, the checks
@@ -64,38 +64,38 @@
       };
 
       # The host flavours. Every flavour is built for each system: the
-      # x86_64 names are plain (agentos, agentos-vm, ...), the aarch64 ones
-      # carry an -aarch64 suffix (agentos-aarch64, agentos-vm-aarch64, ...).
+      # x86_64 names are plain (nestlo, nestlo-vm, ...), the aarch64 ones
+      # carry an -aarch64 suffix (nestlo-aarch64, nestlo-vm-aarch64, ...).
       installerIso = "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix";
       hostFlavours = {
-        # The default AgentOS host (bare metal, installed by agentos-install)
-        agentos = [
-          ./nixos/hosts/agentos
-          ./nixos/hosts/agentos/hardware.nix
-          ./nixos/hosts/agentos/disko.nix
+        # The default Nestlo host (bare metal, installed by nestlo-install)
+        nestlo = [
+          ./nixos/hosts/nestlo
+          ./nixos/hosts/nestlo/hardware.nix
+          ./nixos/hosts/nestlo/disko.nix
         ];
         # The same host as a QEMU/KVM guest (see packages.vm-image)
-        agentos-vm = [ ./nixos/hosts/agentos ./nixos/hosts/vm.nix ];
+        nestlo-vm = [ ./nixos/hosts/nestlo ./nixos/hosts/vm.nix ];
         # Live ISO for installation
-        agentos-iso = [ installerIso ./nixos/hosts/iso.nix ];
+        nestlo-iso = [ installerIso ./nixos/hosts/iso.nix ];
 
         # The desktop edition: the same host with a graphical session
-        agentos-desktop = [
-          ./nixos/hosts/agentos
-          ./nixos/hosts/agentos/hardware.nix
-          ./nixos/hosts/agentos/disko.nix
+        nestlo-desktop = [
+          ./nixos/hosts/nestlo
+          ./nixos/hosts/nestlo/hardware.nix
+          ./nixos/hosts/nestlo/disko.nix
           ./nixos/hosts/desktop.nix
           ./nixos/hosts/desktop-host.nix
         ];
-        agentos-desktop-vm = [
-          ./nixos/hosts/agentos
+        nestlo-desktop-vm = [
+          ./nixos/hosts/nestlo
           ./nixos/hosts/vm.nix
           ./nixos/hosts/desktop.nix
           ./nixos/hosts/desktop-host.nix
           ./nixos/hosts/desktop-vm.nix
         ];
-        # Live ISO with the desktop, to try AgentOS or install from
-        agentos-desktop-iso = [
+        # Live ISO with the desktop, to try Nestlo or install from
+        nestlo-desktop-iso = [
           installerIso
           ./nixos/hosts/iso.nix
           ./nixos/hosts/desktop.nix
@@ -105,7 +105,7 @@
       hostSuffix = system: lib.optionalString (system == "aarch64-linux") "-aarch64";
       # The desktop VM and live ISO are x86_64 only: every configuration costs
       # evaluation memory in `nix flake check`, and CI runners have 16 GB.
-      x86Only = [ "agentos-desktop-vm" "agentos-desktop-iso" ];
+      x86Only = [ "nestlo-desktop-vm" "nestlo-desktop-iso" ];
       hostsFor = system: lib.mapAttrs'
         (name: modules: lib.nameValuePair (name + hostSuffix system) (mkHost system modules))
         (if system == "x86_64-linux" then hostFlavours else removeAttrs hostFlavours x86Only);
@@ -113,7 +113,10 @@
     in
     {
       # ── NixOS configurations ──────────────────────────────────────────
-      nixosConfigurations = lib.foldl' (acc: system: acc // hostsFor system) { } systems;
+      nixosConfigurations = lib.foldl' (acc: system: acc // hostsFor system) { } systems
+        # Temporary: .github/workflows/ci.yml still builds the pre-rename name.
+        # Remove once the workflow says nestlo (see CHANGELOG, "Renamed from AgentOS").
+        // { agentos = self.nixosConfigurations.nestlo; };
 
       # ── Packages (each coding agent as an installable package) ─────────
       packages = forEachSystem (system:
@@ -125,19 +128,19 @@
         # Installable OS images. The desktop-* images are separate outputs
         # (large): the minimal images stay headless.
         // {
-          iso-image = (hostFor system "agentos-iso").config.system.build.isoImage;
-          vm-image = (hostFor system "agentos-vm").config.system.build.image;
+          iso-image = (hostFor system "nestlo-iso").config.system.build.isoImage;
+          vm-image = (hostFor system "nestlo-vm").config.system.build.image;
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
-          desktop-iso-image = self.nixosConfigurations.agentos-desktop-iso.config.system.build.isoImage;
-          desktop-vm-image = self.nixosConfigurations.agentos-desktop-vm.config.system.build.image;
+          desktop-iso-image = self.nixosConfigurations.nestlo-desktop-iso.config.system.build.isoImage;
+          desktop-vm-image = self.nixosConfigurations.nestlo-desktop-vm.config.system.build.image;
         });
 
       # ── Checks (nix flake check) ──────────────────────────────────────
       checks = forEachSystem (system:
         let
           pkgs = pkgsFor system;
-          agentosModules = [ disko.nixosModules.disko sops-nix.nixosModules.sops ./modules ];
+          nestloModules = [ disko.nixosModules.disko sops-nix.nixosModules.sops ./modules ];
         in
         {
           services = self.packages.${system}.services;
@@ -145,14 +148,14 @@
           # systemPackages agree (see tests/agent-inclusion.nix).
           agent-inclusion = import ./tests/agent-inclusion.nix {
             inherit pkgs;
-            host = hostFor system "agentos";
+            host = hostFor system "nestlo";
             agentPkgs = self.packages.${system};
           };
-          # Eval-only: agentos.policy assertions fire on an invalid policy
+          # Eval-only: nestlo.policy assertions fire on an invalid policy
           # and a valid one compiles; rbac defaults (tests/policy-eval.nix).
           policy-eval = import ./tests/policy-eval.nix {
             inherit pkgs;
-            host = hostFor system "agentos";
+            host = hostFor system "nestlo";
           };
           # Every skill pack and the combined bundle build, skills have front
           # matter, no name collisions, pack.json is valid (no VM).
@@ -162,44 +165,44 @@
           };
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
-          # Boots a VM with the AgentOS service stack and drives an agent
+          # Boots a VM with the Nestlo service stack and drives an agent
           # through spawn -> model gateway -> budget cap -> kill.
-          e2e = import ./tests/e2e.nix { inherit pkgs agentosModules; };
+          e2e = import ./tests/e2e.nix { inherit pkgs nestloModules; };
           # Loop detection, cost routing, record/replay and the message bus.
-          gateway-features = import ./tests/gateway-features.nix { inherit pkgs agentosModules; };
+          gateway-features = import ./tests/gateway-features.nix { inherit pkgs nestloModules; };
           # Tamper-evident audit log, signed checkpoints, gateway DLP.
-          audit = import ./tests/audit.nix { inherit pkgs agentosModules; };
+          audit = import ./tests/audit.nix { inherit pkgs nestloModules; };
           # Task queue, orchestrator plans and cron-style schedules.
-          orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
+          orchestration = import ./tests/orchestration.nix { inherit pkgs nestloModules; };
           # GitHub webhooks -> tasks -> pushed branch and pull request.
-          triggers = import ./tests/triggers.nix { inherit pkgs agentosModules; };
+          triggers = import ./tests/triggers.nix { inherit pkgs nestloModules; };
           # Software factory: fake roles take an item to a pull request with evidence.
-          factory = import ./tests/factory.nix { inherit pkgs agentosModules; };
-          # AgentOS Cloud: VMs over SSH, the private HTTPS proxy, /exec, integrations.
-          cloud = import ./tests/cloud.nix { inherit pkgs agentosModules; };
+          factory = import ./tests/factory.nix { inherit pkgs nestloModules; };
+          # Nestlo Cloud: VMs over SSH, the private HTTPS proxy, /exec, integrations.
+          cloud = import ./tests/cloud.nix { inherit pkgs nestloModules; };
           # Container-isolated agents in their own network namespace.
-          container = import ./tests/container.nix { inherit pkgs agentosModules; };
+          container = import ./tests/container.nix { inherit pkgs nestloModules; };
           # Pullrun daemon: operators-only socket, agents in Pullrun containers.
-          pullrun = import ./tests/pullrun.nix { inherit pkgs agentosModules; };
+          pullrun = import ./tests/pullrun.nix { inherit pkgs nestloModules; };
           # Skill packs linked into the agent user's CLI skills directories.
-          skills = import ./tests/skills.nix { inherit pkgs agentosModules; };
+          skills = import ./tests/skills.nix { inherit pkgs nestloModules; };
           # Web dashboard, fleet registry and marketplace.
-          platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
+          platform = import ./tests/platform.nix { inherit pkgs nestloModules; };
           # agent-fleet chat and hub: static server on loopback, wasm/COOP/COEP.
-          agent-fleet-web = import ./tests/agent-fleet-web.nix { inherit pkgs agentosModules; };
+          agent-fleet-web = import ./tests/agent-fleet-web.nix { inherit pkgs nestloModules; };
           # OpenClaw chat gateway wired to the model gateway and orchestrator.
-          openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
-          # herdr: agent-user server, status bridge and metrics, AgentOS and
+          openclaw = import ./tests/openclaw.nix { inherit pkgs nestloModules; };
+          # herdr: agent-user server, status bridge and metrics, Nestlo and
           # declared plugins linked.
-          herdr = import ./tests/herdr.nix { inherit pkgs agentosModules; };
+          herdr = import ./tests/herdr.nix { inherit pkgs nestloModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
-          desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
+          desktop = import ./tests/desktop.nix { inherit pkgs nestloModules; };
           # Local inference backend registered as a gateway provider.
-          local-ai = import ./tests/local-ai.nix { inherit pkgs agentosModules; };
+          local-ai = import ./tests/local-ai.nix { inherit pkgs nestloModules; };
           # n8n native, Flowise as a container, secrets and gateway routing.
-          agent-stack = import ./tests/agent-stack.nix { inherit pkgs agentosModules; };
+          agent-stack = import ./tests/agent-stack.nix { inherit pkgs nestloModules; };
           # Backs up to a local restic repository, destroys the state, restores it.
-          backup = import ./tests/backup.nix { inherit pkgs agentosModules; };
+          backup = import ./tests/backup.nix { inherit pkgs nestloModules; };
           # Eval-only: key-only sshd on the live ISO, no fixed VM password.
           hardening = import ./tests/hardening.nix { inherit pkgs self; };
         });
@@ -211,13 +214,13 @@
         lib.optionalAttrs (pkgs ? sbomnix) {
           sbom = {
             type = "app";
-            meta.description = "Write a CycloneDX SBOM (sbom.cdx.json) of the AgentOS system closure";
+            meta.description = "Write a CycloneDX SBOM (sbom.cdx.json) of the Nestlo system closure";
             program = lib.getExe (pkgs.writeShellApplication {
-              name = "agentos-sbom";
+              name = "nestlo-sbom";
               runtimeInputs = [ pkgs.sbomnix pkgs.nix ];
               text = ''
                 # Usage: nix run .#sbom [-- <installable>]   (OUT=file to rename the output)
-                target="''${1:-${self}#nixosConfigurations.agentos.config.system.build.toplevel}"
+                target="''${1:-${self}#nixosConfigurations.nestlo.config.system.build.toplevel}"
                 out="''${OUT:-sbom.cdx.json}"
                 path=$(nix build --no-link --print-out-paths "$target")
                 sbomnix "$path" --cdx "$out"
@@ -227,7 +230,7 @@
           };
         });
 
-      # ── Dev shell for working on AgentOS itself ───────────────────────
+      # ── Dev shell for working on Nestlo itself ───────────────────────
       devShells = forEachSystem (system:
         let pkgs = pkgsFor system; in {
           default = pkgs.mkShell {
@@ -244,11 +247,11 @@
 
       # ── NixOS modules (re-usable by others) ───────────────────────────
       nixosModules = {
-        agentos-runtime = ./modules/runtime;
-        agentos-security = ./modules/security;
-        agentos-observability = ./modules/observability;
-        agentos-storage = ./modules/storage;
-        agentos-networking = ./modules/networking;
+        nestlo-runtime = ./modules/runtime;
+        nestlo-security = ./modules/security;
+        nestlo-observability = ./modules/observability;
+        nestlo-storage = ./modules/storage;
+        nestlo-networking = ./modules/networking;
         default = ./modules;
       };
 
@@ -256,7 +259,7 @@
       templates = {
         default = {
           path = ./templates/agent-workspace;
-          description = "A minimal AgentOS workspace for a new project";
+          description = "A minimal Nestlo workspace for a new project";
         };
       };
     };

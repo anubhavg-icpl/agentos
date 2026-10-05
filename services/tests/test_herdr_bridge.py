@@ -1,4 +1,4 @@
-"""agentos-herdr status bridge against a fake herdr binary."""
+"""nestlo-herdr status bridge against a fake herdr binary."""
 
 import json
 import os
@@ -7,7 +7,7 @@ import urllib.request
 import pytest
 from herdrfix import FakeHerdr
 
-from agentos_services import herdr_bridge as hb
+from nestlo_services import herdr_bridge as hb
 
 ME = hb.current_user()
 
@@ -15,11 +15,11 @@ ME = hb.current_user()
 @pytest.fixture
 def herdr(tmp_path, monkeypatch):
     h = FakeHerdr(tmp_path)
-    monkeypatch.setenv("AGENTOS_HERDR_BIN", h.path)
+    monkeypatch.setenv("NESTLO_HERDR_BIN", h.path)
     monkeypatch.setenv("FAKE_HERDR_STATE", h.state)
     cfg = tmp_path / "herdr.json"
     cfg.write_text(json.dumps({"users": [{"name": ME, "home": os.path.expanduser("~")}]}))
-    monkeypatch.setenv("AGENTOS_HERDR_CONFIG", str(cfg))
+    monkeypatch.setenv("NESTLO_HERDR_CONFIG", str(cfg))
     return h
 
 
@@ -58,8 +58,8 @@ def test_status_when_the_server_is_down(herdr, capsys):
 
 
 def test_status_without_herdr(monkeypatch, capsys):
-    monkeypatch.setenv("AGENTOS_HERDR_BIN", "/nonexistent/herdr")
-    monkeypatch.setenv("AGENTOS_HERDR_CONFIG", "/nonexistent.json")
+    monkeypatch.setenv("NESTLO_HERDR_BIN", "/nonexistent/herdr")
+    monkeypatch.setenv("NESTLO_HERDR_CONFIG", "/nonexistent.json")
     assert hb.main(["status"]) == 0
     assert "herdr not found" in capsys.readouterr().out
 
@@ -68,12 +68,12 @@ def test_metrics_text(herdr, capsys):
     herdr.update(server=True, panes=PANES, agents=AGENTS)
     assert hb.main(["metrics"]) == 0
     out = capsys.readouterr().out
-    assert f'agentos_herdr_up{{user="{ME}"}} 1' in out
-    assert f'agentos_herdr_panes{{user="{ME}",state="blocked"}} 1' in out
-    assert f'agentos_herdr_panes{{user="{ME}",state="unknown"}} 2' in out
-    assert f'agentos_herdr_panes{{user="{ME}",state="done"}} 0' in out
-    assert f'agentos_herdr_agents{{user="{ME}",state="idle"}} 1' in out
-    assert "# TYPE agentos_herdr_panes gauge" in out
+    assert f'nestlo_herdr_up{{user="{ME}"}} 1' in out
+    assert f'nestlo_herdr_panes{{user="{ME}",state="blocked"}} 1' in out
+    assert f'nestlo_herdr_panes{{user="{ME}",state="unknown"}} 2' in out
+    assert f'nestlo_herdr_panes{{user="{ME}",state="done"}} 0' in out
+    assert f'nestlo_herdr_agents{{user="{ME}",state="idle"}} 1' in out
+    assert "# TYPE nestlo_herdr_panes gauge" in out
     # Prometheus text: every sample line is name{labels} value
     for line in out.splitlines():
         if line and not line.startswith("#"):
@@ -83,7 +83,7 @@ def test_metrics_text(herdr, capsys):
 def test_metrics_server_down(herdr, capsys):
     hb.main(["metrics"])
     out = capsys.readouterr().out
-    assert f'agentos_herdr_up{{user="{ME}"}} 0' in out and f'agentos_herdr_panes{{user="{ME}",state="idle"}} 0' in out
+    assert f'nestlo_herdr_up{{user="{ME}"}} 0' in out and f'nestlo_herdr_panes{{user="{ME}",state="idle"}} 0' in out
 
 
 def test_unknown_or_invalid_users_are_rejected(herdr):
@@ -126,7 +126,7 @@ class Runner:
 
 def test_monitor_notifies_once_per_blocked_episode(herdr):
     clock, runner = Clock(), Runner()
-    mon = hb.Monitor({"name": ME}, herdr.path, ["agentos-notify", "test"], grace=15, clock=clock, runner=runner)
+    mon = hb.Monitor({"name": ME}, herdr.path, ["nestlo-notify", "test"], grace=15, clock=clock, runner=runner)
     herdr.update(server=True, panes=PANES, agents=AGENTS)
     mon.poll()
     assert runner.calls == []                      # blocked, but not for long enough yet
@@ -137,7 +137,7 @@ def test_monitor_notifies_once_per_blocked_episode(herdr):
     mon.poll()
     assert len(runner.calls) == 1
     argv = runner.calls[0]
-    assert argv[:2] == ["agentos-notify", "test"]
+    assert argv[:2] == ["nestlo-notify", "test"]
     assert "reviewer is blocked and waits for input" in argv[2] and "w1:p2" in argv[2] and ME in argv[2]
     assert "\x1b" not in argv[2]
     clock.t += 100
@@ -151,7 +151,7 @@ def test_monitor_notifies_once_per_blocked_episode(herdr):
     clock.t += 20
     mon.poll()
     assert len(runner.calls) == 2
-    assert 'agentos_herdr_blocked_notifications_total 2' in mon.metrics()
+    assert 'nestlo_herdr_blocked_notifications_total 2' in mon.metrics()
 
 
 def test_monitor_flicker_does_not_notify(herdr):
@@ -191,7 +191,7 @@ def test_monitor_http_endpoints(herdr):
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     try:
         body = urllib.request.urlopen(base + "/metrics").read().decode()
-        assert f'agentos_herdr_panes{{user="{ME}",state="working"}} 1' in body
+        assert f'nestlo_herdr_panes{{user="{ME}",state="working"}} 1' in body
         assert json.loads(urllib.request.urlopen(base + "/status").read())["up"] is True
         assert urllib.request.urlopen(base + "/healthz").read() == b"ok\n"
         with pytest.raises(urllib.error.HTTPError):

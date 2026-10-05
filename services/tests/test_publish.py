@@ -7,9 +7,9 @@ import urllib.error
 
 import pytest
 
-from agentos_services import publish as P
-from agentos_services import tasks as T
-from agentos_services.taskrunner import TaskRunner
+from nestlo_services import publish as P
+from nestlo_services import tasks as T
+from nestlo_services.taskrunner import TaskRunner
 from orchfix import cfg, clock, orch, runtime, submit, systemctl, taskstore  # noqa: F401
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -103,7 +103,7 @@ def test_publish_commits_pushes_and_opens_a_pr(env):
     assert "Refs #7" in req["body"]["body"] and "task-1" in req["body"]["body"]
     # the workspace was not left dirty and no stray temp dirs remain
     assert sh("git", "status", "--porcelain", cwd=env.ws) == ""
-    assert not [n for n in os.listdir(env.tmp) if n.startswith("agentos-publish.")]
+    assert not [n for n in os.listdir(env.tmp) if n.startswith("nestlo-publish.")]
 
 
 def test_committed_work_is_published_without_extra_commit(env):

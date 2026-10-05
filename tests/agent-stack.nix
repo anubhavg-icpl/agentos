@@ -9,18 +9,18 @@
 # container, the generated podman unit: loopback publish, env files, dropped
 # capabilities, no privileges, memory limit. The VM has no network, so no
 # image is pulled and no container is started.
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 pkgs.testers.runNixOSTest {
-  name = "agentos-agent-stack";
+  name = "nestlo-agent-stack";
   globalTimeout = 1800;
 
   nodes.machine = { lib, ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 3072;
 
-    agentos = {
+    nestlo = {
       runtime.enable = true;
       networking.enable = true;
       agentStack = {
@@ -31,14 +31,14 @@ pkgs.testers.runNixOSTest {
     };
 
     # no registry in the VM: do not try to start the container at boot
-    virtualisation.oci-containers.containers.agentos-stack-flowise.autoStart = lib.mkForce false;
+    virtualisation.oci-containers.containers.nestlo-stack-flowise.autoStart = lib.mkForce false;
   };
 
   testScript = ''
     import re
 
     machine.wait_for_unit("multi-user.target")
-    machine.wait_for_unit("agentos-stack-secrets.service")
+    machine.wait_for_unit("nestlo-stack-secrets.service")
     machine.wait_for_unit("n8n.service")
     machine.wait_for_open_port(5678)
 
@@ -51,7 +51,7 @@ pkgs.testers.runNixOSTest {
                 assert "127.0.0.1:5678" in line, line
 
     with subtest("secrets are created root-only, 0600"):
-        out = machine.succeed("stat -c '%a %U %n' /var/lib/agentos-stack/secrets /var/lib/agentos-stack/secrets/*")
+        out = machine.succeed("stat -c '%a %U %n' /var/lib/nestlo-stack/secrets /var/lib/nestlo-stack/secrets/*")
         print(out)
         lines = out.strip().splitlines()
         assert lines[0].startswith("700 root "), lines[0]
@@ -60,13 +60,13 @@ pkgs.testers.runNixOSTest {
             assert n in names, names
         for l in lines[1:]:
             assert l.startswith("600 root "), l
-        key = machine.succeed("cat /var/lib/agentos-stack/secrets/n8n-encryption-key")
+        key = machine.succeed("cat /var/lib/nestlo-stack/secrets/n8n-encryption-key")
         assert re.fullmatch("[0-9a-f]{64}", key), key
-        env = machine.succeed("cat /var/lib/agentos-stack/secrets/flowise.env")
+        env = machine.succeed("cat /var/lib/nestlo-stack/secrets/flowise.env")
         assert "FLOWISE_USERNAME=fleet-admin" in env and "FLOWISE_PASSWORD=" in env, env
         # a second run keeps the values
-        machine.succeed("systemctl restart agentos-stack-secrets.service")
-        assert machine.succeed("cat /var/lib/agentos-stack/secrets/n8n-encryption-key") == key
+        machine.succeed("systemctl restart nestlo-stack-secrets.service")
+        assert machine.succeed("cat /var/lib/nestlo-stack/secrets/n8n-encryption-key") == key
 
     with subtest("no secret in the unit files or in the store scripts"):
         password = re.search("FLOWISE_PASSWORD=(.*)", env).group(1)
@@ -75,20 +75,20 @@ pkgs.testers.runNixOSTest {
 
     with subtest("apps are registered with the gateway and get a token file"):
         for app in ["n8n", "flowise"]:
-            machine.wait_for_unit(f"agentos-stack-gw-{app}.service")
-            machine.succeed(f"test -s /var/lib/agentos-stack/secrets/{app}.gateway-token")
-            llm = machine.succeed(f"cat /var/lib/agentos-stack/secrets/{app}.llm.env")
+            machine.wait_for_unit(f"nestlo-stack-gw-{app}.service")
+            machine.succeed(f"test -s /var/lib/nestlo-stack/secrets/{app}.gateway-token")
+            llm = machine.succeed(f"cat /var/lib/nestlo-stack/secrets/{app}.llm.env")
             assert f"/agent/stack-{app}:" in llm, llm
-            assert "OPENAI_API_KEY=agentos-managed" in llm, llm
-            machine.succeed(f"stat -c %a /var/lib/agentos-stack/secrets/{app}.llm.env | grep -qx 600")
+            assert "OPENAI_API_KEY=nestlo-managed" in llm, llm
+            machine.succeed(f"stat -c %a /var/lib/nestlo-stack/secrets/{app}.llm.env | grep -qx 600")
         # n8n reaches the gateway on loopback, containers on the stack address
         assert "http://10.89.1.1:8080/agent/stack-flowise:" in machine.succeed(
-            "cat /var/lib/agentos-stack/secrets/flowise.llm.env")
+            "cat /var/lib/nestlo-stack/secrets/flowise.llm.env")
         assert "http://127.0.0.1:8080/agent/stack-n8n:" in machine.succeed(
-            "cat /var/lib/agentos-stack/secrets/n8n.llm.env")
+            "cat /var/lib/nestlo-stack/secrets/n8n.llm.env")
 
     with subtest("the gateway listens on the stack address, the firewall allows only its port"):
-        machine.wait_for_unit("agentos-model-gateway.service")
+        machine.wait_for_unit("nestlo-model-gateway.service")
         machine.wait_for_open_port(8080)
         listeners = machine.succeed("ss -Htln")
         assert "10.89.1.1:8080" in listeners, listeners
@@ -97,17 +97,17 @@ pkgs.testers.runNixOSTest {
         assert "-d 10.89.1.1/32 -p tcp -m tcp --dport 8080 -j ACCEPT" in rules, rules
         assert "-j REJECT" in rules.strip().splitlines()[-1], rules
         machine.succeed("iptables -S INPUT | grep -- '-i agentstack0 -j agentstack-in'")
-        machine.succeed("curl -sf http://10.89.1.1:8080/_agentos/health")
+        machine.succeed("curl -sf http://10.89.1.1:8080/_nestlo/health")
 
     with subtest("the Flowise container unit"):
-        show = machine.succeed("systemctl show -p ExecStart --value podman-agentos-stack-flowise.service")
+        show = machine.succeed("systemctl show -p ExecStart --value podman-nestlo-stack-flowise.service")
         start = re.search(r"path=(/nix/store/\S+)", show).group(1)
         script = machine.succeed(f"cat {start}")
         print(script)
         for want in [
             "-p 127.0.0.1:3000:3000",
-            "--env-file /var/lib/agentos-stack/secrets/flowise.env",
-            "-v /var/lib/agentos-stack/flowise:/root/.flowise",
+            "--env-file /var/lib/nestlo-stack/secrets/flowise.env",
+            "-v /var/lib/nestlo-stack/flowise:/root/.flowise",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--memory=2G",
@@ -118,8 +118,8 @@ pkgs.testers.runNixOSTest {
         assert "--privileged" not in script, script
         assert "--cap-add" not in script, script
         assert "flowise.llm.env" not in script, script
-        unit = machine.succeed("systemctl cat podman-agentos-stack-flowise.service")
-        assert "agentos-stack-secrets.service" in unit and "agentos-stack-gw-flowise.service" in unit, unit
+        unit = machine.succeed("systemctl cat podman-nestlo-stack-flowise.service")
+        assert "nestlo-stack-secrets.service" in unit and "nestlo-stack-gw-flowise.service" in unit, unit
         machine.succeed("test -f /etc/containers/networks/agentstack.json")
   '';
 }

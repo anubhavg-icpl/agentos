@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from agentos_services import fleet
+from nestlo_services import fleet
 
 FAKE_SSH = r"""
 import json, os, sys
@@ -20,9 +20,9 @@ if os.environ.get("FAKE_SSH_STATUS") and "@@services" in " ".join(sys.argv):
 """
 
 STATUS_OUT = """@@services
-agentos-daemon active
-agentos-model-gateway active
-redis-agentos active
+nestlo-daemon active
+nestlo-model-gateway active
+redis-nestlo active
 @@budget
 {"date": "2026-09-30", "global_usd": 1.5, "global_limit_usd": 500.0, "agents": {}}
 
@@ -31,7 +31,7 @@ redis-agentos active
   "id": "claude-1",
   "agent": "claude",
   "status": "running",
-  "workspace": "/var/lib/agentos/workspaces/demo",
+  "workspace": "/var/lib/nestlo/workspaces/demo",
   "branch": "agent/claude-1"
 }{"id": "codex-1", "agent": "codex", "status": "killed"}
 """
@@ -39,11 +39,11 @@ redis-agentos active
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENTOS_FLEET_SYSTEM", str(tmp_path / "system.json"))
-    monkeypatch.setenv("AGENTOS_FLEET_USER", str(tmp_path / "config" / "fleet.json"))
+    monkeypatch.setenv("NESTLO_FLEET_SYSTEM", str(tmp_path / "system.json"))
+    monkeypatch.setenv("NESTLO_FLEET_USER", str(tmp_path / "config" / "fleet.json"))
     script = tmp_path / "fake_ssh.py"
     script.write_text(FAKE_SSH)
-    monkeypatch.setenv("AGENTOS_FLEET_SSH", "%s %s" % (shlex.quote(sys.executable), shlex.quote(str(script))))
+    monkeypatch.setenv("NESTLO_FLEET_SSH", "%s %s" % (shlex.quote(sys.executable), shlex.quote(str(script))))
     monkeypatch.setenv("FAKE_SSH_LOG", str(tmp_path / "ssh.log"))
     status = tmp_path / "status.txt"
     status.write_text(STATUS_OUT)
@@ -112,21 +112,21 @@ def test_ssh_argv_keeps_host_key_checking(env):
 
 
 def test_remote_command_quotes_arguments():
-    remote = fleet.remote_command(["agentos", "spawn", "claude", "--workspace", "my ws; rm -rf /"])
+    remote = fleet.remote_command(["nestlo", "spawn", "claude", "--workspace", "my ws; rm -rf /"])
     inner = shlex.split(remote)
     assert inner[:2] == ["sh", "-c"]
-    assert shlex.split(inner[2].split("exec ", 1)[1]) == ["agentos", "spawn", "claude", "--workspace", "my ws; rm -rf /"]
+    assert shlex.split(inner[2].split("exec ", 1)[1]) == ["nestlo", "spawn", "claude", "--workspace", "my ws; rm -rf /"]
 
 
 def test_parse_status():
     parsed = fleet.parse_status(STATUS_OUT)
-    assert parsed["services"]["agentos-daemon"] == "active"
+    assert parsed["services"]["nestlo-daemon"] == "active"
     assert parsed["budget"]["global_usd"] == 1.5
     assert [a["id"] for a in parsed["agents"]] == ["claude-1", "codex-1"]
 
 
 def test_parse_status_tolerates_missing_sections():
-    parsed = fleet.parse_status("@@services\nagentos-daemon inactive\n@@budget\n\n@@state\n")
+    parsed = fleet.parse_status("@@services\nnestlo-daemon inactive\n@@budget\n\n@@state\n")
     assert parsed["budget"] is None and parsed["agents"] == []
 
 
@@ -159,12 +159,12 @@ def test_spawn_uses_tty_and_forwards_args(env):
     call = ssh_calls(env)[-1]
     assert "-t" in call and "ops@host-a" in call
     inner = shlex.split(shlex.split(call[-1])[2].split("exec ", 1)[1])
-    assert inner == ["agentos", "spawn", "claude", "--budget", "5", "--", "-p", "fix it"]
+    assert inner == ["nestlo", "spawn", "claude", "--budget", "5", "--", "-p", "fix it"]
 
 
 def test_run_passes_command(env):
     fleet.main(["add", "alpha", "ops@host-a"])
-    assert fleet.main(["run", "alpha", "--", "agentos", "list"]) == 0
+    assert fleet.main(["run", "alpha", "--", "nestlo", "list"]) == 0
     call = ssh_calls(env)[-1]
-    assert shlex.split(call[-1])[2].endswith("exec agentos list")
+    assert shlex.split(call[-1])[2].endswith("exec nestlo list")
     assert fleet.main(["run", "alpha"]) == 2

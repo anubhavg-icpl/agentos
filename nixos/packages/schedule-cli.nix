@@ -1,7 +1,7 @@
-# agentos-schedule: manage recurring orchestrator tasks
+# nestlo-schedule: manage recurring orchestrator tasks
 #
-# Talks to the scheduler over its unix socket (group agentos). Schedules
-# declared in the NixOS configuration (agentos.scheduler.schedules) are
+# Talks to the scheduler over its unix socket (group nestlo). Schedules
+# declared in the NixOS configuration (nestlo.scheduler.schedules) are
 # listed too but cannot be changed here.
 { writeShellApplication
 , coreutils
@@ -11,11 +11,11 @@
 }:
 
 writeShellApplication {
-  name = "agentos-schedule";
+  name = "nestlo-schedule";
   runtimeInputs = [ coreutils curl jq util-linux ];
 
   text = ''
-    SOCKET="''${AGENTOS_SCHED_SOCKET:-/run/agentos-scheduler/scheduler.sock}"
+    SOCKET="''${NESTLO_SCHED_SOCKET:-/run/nestlo-scheduler/scheduler.sock}"
 
     if [ -t 2 ]; then
       RED='\033[0;31m' GREEN='\033[0;32m' NC='\033[0m'
@@ -27,16 +27,16 @@ writeShellApplication {
 
     usage() {
       cat <<'EOF'
-    agentos-schedule: run agent tasks on a calendar
+    nestlo-schedule: run agent tasks on a calendar
 
     USAGE
-      agentos-schedule add <name> --calendar <expr> --agent <name> --workspace <name|path>
+      nestlo-schedule add <name> --calendar <expr> --agent <name> --workspace <name|path>
                            (--prompt <text> | --prompt-file <file>) [--budget <usd>]
                            [--timeout <sec>] [--swarm <n>] [--persistent] [--allow-overlap] [--disabled]
-      agentos-schedule list [--json]
-      agentos-schedule show <name>
-      agentos-schedule remove <name>
-      agentos-schedule run-now <name>
+      nestlo-schedule list [--json]
+      nestlo-schedule show <name>
+      nestlo-schedule remove <name>
+      nestlo-schedule run-now <name>
 
     CALENDAR
       systemd OnCalendar syntax, UTC unless a time zone is given. Check one with:
@@ -51,7 +51,7 @@ writeShellApplication {
     EOF
     }
 
-    [ -S "$SOCKET" ] || die "scheduler socket $SOCKET not found; is agentos.scheduler.enable set?"
+    [ -S "$SOCKET" ] || die "scheduler socket $SOCKET not found; is nestlo.scheduler.enable set?"
 
     api() {
       local method="$1" path="$2" body="''${3:-}" out code
@@ -60,7 +60,7 @@ writeShellApplication {
       if [ -n "$body" ]; then
         args+=(--data-binary "$body")
       fi
-      code=$(curl "''${args[@]}" "http://scheduler$path") || { rm -f "$out"; die "cannot reach the scheduler (are you in the agentos group?)"; }
+      code=$(curl "''${args[@]}" "http://scheduler$path") || { rm -f "$out"; die "cannot reach the scheduler (are you in the nestlo group?)"; }
       if [ "''${code:0:1}" != "2" ]; then
         local msg
         msg=$(jq -r '.error // empty' "$out" 2>/dev/null || true)
@@ -75,7 +75,7 @@ writeShellApplication {
 
     cmd_add() {
       local name="''${1:-}"
-      [ -n "$name" ] || die "Usage: agentos-schedule add <name> --calendar <expr> --agent <name> ..."
+      [ -n "$name" ] || die "Usage: nestlo-schedule add <name> --calendar <expr> --agent <name> ..."
       valid_name "$name" || die "invalid schedule name: $name"
       shift
       local calendar="" agent="" workspace="" prompt="" have_prompt=0 budget="" timeout="" swarm=""
@@ -95,7 +95,7 @@ writeShellApplication {
           --persistent) persistent=true; shift ;;
           --allow-overlap) overlap=true; shift ;;
           --disabled) enabled=false; shift ;;
-          *) die "unknown option: $1 (see: agentos-schedule help)" ;;
+          *) die "unknown option: $1 (see: nestlo-schedule help)" ;;
         esac
       done
       [ -n "$calendar" ] || die "--calendar is required"
@@ -125,7 +125,7 @@ writeShellApplication {
         return
       fi
       if [ "$(jq '.schedules | length' <<<"$resp")" -eq 0 ]; then
-        echo "No schedules. Add one with: agentos-schedule add <name> --calendar daily ..." >&2
+        echo "No schedules. Add one with: nestlo-schedule add <name> --calendar daily ..." >&2
         return
       fi
       jq -r '
@@ -140,14 +140,14 @@ writeShellApplication {
 
     cmd_show() {
       local name="''${1:-}"
-      [ -n "$name" ] || die "Usage: agentos-schedule show <name>"
+      [ -n "$name" ] || die "Usage: nestlo-schedule show <name>"
       valid_name "$name" || die "invalid schedule name: $name"
       api GET "/schedules/$name" | jq .
     }
 
     cmd_remove() {
       local name="''${1:-}"
-      [ -n "$name" ] || die "Usage: agentos-schedule remove <name>"
+      [ -n "$name" ] || die "Usage: nestlo-schedule remove <name>"
       valid_name "$name" || die "invalid schedule name: $name"
       api DELETE "/schedules/$name" >/dev/null
       ok "removed $name"
@@ -155,12 +155,12 @@ writeShellApplication {
 
     cmd_run_now() {
       local name="''${1:-}"
-      [ -n "$name" ] || die "Usage: agentos-schedule run-now <name>"
+      [ -n "$name" ] || die "Usage: nestlo-schedule run-now <name>"
       valid_name "$name" || die "invalid schedule name: $name"
       local resp
       resp=$(api POST "/schedules/$name/run")
       jq -r '.tasks[]' <<<"$resp"
-      ok "submitted; follow with: agentos-task show $(jq -r '.tasks[0] // empty' <<<"$resp")"
+      ok "submitted; follow with: nestlo-task show $(jq -r '.tasks[0] // empty' <<<"$resp")"
     }
 
     case "''${1:-help}" in
@@ -174,5 +174,5 @@ writeShellApplication {
     esac
   '';
 
-  meta.description = "Manage AgentOS scheduled agent tasks";
+  meta.description = "Manage Nestlo scheduled agent tasks";
 }

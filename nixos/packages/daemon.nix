@@ -1,4 +1,4 @@
-# AgentOS daemon - manages agent lifecycle
+# Nestlo daemon - manages agent lifecycle
 # Responsibilities:
 #   - Spawn/supervise agent containers
 #   - Track running agents (PID, workspace, budget, status)
@@ -8,14 +8,14 @@
 { rustPlatform }:
 
 rustPlatform.buildRustPackage {
-  pname = "agentos-daemon";
+  pname = "nestlo-daemon";
   version = "0.1.0";
   src = ./.;
 
   cargoHash = ""; # placeholder
 
   meta = {
-    description = "AgentOS agent lifecycle daemon";
-    mainProgram = "agentos-daemon";
+    description = "Nestlo agent lifecycle daemon";
+    mainProgram = "nestlo-daemon";
   };
 }

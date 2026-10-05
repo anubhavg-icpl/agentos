@@ -29,11 +29,11 @@ Finish and secure what is merged before adding more.
 
 - Sandbox: `SystemCallFilter`, `RestrictNamespaces`,
   `RestrictAddressFamilies`, `ProtectProc`, `MemorySwapMax=0` for the
-  sandbox and container modes; a default-deny FORWARD policy on `agentos0`.
+  sandbox and container modes; a default-deny FORWARD policy on `nestlo0`.
 - Gateway: reserve estimated cost before a request so concurrent requests
   cannot overshoot a budget; keep agent tokens out of logs; throttle 401s.
 - Desktop: no fixed password in the desktop VM image; fail clearly when
-  `/etc/agentos/admin-password` is missing; assert SSH is off on the live ISO.
+  `/etc/nestlo/admin-password` is missing; assert SSH is off on the live ISO.
 - Remove the four planned-service stubs (MCP gateway, MCP registry,
   provisioner, memory manager) or implement them.
 - CI: run every VM test (a matrix job), add a binary cache, weekly
@@ -41,7 +41,7 @@ Finish and secure what is merged before adding more.
 
 ## v0.5.0 — Local AI and providers
 
-- `agentos.localAI`: Ollama or llama.cpp (`services.ollama`,
+- `nestlo.localAI`: Ollama or llama.cpp (`services.ollama`,
   `services.llama-cpp`) and Open WebUI, chosen by GPU, registered in the
   gateway as zero-cost providers so cost routing can use them.
 - Gateway providers: Gemini, Bedrock, Vertex, Azure, vLLM; prompt-cache

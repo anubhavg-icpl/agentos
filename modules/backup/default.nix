@@ -1,28 +1,28 @@
-# AgentOS backup and disaster recovery (restic).
+# Nestlo backup and disaster recovery (restic).
 #
-# Backs up the control-plane state: /var/lib/agentos (registry, logs,
+# Backs up the control-plane state: /var/lib/nestlo (registry, logs,
 # workspaces, tasks), the control-plane Redis (a BGSAVE first, then its
-# data directory), /var/lib/agentos-stack and /var/lib/agentos-audit when
+# data directory), /var/lib/nestlo-stack and /var/lib/nestlo-audit when
 # they exist, and the sops secrets together with their decryption keys.
-# `agentos-restore` puts them back; see docs/operations.md for the drill.
+# `nestlo-restore` puts them back; see docs/operations.md for the drill.
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.backup;
-  redisCfg = config.services.redis.servers.agentos or { };
+  cfg = config.nestlo.backup;
+  redisCfg = config.services.redis.servers.nestlo or { };
   redisEnabled = redisCfg.enable or false;
   redisSocket = redisCfg.unixSocket or null;
   redisCli = "${pkgs.redis}/bin/redis-cli -s ${toString redisSocket}";
-  redisDir = "/var/lib/redis-agentos";
-  redisUser = redisCfg.user or "redis-agentos";
+  redisDir = "/var/lib/redis-nestlo";
+  redisUser = redisCfg.user or "redis-nestlo";
   redisBin = "${config.services.redis.package}/bin";
 
-  secretsCfg = config.agentos.secrets-manager;
+  secretsCfg = config.nestlo.secrets-manager;
 
   # Paths that are always candidates; only those that exist are backed up
   candidatePaths =
-    [ "/var/lib/agentos" "/var/lib/agentos-stack" "/var/lib/agentos-audit" ]
-    ++ lib.optional redisEnabled "/var/lib/redis-agentos"
+    [ "/var/lib/nestlo" "/var/lib/nestlo-stack" "/var/lib/nestlo-audit" ]
+    ++ lib.optional redisEnabled "/var/lib/redis-nestlo"
     ++ lib.optional (secretsCfg.enable or false) secretsCfg.secretsFile
     ++ lib.optionals cfg.includeDecryptionKeys (
       [ "/var/lib/sops-nix" "/etc/ssh/ssh_host_ed25519_key" ]
@@ -30,7 +30,7 @@ let
     )
     ++ cfg.extraPaths;
 
-  existingPaths = pkgs.writeShellScript "agentos-backup-paths" ''
+  existingPaths = pkgs.writeShellScript "nestlo-backup-paths" ''
     for p in ${lib.escapeShellArgs (lib.unique candidatePaths)}; do
       if [ -e "$p" ]; then echo "$p"; fi
     done
@@ -85,19 +85,19 @@ let
   ];
 
   restoreScript = pkgs.writeShellApplication {
-    name = "agentos-restore";
+    name = "nestlo-restore";
     text = ''
       usage() {
         cat <<'EOF'
-      Usage: agentos-restore [--snapshot ID|latest] [--target DIR] [--include PATH]... [--dry-run] [--no-restart]
+      Usage: nestlo-restore [--snapshot ID|latest] [--target DIR] [--include PATH]... [--dry-run] [--no-restart]
 
-      Restores the AgentOS backup from the configured restic repository.
+      Restores the Nestlo backup from the configured restic repository.
 
-        --target /      (default) restore in place: AgentOS services and the
+        --target /      (default) restore in place: Nestlo services and the
                         control-plane Redis are stopped first and started after.
         --target DIR    restore into DIR for inspection (a restore drill); nothing
                         is stopped and the live system is not touched.
-        --include PATH  restore only PATH (repeatable), e.g. /var/lib/agentos/state
+        --include PATH  restore only PATH (repeatable), e.g. /var/lib/nestlo/state
         --dry-run       list what would be restored
         --no-restart    leave the services stopped after an in-place restore
       EOF
@@ -126,7 +126,7 @@ let
       done
 
       if [ "$(id -u)" -ne 0 ]; then
-        echo "agentos-restore must run as root" >&2
+        echo "nestlo-restore must run as root" >&2
         exit 1
       fi
 
@@ -203,9 +203,9 @@ let
       if [ "$inplace" -eq 1 ] && [ "$restart" -eq 1 ]; then
         echo "starting services"
         systemctl daemon-reload
-        ${lib.optionalString redisEnabled "systemctl start redis-agentos.service"}
+        ${lib.optionalString redisEnabled "systemctl start redis-nestlo.service"}
         for s in "''${services[@]}"; do
-          if [ "$s" = redis-agentos ]; then continue; fi
+          if [ "$s" = redis-nestlo ]; then continue; fi
           if systemctl cat "$s.service" >/dev/null 2>&1; then systemctl start "$s.service" || true; fi
         done
       fi
@@ -214,18 +214,18 @@ let
   };
 in
 {
-  options.agentos.backup = {
-    enable = lib.mkEnableOption "restic backups of the AgentOS state (and the agentos-restore helper)";
+  options.nestlo.backup = {
+    enable = lib.mkEnableOption "restic backups of the Nestlo state (and the nestlo-restore helper)";
 
     name = lib.mkOption {
       type = lib.types.str;
-      default = "agentos";
+      default = "nestlo";
       description = "Name of the services.restic.backups entry; the unit is restic-backups-<name>.service and the wrapper restic-<name>.";
     };
 
     repository = lib.mkOption {
       type = lib.types.str;
-      example = "sftp:backup@nas:/srv/agentos-restic";
+      example = "sftp:backup@nas:/srv/nestlo-restic";
       description = "restic repository: a local path or any restic backend URL.";
     };
 
@@ -270,9 +270,9 @@ in
     exclude = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
-        "/var/lib/agentos/cache"
-        "/var/lib/agentos/snapshots"
-        "/var/lib/agentos/**/node_modules"
+        "/var/lib/nestlo/cache"
+        "/var/lib/nestlo/snapshots"
+        "/var/lib/nestlo/**/node_modules"
       ];
       description = "restic exclude patterns. btrbk snapshots are excluded: they already live on the same disk.";
     };
@@ -309,14 +309,14 @@ in
     restore.stopServices = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
-        "agentos-scheduler"
-        "agentos-orchestrator"
-        "agentos-dashboard"
-        "agentos-daemon"
-        "agentos-model-gateway"
-        "redis-agentos"
+        "nestlo-scheduler"
+        "nestlo-orchestrator"
+        "nestlo-dashboard"
+        "nestlo-daemon"
+        "nestlo-model-gateway"
+        "redis-nestlo"
       ];
-      description = "Services (without .service) that agentos-restore stops during an in-place restore; those that do not exist are skipped.";
+      description = "Services (without .service) that nestlo-restore stops during an in-place restore; those that do not exist are skipped.";
     };
   };
 

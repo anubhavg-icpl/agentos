@@ -1,14 +1,14 @@
-# AgentOS Package Managers Module
+# Nestlo Package Managers Module
 # Every package manager pre-installed so agents can install deps for any project
 { config, pkgs, lib, ... }:
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.package-managers;
+  cfg = config.nestlo.package-managers;
 in
 {
-  options.agentos.package-managers = {
-    enable = lib.mkEnableOption "AgentOS package managers";
+  options.nestlo.package-managers = {
+    enable = lib.mkEnableOption "Nestlo package managers";
   };
 
   config = lib.mkIf cfg.enable {

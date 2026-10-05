@@ -18,7 +18,7 @@ let
     c.workspaces;
 
   swayConfig = pkgs.writeText "sway-config" ''
-    # AgentOS sway configuration (generated; copy to ~/.config/sway/config to customise)
+    # Nestlo sway configuration (generated; copy to ~/.config/sway/config to customise)
     set $mod Mod4
     set $term ${c.terminal}
 
@@ -60,8 +60,8 @@ let
     bindsym Print exec sh -c '${lib.getExe pkgs.grim} -g "$(${lib.getExe pkgs.slurp})" - | ${lib.getExe pkgs.swappy} -f -'
     bindsym $mod+Shift+s exec sh -c '${lib.getExe pkgs.grim} -g "$(${lib.getExe pkgs.slurp})" - | ${lib.getExe pkgs.swappy} -f -'
 
-    # Dashboard: `agentos status` lives in a hidden terminal (scratchpad)
-    for_window [app_id="^agentos-dash$"] floating enable, resize set 1100 640, move position center, move scratchpad
+    # Dashboard: `nestlo status` lives in a hidden terminal (scratchpad)
+    for_window [app_id="^nestlo-dash$"] floating enable, resize set 1100 640, move position center, move scratchpad
     bindsym $mod+grave scratchpad show
     bindsym $mod+Shift+minus move scratchpad
     bindsym $mod+minus scratchpad show
@@ -131,7 +131,7 @@ let
     }
 
     # ── Autostart ───────────────────────────────────────────────────
-    exec ${c.seed}/bin/agentos-desktop-seed
+    exec ${c.seed}/bin/nestlo-desktop-seed
     exec ${lib.getExe pkgs.mako} --config ${c.makoConfig}
     exec ${c.polkitAgent}
     exec ${pkgs.networkmanagerapplet}/bin/nm-applet --indicator
@@ -141,7 +141,7 @@ let
       timeout 600 '${lock}' \
       timeout 900 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' \
       before-sleep '${lock}'
-    exec ${c.terminal} --class agentos-dash --title "AgentOS" -e ${c.dashboard}/bin/agentos-dashboard
+    exec ${c.terminal} --class nestlo-dash --title "Nestlo" -e ${c.dashboard}/bin/nestlo-dashboard
 
     include /etc/sway/config.d/*
   '';

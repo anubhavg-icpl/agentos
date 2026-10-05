@@ -7,8 +7,8 @@ import time
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services.dashboard import Dashboard, serve, tail_log
+from nestlo_services import config as configmod
+from nestlo_services.dashboard import Dashboard, serve, tail_log
 
 TOKEN = "s3cret-token-value"
 
@@ -83,7 +83,7 @@ def test_token_rotation_takes_effect_without_restart(env):
 
 def test_page_is_self_contained(env):
     status, page = call(env[0], "/")
-    assert status == 200 and "<title>AgentOS dashboard</title>" in page
+    assert status == 200 and "<title>Nestlo dashboard</title>" in page
     assert "prefers-color-scheme: dark" in page
     for external in ("http://", "https://", "//cdn"):
         assert external not in page

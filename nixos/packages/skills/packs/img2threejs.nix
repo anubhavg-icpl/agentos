@@ -8,7 +8,7 @@ let
   src = sources.img2threejs;
 
   # bin/img2threejs.mjs installs the skill into agent hosts by running
-  # `npx img2 add`. AgentOS links the skill itself, so this is only useful
+  # `npx img2 add`. Nestlo links the skill itself, so this is only useful
   # for `img2threejs doctor` and `version`.
   img2threejs-cli = stdenvNoCC.mkDerivation {
     pname = "img2threejs";
@@ -43,6 +43,6 @@ mkSkillPack {
     Playwright; neither is provided by this pack. The `img2threejs` CLI is
     the project's installer: `install` and `update` fetch with `npx` from the
     network and write into agent skill directories, which duplicates what
-    agentos.skills already does; use `doctor` and `version` only.
+    nestlo.skills already does; use `doctor` and `version` only.
   '';
 }

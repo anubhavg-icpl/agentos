@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services.daemon import Daemon
+from nestlo_services import config as configmod
+from nestlo_services.daemon import Daemon
 
 
 class FakeRunner:
@@ -68,11 +68,11 @@ def test_reap_ignores_missing_gpu_dir(make_daemon, tmp_path):
 
 
 def test_reap_archives_dead_agents(make_daemon, events):
-    runner = FakeRunner(active={"agentos-agent-live.service"})
+    runner = FakeRunner(active={"nestlo-agent-live.service"})
     d = make_daemon(runner)
-    register(d, "live", unit="agentos-agent-live.service")
-    register(d, "gone", unit="agentos-agent-gone.service")
-    register(d, "young", unit="agentos-agent-young.service", age=1)   # still starting
+    register(d, "live", unit="nestlo-agent-live.service")
+    register(d, "gone", unit="nestlo-agent-gone.service")
+    register(d, "young", unit="nestlo-agent-young.service", age=1)   # still starting
     register(d, "proc", pid=os.getpid())
     d.reap()
     assert sorted(a["id"] for a in d.agents()) == ["live", "proc", "young"]
@@ -85,11 +85,11 @@ def test_reap_archives_dead_agents(make_daemon, events):
 
 
 def test_budget_exceeded_stops_unit(make_daemon, events):
-    runner = FakeRunner(active={"agentos-agent-a1.service"})
+    runner = FakeRunner(active={"nestlo-agent-a1.service"})
     d = make_daemon(runner)
-    register(d, "a1", unit="agentos-agent-a1.service", announced=True)
+    register(d, "a1", unit="nestlo-agent-a1.service", announced=True)
     d.handle({"type": "budget_exceeded", "agent": "a1", "usd": 6.0, "limit_usd": 5.0})
-    assert ["systemctl", "stop", "agentos-agent-a1.service"] in runner.calls
+    assert ["systemctl", "stop", "nestlo-agent-a1.service"] in runner.calls
     state = d.load("a1")
     assert state["status"] == "killed" and "budget" in state["reason"]
     assert [e["type"] for e in events.drain()] == ["agent_killed"]
@@ -99,9 +99,9 @@ def test_budget_exceeded_stops_unit(make_daemon, events):
 
 
 def test_auto_shutdown_disabled(make_daemon):
-    runner = FakeRunner(active={"agentos-agent-a1.service"})
+    runner = FakeRunner(active={"nestlo-agent-a1.service"})
     d = make_daemon(runner, budget={"auto_shutdown": False})
-    register(d, "a1", unit="agentos-agent-a1.service")
+    register(d, "a1", unit="nestlo-agent-a1.service")
     d.handle({"type": "budget_exceeded", "agent": "a1", "usd": 6.0, "limit_usd": 5.0})
     assert not any(c[:2] == ["systemctl", "stop"] for c in runner.calls)
     assert d.load("a1")["status"] == "running"
@@ -130,7 +130,7 @@ def test_notifications(make_daemon, tmp_path):
     while len(sent) < 2 and time.time() < deadline:
         time.sleep(0.05)
     by_url = dict(sent)
-    assert by_url["https://hooks.example/slack"]["text"] == "AgentOS: Agent a1 exceeded its daily budget ($6.00 of $5.00)"
+    assert by_url["https://hooks.example/slack"]["text"] == "Nestlo: Agent a1 exceeded its daily budget ($6.00 of $5.00)"
     assert by_url["https://hooks.example/generic"]["type"] == "budget_exceeded"
     assert len(sent) == 2
 
@@ -144,25 +144,25 @@ def test_loop_detected_notification(make_daemon):
     deadline = time.time() + 5
     while not sent and time.time() < deadline:
         time.sleep(0.05)
-    assert sent[0][1]["text"] == "AgentOS: Agent a1 looks stuck: it sent the same request 5 times in a row"
+    assert sent[0][1]["text"] == "Nestlo: Agent a1 looks stuck: it sent the same request 5 times in a row"
 
 
 def test_metrics(make_daemon, store):
-    d = make_daemon(FakeRunner(active={"agentos-agent-a1.service"}))
-    register(d, "a1", unit="agentos-agent-a1.service")
+    d = make_daemon(FakeRunner(active={"nestlo-agent-a1.service"}))
+    register(d, "a1", unit="nestlo-agent-a1.service")
     store.record("a1", "claude-test", 1.5, {"input_tokens": 10, "output_tokens": 2})
     store.count_request("a1", 200)
     text = d.metrics()
-    assert "agentos_agents_running 1" in text
-    assert 'agentos_agent_spend_usd_today{agent="a1"} 1.5' in text
-    assert 'agentos_agent_tokens_today{agent="a1",kind="input_tokens"} 10' in text
-    assert 'agentos_agent_requests_today{agent="a1",status="2xx"} 1' in text
-    assert "agentos_spend_usd_today 1.5" in text
+    assert "nestlo_agents_running 1" in text
+    assert 'nestlo_agent_spend_usd_today{agent="a1"} 1.5' in text
+    assert 'nestlo_agent_tokens_today{agent="a1",kind="input_tokens"} 10' in text
+    assert 'nestlo_agent_requests_today{agent="a1",status="2xx"} 1' in text
+    assert "nestlo_spend_usd_today 1.5" in text
 
 
 def test_reap_revokes_gateway_token(make_daemon, store):
     d = make_daemon(FakeRunner())
-    register(d, "gone", unit="agentos-agent-gone.service")
+    register(d, "gone", unit="nestlo-agent-gone.service")
     store.set_agent_token("gone", "a" * 64)
     d.reap()
     assert store.agent_token("gone") is None

@@ -1,8 +1,8 @@
 """Regression tests for review findings on the software factory and its neighbours."""
 import threading
 
-from agentos_services import audit as A
-from agentos_services import tasks as T
+from nestlo_services import audit as A
+from nestlo_services import tasks as T
 from test_factory import PLAN, Env, line_cfg
 
 PLAN_NO_SCOPE = "Step 1.\nSIZE: medium\nPLAN-READY\n"
@@ -42,7 +42,7 @@ def test_enforce_scope_without_scope_lines_fails_closed(store):
     e.stage(PLAN_NO_SCOPE)
     build = e.orch.live()[-1]
     cmd = build["verify"]["cmd"]
-    assert cmd[0].endswith("agentos-factory-scope") and "--allow" not in cmd   # no globs: every file is outside
+    assert cmd[0].endswith("nestlo-factory-scope") and "--allow" not in cmd   # no globs: every file is outside
     e.stage("built", changed_files=["src/a.py"], verify={"status": "passed", "output_tail": ""})
     item = e.item(iid)
     assert item["state"] == "blocked" and item["error_kind"] == "scope"
@@ -59,8 +59,8 @@ def test_cost_counter_is_monotonic_per_line(store):
     e.stage("built", verify={"status": "passed", "output_tail": ""})
     e.tick()
     text = e.fac.metrics()
-    line = [ln for ln in text.splitlines() if ln.startswith("agentos_factory_cost_usd_total{")]
-    assert line == ['agentos_factory_cost_usd_total{line="main"} 2.000000'], line
+    line = [ln for ln in text.splitlines() if ln.startswith("nestlo_factory_cost_usd_total{")]
+    assert line == ['nestlo_factory_cost_usd_total{line="main"} 2.000000'], line
 
 
 def test_publish_merge_is_an_audit_event_type():

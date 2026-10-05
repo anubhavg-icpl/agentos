@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Browser Tools Module
+# Nestlo Browser Tools Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Headless browser automation for agents that need to interact with
@@ -9,11 +9,11 @@
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.browser-tools;
+  cfg = config.nestlo.browser-tools;
 in
 {
-  options.agentos.browser-tools = {
-    enable = lib.mkEnableOption "AgentOS browser automation tools";
+  options.nestlo.browser-tools = {
+    enable = lib.mkEnableOption "Nestlo browser automation tools";
 
     enableChromium = lib.mkOption {
       type = lib.types.bool;
@@ -60,54 +60,54 @@ in
       k6               # load testing
 
       # ── Browser CLI tool ───────────────────────────────────────────
-      (pkgs.writeShellScriptBin "agentos-web" ''
+      (pkgs.writeShellScriptBin "nestlo-web" ''
         #!/usr/bin/env bash
         set -euo pipefail
 
         case "''${1:-help}" in
           fetch)
             URL="''${2:-}"
-            [ -z "$URL" ] && { echo "Usage: agentos-web fetch <url>"; exit 1; }
+            [ -z "$URL" ] && { echo "Usage: nestlo-web fetch <url>"; exit 1; }
             ${pkgs.curl}/bin/curl -sL "$URL"
             ;;
           text)
             # Fetch a URL and extract text content
             URL="''${2:-}"
-            [ -z "$URL" ] && { echo "Usage: agentos-web text <url>"; exit 1; }
+            [ -z "$URL" ] && { echo "Usage: nestlo-web text <url>"; exit 1; }
             ${pkgs.curl}/bin/curl -sL "$URL" | ${pkgs.pup}/bin/pup 'text{}'
             ;;
           screenshot)
             URL="''${2:-}"
             OUT="''${3:-screenshot.png}"
-            [ -z "$URL" ] && { echo "Usage: agentos-web screenshot <url> [output.png]"; exit 1; }
+            [ -z "$URL" ] && { echo "Usage: nestlo-web screenshot <url> [output.png]"; exit 1; }
             ${pkgs.chromium}/bin/chromium --headless --no-sandbox --screenshot="$OUT" --window-size=1920,1080 "$URL"
             echo "Screenshot saved: $OUT"
             ;;
           pdf)
             URL="''${2:-}"
             OUT="''${3:-output.pdf}"
-            [ -z "$URL" ] && { echo "Usage: agentos-web pdf <url> [output.pdf]"; exit 1; }
+            [ -z "$URL" ] && { echo "Usage: nestlo-web pdf <url> [output.pdf]"; exit 1; }
             ${pkgs.chromium}/bin/chromium --headless --no-sandbox --print-to-pdf="$OUT" "$URL"
             echo "PDF saved: $OUT"
             ;;
           render)
             # Render a JS-heavy page with Playwright
             URL="''${2:-}"
-            [ -z "$URL" ] && { echo "Usage: agentos-web render <url>"; exit 1; }
+            [ -z "$URL" ] && { echo "Usage: nestlo-web render <url>"; exit 1; }
             ${pkgs.nodejs_22}/bin/npx playwright-cli screenshot --browser chromium "$URL" rendered.png
             ;;
           search)
             QUERY="''${2:-}"
-            [ -z "$QUERY" ] && { echo "Usage: agentos-web search <query>"; exit 1; }
+            [ -z "$QUERY" ] && { echo "Usage: nestlo-web search <query>"; exit 1; }
             ${pkgs.curl}/bin/curl -sL "https://html.duckduckgo.com/html/?q=$(echo "$QUERY" | sed 's/ /+/g')" | \
               ${pkgs.pup}/bin/pup '.result__title text{}' | head -10
             ;;
           help|*)
             cat <<'HELP'
-        AgentOS Browser Tools
+        Nestlo Browser Tools
 
         USAGE:
-            agentos-web <COMMAND> [ARGS]
+            nestlo-web <COMMAND> [ARGS]
 
         COMMANDS:
             fetch <url>               Fetch raw HTML

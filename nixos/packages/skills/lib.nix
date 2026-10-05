@@ -1,14 +1,14 @@
-# mkSkillPack: turn an upstream repository into an AgentOS skill pack.
+# mkSkillPack: turn an upstream repository into an Nestlo skill pack.
 #
 # A skill is a directory with a SKILL.md (YAML front matter with `name` and
 # `description`, then instructions) plus any files it references. Claude
 # Code, Codex, OpenCode, Gemini CLI, Copilot CLI, Cursor and others load
-# skills from such directories; agentos.skills links every enabled pack's
+# skills from such directories; nestlo.skills links every enabled pack's
 # skills into each CLI's skills directory.
 #
 # Output layout:
-#   $out/share/agentos/skills/<pack>/<skill>/SKILL.md   one dir per skill
-#   $out/share/agentos/skills/<pack>/pack.json          metadata (below)
+#   $out/share/nestlo/skills/<pack>/<skill>/SKILL.md   one dir per skill
+#   $out/share/nestlo/skills/<pack>/pack.json          metadata (below)
 #   $out/bin/...                                        the pack's tools, if any
 #
 # Arguments:
@@ -22,13 +22,13 @@
 #                { <name> = { command = "..."; args = [ ... ]; env = { }; }; }
 #   description, homepage, license (an SPDX id string), notes (free text,
 #                e.g. license caveats or what needs the network)
-#   defaultEnable  false makes the pack opt-in under agentos.skills (for packs
+#   defaultEnable  false makes the pack opt-in under nestlo.skills (for packs
 #                that change agent behaviour or cost many context tokens)
 #   licenseSrc   where to copy LICENSE/NOTICE files from (default src); they land in
-#                $out/share/doc/agentos-skills/<pack>/ so the licence text travels
+#                $out/share/doc/nestlo-skills/<pack>/ so the licence text travels
 #                with the skills. Set it when `src` is a derived tree
 #   collections  names of the collections the pack belongs to; listing one in
-#                agentos.skills.collections (or setting agentos.skills.enableAll)
+#                nestlo.skills.collections (or setting nestlo.skills.enableAll)
 #                enables the pack unless packs.<name>.enable is set explicitly
 #
 # Every skill is checked against the Agent Skills spec (validate.py): front
@@ -62,7 +62,7 @@ let
     inherit pack version description homepage license notes defaultEnable collections;
     skills = lib.attrNames skills';
     mcp = mcp;
-    # The command each tool provides (what agentos-skills list shows)
+    # The command each tool provides (what nestlo-skills list shows)
     tools = map (t: t.meta.mainProgram or t.pname or t.name) tools;
   };
   # `dir` is relative to src, or an absolute store path (a skill that
@@ -74,7 +74,7 @@ let
     skills') + "\n";
 in
 stdenvNoCC.mkDerivation {
-  pname = "agentos-skills-${pack}";
+  pname = "nestlo-skills-${pack}";
   inherit version skillList;
   metaJson = builtins.toJSON meta;
   passAsFile = [ "skillList" "metaJson" ];
@@ -83,7 +83,7 @@ stdenvNoCC.mkDerivation {
 
   installPhase = ''
     runHook preInstall
-    root=$out/share/agentos/skills/${pack}
+    root=$out/share/nestlo/skills/${pack}
     mkdir -p "$root"
     dirs=()
     while IFS=$'\t' read -r name from; do
@@ -101,7 +101,7 @@ stdenvNoCC.mkDerivation {
     fi
     python3 ${./validate.py} ${lib.escapeShellArg pack} "''${dirs[@]}"
     jq . "$metaJsonPath" > "$root/pack.json"
-    doc=$out/share/doc/agentos-skills/${pack}
+    doc=$out/share/doc/nestlo-skills/${pack}
     mkdir -p "$doc"
     for f in ${licenseSrc}/LICENSE* ${licenseSrc}/LICENCE* ${licenseSrc}/COPYING* ${licenseSrc}/NOTICE*; do
       if [ -f "$f" ]; then cp --no-preserve=mode "$f" "$doc/"; fi

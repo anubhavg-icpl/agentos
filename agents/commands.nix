@@ -1,6 +1,6 @@
 # Commands each agent package puts on PATH: package attribute -> commands,
 # the first being the primary one (the package's mainProgram). The runtime
-# agent map (agentos.runtime.agents in modules/runtime/default.nix) must
+# agent map (nestlo.runtime.agents in modules/runtime/default.nix) must
 # point only at these commands, and every package here must be part of
 # `all-agents`; the `agent-inclusion` flake check enforces both at
 # evaluation time. Update this file when adding an agent to default.nix.

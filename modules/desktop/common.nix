@@ -4,7 +4,7 @@
 { config, pkgs, lib }:
 
 let
-  cfg = config.agentos.desktop;
+  cfg = config.nestlo.desktop;
   p = import ./theme.nix;
   hex = lib.removePrefix "#";
   toml = pkgs.formats.toml { };
@@ -16,22 +16,22 @@ rec {
   inherit cfg p hex;
 
   # ── Wallpaper: a dark vertical gradient, no binary asset in the repo ──
-  wallpaper = pkgs.runCommand "agentos-wallpaper.png"
+  wallpaper = pkgs.runCommand "nestlo-wallpaper.png"
     { nativeBuildInputs = [ pkgs.imagemagick ]; }
     ''magick -size 3840x2160 gradient:'${p.bg}-${p.bgAlt}' $out'';
 
   # ── Helper scripts ────────────────────────────────────────────────
   # Live view of the agent fleet; started hidden (scratchpad) at login.
-  dashboard = pkgs.writeShellScriptBin "agentos-dashboard" ''
+  dashboard = pkgs.writeShellScriptBin "nestlo-dashboard" ''
     while true; do
       clear
-      printf '  AgentOS  %s\n\n' "$(date '+%a %d %b  %H:%M:%S')"
-      if command -v agentos >/dev/null 2>&1; then
-        agentos status 2>&1
+      printf '  Nestlo  %s\n\n' "$(date '+%a %d %b  %H:%M:%S')"
+      if command -v nestlo >/dev/null 2>&1; then
+        nestlo status 2>&1
         echo
-        agentos list 2>&1
+        nestlo list 2>&1
       else
-        echo "  the agentos CLI is not installed on this system"
+        echo "  the nestlo CLI is not installed on this system"
       fi
       sleep 10
     done
@@ -61,7 +61,7 @@ rec {
     telemetry = { diagnostics = false; metrics = false; };
     auto_update = false;
   };
-  seed = pkgs.writeShellScriptBin "agentos-desktop-seed" ''
+  seed = pkgs.writeShellScriptBin "nestlo-desktop-seed" ''
     cfg="''${XDG_CONFIG_HOME:-$HOME/.config}"
     seed() {
       [ -e "$2" ] && return 0
@@ -99,7 +99,7 @@ rec {
   };
 
   # ── Launcher (rofi on X11, fuzzel on Wayland) ─────────────────────
-  rofiTheme = pkgs.writeText "agentos.rasi" ''
+  rofiTheme = pkgs.writeText "nestlo.rasi" ''
     * {
       bg: ${p.bg}; bg-alt: ${p.bgAlt}; hl: ${p.bgHighlight};
       fg: ${p.fg}; fg-bright: ${p.fgBright}; accent: ${p.blue};

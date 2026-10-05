@@ -1,16 +1,16 @@
-# AgentOS herdr module
+# Nestlo herdr module
 #
 # herdr (https://herdr.dev, Apache-2.0) is a persistent terminal workspace for
 # coding agents: panes marked working / blocked / idle, a socket API and CLI
-# that agents can drive, and plugins. This module makes it part of AgentOS:
+# that agents can drive, and plugins. This module makes it part of Nestlo:
 #
-#   - installs herdr and the `agentos-herdr` / `agentos-herdr-plugins` CLIs
-#   - a headless herdr server for the agent user (agentos-herdr-server-<user>),
+#   - installs herdr and the `nestlo-herdr` / `nestlo-herdr-plugins` CLIs
+#   - a headless herdr server for the agent user (nestlo-herdr-server-<user>),
 #     so what the agent user runs persists and operators can attach
-#     (`agentos-herdr attach`), and a loopback exporter per user that serves
-#     agentos_herdr_* Prometheus metrics and tells agentos.notifications when
+#     (`nestlo-herdr attach`), and a loopback exporter per user that serves
+#     nestlo_herdr_* Prometheus metrics and tells nestlo.notifications when
 #     an agent has been blocked on a question
-#   - the AgentOS herdr plugin (integrations/herdr-plugin: orchestrator
+#   - the Nestlo herdr plugin (integrations/herdr-plugin: orchestrator
 #     tasks, factory items, budgets, approve/cancel) linked for every user
 #   - declarative plugins (`plugins`, pinned to a commit) and the dynamic
 #     marketplace CLI; an opt-in daily install of every marketplace plugin
@@ -21,12 +21,12 @@
 { config, pkgs, lib, utils, ... }:
 
 let
-  cfg = config.agentos.herdr;
-  rt = config.agentos.runtime;
-  agentUser = "agentos-agent";
+  cfg = config.nestlo.herdr;
+  rt = config.nestlo.runtime;
+  agentUser = "nestlo-agent";
 
   herdr = cfg.package;
-  services = pkgs.agentos.services;
+  services = pkgs.nestlo.services;
 
   allUsers = lib.unique (cfg.users ++ lib.optional cfg.includeAgentUser agentUser);
   homeOf = u: if u == agentUser then rt.agentHome else config.users.users.${u}.home;
@@ -34,19 +34,19 @@ let
   portOf = u: cfg.monitor.basePort + (lib.lists.findFirstIndex (x: x == u) 0 allUsers);
   isServerUser = u: lib.elem u cfg.server.users;
 
-  # The AgentOS plugin: manifest and script, copied into the store so that
+  # The Nestlo plugin: manifest and script, copied into the store so that
   # `herdr plugin link` points at an immutable path
-  agentosPlugin = pkgs.runCommand "agentos-herdr-plugin" { } ''
+  nestloPlugin = pkgs.runCommand "nestlo-herdr-plugin" { } ''
     mkdir -p $out
     cp ${../../integrations/herdr-plugin/herdr-plugin.toml} $out/herdr-plugin.toml
     cp ${../../integrations/herdr-plugin/panel.sh} $out/panel.sh
   '';
 
-  cli = pkgs.runCommand "agentos-herdr-cli" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
+  cli = pkgs.runCommand "nestlo-herdr-cli" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
     mkdir -p $out/bin
-    for b in agentos-herdr agentos-herdr-plugins; do
+    for b in nestlo-herdr nestlo-herdr-plugins; do
       makeWrapper ${services}/bin/$b $out/bin/$b \
-        --set-default AGENTOS_HERDR_BIN ${herdr}/bin/herdr \
+        --set-default NESTLO_HERDR_BIN ${herdr}/bin/herdr \
         --prefix PATH : ${lib.makeBinPath [ pkgs.git ]}
     done
   '';
@@ -59,10 +59,10 @@ let
     categories = [ "Development" "System" ];
   };
 
-  localLinks = lib.optional cfg.agentosPlugin.enable "${agentosPlugin}" ++ cfg.localPlugins;
+  localLinks = lib.optional cfg.nestloPlugin.enable "${nestloPlugin}" ++ cfg.localPlugins;
   pluginUsers = cfg.pluginUsers;
 
-  syncConfig = u: pkgs.writeText "agentos-herdr-sync-${u}.json" (builtins.toJSON {
+  syncConfig = u: pkgs.writeText "nestlo-herdr-sync-${u}.json" (builtins.toJSON {
     plugins = map (p: { inherit (p) source ref enable; }) cfg.plugins;
     links = localLinks;
     server_managed = isServerUser u;
@@ -85,7 +85,7 @@ let
     RestrictSUIDSGID = true;
   };
 
-  mkServer = u: lib.nameValuePair "agentos-herdr-server-${u}" {
+  mkServer = u: lib.nameValuePair "nestlo-herdr-server-${u}" {
     description = "herdr server for ${u}";
     wantedBy = [ "multi-user.target" ];
     after = [ "local-fs.target" ];
@@ -109,7 +109,7 @@ let
       TimeoutStopSec = 30;
       UMask = "0002";
     } // lib.optionalAttrs (u == agentUser) {
-      # What the agent user runs here is as contained as in `agentos spawn`
+      # What the agent user runs here is as contained as in `nestlo spawn`
       # (sandbox): the workspaces and its own home are the only writable paths
       NoNewPrivileges = true;
       PrivateTmp = true;
@@ -129,17 +129,17 @@ let
     };
   };
 
-  notifyEnabled = cfg.monitor.notifyBlocked && config.agentos.notifications.enable;
+  notifyEnabled = cfg.monitor.notifyBlocked && config.nestlo.notifications.enable;
 
-  mkMonitor = u: lib.nameValuePair "agentos-herdr-monitor-${u}" {
-    description = "AgentOS herdr monitor for ${u} (metrics and blocked-agent notifications)";
+  mkMonitor = u: lib.nameValuePair "nestlo-herdr-monitor-${u}" {
+    description = "Nestlo herdr monitor for ${u} (metrics and blocked-agent notifications)";
     wantedBy = [ "multi-user.target" ];
-    after = [ "local-fs.target" ] ++ lib.optional (isServerUser u) "agentos-herdr-server-${u}.service";
+    after = [ "local-fs.target" ] ++ lib.optional (isServerUser u) "nestlo-herdr-server-${u}.service";
     environment.PATH = lib.mkForce "/run/wrappers/bin:/run/current-system/sw/bin";
     serviceConfig = {
       User = u;
       ExecStart = lib.escapeShellArgs ([
-        "${cli}/bin/agentos-herdr"
+        "${cli}/bin/nestlo-herdr"
         "monitor"
         "--listen"
         "127.0.0.1"
@@ -160,15 +160,15 @@ let
     } // oneshotHardening u;
   };
 
-  mkSync = u: lib.nameValuePair "agentos-herdr-plugins-${u}" {
+  mkSync = u: lib.nameValuePair "nestlo-herdr-plugins-${u}" {
     description = "Apply the declared herdr plugins for ${u}";
     wantedBy = [ "multi-user.target" ];
-    wants = [ "network-online.target" ] ++ lib.optional (isServerUser u) "agentos-herdr-server-${u}.service";
+    wants = [ "network-online.target" ] ++ lib.optional (isServerUser u) "nestlo-herdr-server-${u}.service";
     after = [ "network-online.target" "local-fs.target" ]
-      ++ lib.optional (isServerUser u) "agentos-herdr-server-${u}.service";
-    restartTriggers = [ (syncConfig u) agentosPlugin ];
+      ++ lib.optional (isServerUser u) "nestlo-herdr-server-${u}.service";
+    restartTriggers = [ (syncConfig u) nestloPlugin ];
     path = buildPath;
-    environment.AGENTOS_HERDR_BIN = "${herdr}/bin/herdr";
+    environment.NESTLO_HERDR_BIN = "${herdr}/bin/herdr";
     unitConfig = {
       StartLimitBurst = 5;
       StartLimitIntervalSec = 3600;
@@ -177,7 +177,7 @@ let
       Type = "oneshot";
       RemainAfterExit = true;
       User = u;
-      ExecStart = "${cli}/bin/agentos-herdr-plugins sync --config ${syncConfig u}";
+      ExecStart = "${cli}/bin/nestlo-herdr-plugins sync --config ${syncConfig u}";
       # No network at boot, a ref that does not exist yet: try again later
       Restart = "on-failure";
       RestartSec = 120;
@@ -185,7 +185,7 @@ let
     } // oneshotHardening u;
   };
 
-  mkIntegrations = u: lib.nameValuePair "agentos-herdr-integrations-${u}" {
+  mkIntegrations = u: lib.nameValuePair "nestlo-herdr-integrations-${u}" {
     description = "Install the herdr agent integrations for ${u}";
     wantedBy = [ "multi-user.target" ];
     after = [ "local-fs.target" ];
@@ -195,7 +195,7 @@ let
       Type = "oneshot";
       RemainAfterExit = true;
       User = u;
-      ExecStart = pkgs.writeShellScript "agentos-herdr-integrations" ''
+      ExecStart = pkgs.writeShellScript "nestlo-herdr-integrations" ''
         rc=0
         for agent in ${lib.escapeShellArgs cfg.integrations}; do
           ${herdr}/bin/herdr integration install "$agent" || { echo "herdr integration $agent failed" >&2; rc=1; }
@@ -206,29 +206,29 @@ let
   };
 
   mkMarketplace = u: {
-    services.${"agentos-herdr-marketplace-${u}"} = {
+    services.${"nestlo-herdr-marketplace-${u}"} = {
       description = "Install every herdr marketplace plugin for ${u} (unreviewed third-party code)";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       path = buildPath;
-      environment.AGENTOS_HERDR_BIN = "${herdr}/bin/herdr";
+      environment.NESTLO_HERDR_BIN = "${herdr}/bin/herdr";
       serviceConfig = {
         Type = "oneshot";
         User = u;
         TimeoutStartSec = "3h";
         LoadCredential = lib.optional (cfg.marketplace.githubTokenFile != null)
           "github-token:${toString cfg.marketplace.githubTokenFile}";
-        ExecStart = pkgs.writeShellScript "agentos-herdr-marketplace" ''
+        ExecStart = pkgs.writeShellScript "nestlo-herdr-marketplace" ''
           if [ -n "''${CREDENTIALS_DIRECTORY:-}" ] && [ -r "$CREDENTIALS_DIRECTORY/github-token" ]; then
             GITHUB_TOKEN=$(cat "$CREDENTIALS_DIRECTORY/github-token")
             export GITHUB_TOKEN
           fi
-          exec ${cli}/bin/agentos-herdr-plugins install-all --yes --min-stars ${toString cfg.marketplace.minStars} \
+          exec ${cli}/bin/nestlo-herdr-plugins install-all --yes --min-stars ${toString cfg.marketplace.minStars} \
             ${lib.concatMapStringsSep " " (e: "--exclude ${lib.escapeShellArg e}") cfg.marketplace.exclude}
         '';
       } // oneshotHardening u;
     };
-    timers.${"agentos-herdr-marketplace-${u}"} = {
+    timers.${"nestlo-herdr-marketplace-${u}"} = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = cfg.marketplace.schedule;
@@ -242,39 +242,39 @@ let
   sourceRe = "[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.@+-]+)*";
 in
 {
-  options.agentos.herdr = {
-    enable = lib.mkEnableOption "herdr, persistent terminal workspaces for coding agents, with the AgentOS management bridge";
+  options.nestlo.herdr = {
+    enable = lib.mkEnableOption "herdr, persistent terminal workspaces for coding agents, with the Nestlo management bridge";
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.agentos.herdr;
-      defaultText = lib.literalExpression "pkgs.agentos.herdr";
+      default = pkgs.nestlo.herdr;
+      defaultText = lib.literalExpression "pkgs.nestlo.herdr";
       description = "The herdr package (nixpkgs-unstable's herdr, exposed as packages.<system>.herdr).";
     };
 
     users = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = lib.filter (u: config.users.users ? ${u}) rt.operators;
-      defaultText = lib.literalExpression "the agentos.runtime.operators that exist as users";
+      defaultText = lib.literalExpression "the nestlo.runtime.operators that exist as users";
       example = [ "alice" ];
-      description = "Users who get the AgentOS plugin, the declared plugins and a metrics exporter.";
+      description = "Users who get the Nestlo plugin, the declared plugins and a metrics exporter.";
     };
 
     includeAgentUser = lib.mkOption {
       type = lib.types.bool;
       default = rt.enable;
-      defaultText = lib.literalExpression "config.agentos.runtime.enable";
-      description = "Also set herdr up for the sandboxed agent user (agentos-agent).";
+      defaultText = lib.literalExpression "config.nestlo.runtime.enable";
+      description = "Also set herdr up for the sandboxed agent user (nestlo-agent).";
     };
 
     server.users = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = lib.optional cfg.includeAgentUser agentUser;
-      defaultText = lib.literalExpression "[ \"agentos-agent\" ] when the agent user is included";
+      defaultText = lib.literalExpression "[ \"nestlo-agent\" ] when the agent user is included";
       description = ''
         Users with a headless herdr server run by systemd
-        (`agentos-herdr-server-<user>`). Their panes and agents keep running
-        when nobody is attached; attach with `agentos-herdr attach --user <user>`.
+        (`nestlo-herdr-server-<user>`). Their panes and agents keep running
+        when nobody is attached; attach with `nestlo-herdr attach --user <user>`.
         A rebuild does not restart the server (that would end the panes), so
         a herdr update takes effect at the next `systemctl restart`.
       '';
@@ -296,11 +296,11 @@ in
       '';
     };
 
-    agentosPlugin.enable = lib.mkOption {
+    nestloPlugin.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
       description = ''
-        Link the AgentOS herdr plugin (orchestrator tasks, factory items,
+        Link the Nestlo herdr plugin (orchestrator tasks, factory items,
         budgets, approve and cancel for gated tasks) for every user.
       '';
     };
@@ -337,7 +337,7 @@ in
         wanted ref is left alone. Plugins this option installed earlier and
         that are no longer listed are uninstalled; plugins a user installed by
         hand are never touched. Review the manifest first:
-        `agentos-herdr-plugins show <source> --ref <ref>`.
+        `nestlo-herdr-plugins show <source> --ref <ref>`.
       '';
     };
 
@@ -355,7 +355,7 @@ in
       type = lib.types.listOf lib.types.str;
       default = allUsers;
       defaultText = lib.literalExpression "users plus the agent user";
-      description = "Users that get `plugins`, `localPlugins` and the AgentOS plugin.";
+      description = "Users that get `plugins`, `localPlugins` and the Nestlo plugin.";
     };
 
     monitor = {
@@ -363,9 +363,9 @@ in
         type = lib.types.bool;
         default = true;
         description = ''
-          Run `agentos-herdr monitor` per user: it serves agentos_herdr_up,
-          agentos_herdr_panes{user,state} and agentos_herdr_agents{user,state}
-          on 127.0.0.1 and is scraped by agentos.observability when that is
+          Run `nestlo-herdr monitor` per user: it serves nestlo_herdr_up,
+          nestlo_herdr_panes{user,state} and nestlo_herdr_agents{user,state}
+          on 127.0.0.1 and is scraped by nestlo.observability when that is
           enabled.
         '';
       };
@@ -383,17 +383,17 @@ in
         type = lib.types.bool;
         default = true;
         description = ''
-          Send a notification through agentos.notifications (when that is
+          Send a notification through nestlo.notifications (when that is
           enabled) when an agent has been blocked on a question or approval
           for `blockedGraceSeconds`. The sending runs as the monitored user,
           so that user must be able to read the webhook files
-          (`agentos.notifications.*File`); use `webhookUrl` or group-readable
+          (`nestlo.notifications.*File`); use `webhookUrl` or group-readable
           secrets for the agent user.
         '';
       };
       notifyCommand = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        default = [ "agentos-notify" "test" ];
+        default = [ "nestlo-notify" "test" ];
         description = "Command that sends a message to the configured notification targets (the text is appended).";
       };
       blockedGraceSeconds = lib.mkOption {
@@ -414,14 +414,14 @@ in
           Nobody reviews these plugins, herdr does not sandbox them, and they
           run build commands, startup hooks and event hooks as the user.
           Off by default; not recommended for the agent user; use
-          `agentos-herdr-plugins catalog`, `show` and `install` for plugins
+          `nestlo-herdr-plugins catalog`, `show` and `install` for plugins
           you have read.
         '';
       };
       users = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = cfg.users;
-        defaultText = lib.literalExpression "agentos.herdr.users (not the agent user)";
+        defaultText = lib.literalExpression "nestlo.herdr.users (not the agent user)";
         description = "Users whose timer runs `install-all`.";
       };
       exclude = lib.mkOption {
@@ -457,40 +457,40 @@ in
       {
         # Each monitored user takes basePort + index; the factory exporter must
         # not sit inside that range
-        assertion = !(config.agentos.factory.enable or false) || !cfg.monitor.enable
-          || !(lib.elem (config.agentos.factory.metricsPort or 9960) (map portOf allUsers));
-        message = "agentos.herdr.monitor.basePort range collides with agentos.factory.metricsPort; move one of them";
+        assertion = !(config.nestlo.factory.enable or false) || !cfg.monitor.enable
+          || !(lib.elem (config.nestlo.factory.metricsPort or 9960) (map portOf allUsers));
+        message = "nestlo.herdr.monitor.basePort range collides with nestlo.factory.metricsPort; move one of them";
       }
       {
         assertion = lib.all (u: config.users.users ? ${u}) (lib.filter (u: u != agentUser) (allUsers ++ pluginUsers ++ cfg.marketplace.users ++ cfg.server.users));
-        message = "agentos.herdr: unknown user(s): "
+        message = "nestlo.herdr: unknown user(s): "
           + lib.concatStringsSep ", " (lib.filter (u: u != agentUser && !(config.users.users ? ${u})) (allUsers ++ pluginUsers ++ cfg.marketplace.users ++ cfg.server.users));
       }
       {
         assertion = !(lib.elem agentUser allUsers) || rt.enable;
-        message = "agentos.herdr: the agent user needs agentos.runtime.enable (or agentos.herdr.includeAgentUser = false)";
+        message = "nestlo.herdr: the agent user needs nestlo.runtime.enable (or nestlo.herdr.includeAgentUser = false)";
       }
       {
         assertion = lib.all (u: lib.elem u allUsers) (cfg.server.users ++ pluginUsers ++ cfg.marketplace.users);
-        message = "agentos.herdr: server.users, pluginUsers and marketplace.users must be among users (or the agent user)";
+        message = "nestlo.herdr: server.users, pluginUsers and marketplace.users must be among users (or the agent user)";
       }
     ];
 
     warnings =
       lib.optional (cfg.marketplace.installAll && lib.elem agentUser cfg.marketplace.users) ''
-        agentos.herdr.marketplace.installAll is enabled for the agent user (${agentUser}). herdr does not
+        nestlo.herdr.marketplace.installAll is enabled for the agent user (${agentUser}). herdr does not
         sandbox plugins: every unreviewed marketplace plugin will run build commands, startup hooks and
         event hooks as the account the orchestrator and factory agents use. Remove ${agentUser} from
-        agentos.herdr.marketplace.users, or install reviewed plugins with agentos.herdr.plugins instead.
+        nestlo.herdr.marketplace.users, or install reviewed plugins with nestlo.herdr.plugins instead.
       ''
       ++ lib.optional (cfg.marketplace.installAll && cfg.marketplace.githubTokenFile == null) ''
-        agentos.herdr.marketplace.installAll without agentos.herdr.marketplace.githubTokenFile: unauthenticated
+        nestlo.herdr.marketplace.installAll without nestlo.herdr.marketplace.githubTokenFile: unauthenticated
         GitHub API calls are limited to 60 per hour, so the daily install-all will stop at the rate limit.
       '';
 
-    environment.systemPackages = [ herdr cli ] ++ lib.optional config.agentos.desktop.enable desktopItem;
+    environment.systemPackages = [ herdr cli ] ++ lib.optional config.nestlo.desktop.enable desktopItem;
 
-    environment.etc."agentos/herdr.json".text = builtins.toJSON {
+    environment.etc."nestlo/herdr.json".text = builtins.toJSON {
       herdr = "${herdr}/bin/herdr";
       users = map
         (u: {
@@ -512,8 +512,8 @@ in
 
     systemd.timers = lib.mkIf cfg.marketplace.installAll (lib.foldl' (acc: m: acc // m.timers) { } marketplaceUnits);
 
-    services.prometheus.scrapeConfigs = lib.mkIf (cfg.monitor.enable && config.agentos.observability.enable) [{
-      job_name = "agentos-herdr";
+    services.prometheus.scrapeConfigs = lib.mkIf (cfg.monitor.enable && config.nestlo.observability.enable) [{
+      job_name = "nestlo-herdr";
       static_configs = [{ targets = map (u: "127.0.0.1:${toString (portOf u)}") allUsers; }];
     }];
   };

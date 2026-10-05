@@ -11,7 +11,7 @@
 # block, net and vsock, ext4, devtmpfs, the serial console, kernel IP
 # autoconfiguration). It is a small kernel (a defconfig, not the NixOS
 # one), but it is compiled locally: expect 15-30 minutes on a few cores the
-# first time. `agentos.pullrun.vm.enable = false` avoids building it.
+# first time. `nestlo.pullrun.vm.enable = false` avoids building it.
 { pkgs, lib }:
 
 let

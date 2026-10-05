@@ -1,22 +1,22 @@
-# agentos-skills: inspect the skill packs installed by agentos.skills.
+# nestlo-skills: inspect the skill packs installed by nestlo.skills.
 #
-#   agentos-skills list [--all]    packs, skills, tools, MCP servers, licenses
+#   nestlo-skills list [--all]    packs, skills, tools, MCP servers, licenses
 #                                  (long skill lists are cut at 40; --all shows every name)
-#   agentos-skills list --collections   enabled packs grouped by collection
-#   agentos-skills doctor          per user and target: links present or broken
-#   agentos-skills path <skill>    store path of a skill
+#   nestlo-skills list --collections   enabled packs grouped by collection
+#   nestlo-skills doctor          per user and target: links present or broken
+#   nestlo-skills path <skill>    store path of a skill
 #
-# Reads /etc/agentos/skills.json (written by the module; override with
-# AGENTOS_SKILLS_CONFIG): { bundle, users = [ { name, home } ], targets = { name = dir; } }.
+# Reads /etc/nestlo/skills.json (written by the module; override with
+# NESTLO_SKILLS_CONFIG): { bundle, users = [ { name, home } ], targets = { name = dir; } }.
 { writeShellApplication, jq, coreutils }:
 
 writeShellApplication {
-  name = "agentos-skills";
+  name = "nestlo-skills";
   runtimeInputs = [ jq coreutils ];
   text = ''
-    conf="''${AGENTOS_SKILLS_CONFIG:-/etc/agentos/skills.json}"
+    conf="''${NESTLO_SKILLS_CONFIG:-/etc/nestlo/skills.json}"
     if [ ! -r "$conf" ]; then
-      echo "agentos-skills: $conf not found; set agentos.skills.enable = true" >&2
+      echo "nestlo-skills: $conf not found; set nestlo.skills.enable = true" >&2
       exit 2
     fi
     bundle=$(jq -r .bundle "$conf")
@@ -28,7 +28,7 @@ writeShellApplication {
         case "$a" in
           --all) all=true ;;
           --collections) collections=true ;;
-          *) echo "usage: agentos-skills list [--all] [--collections]" >&2; exit 2 ;;
+          *) echo "usage: nestlo-skills list [--all] [--collections]" >&2; exit 2 ;;
         esac
       done
       if [ "$collections" = true ]; then
@@ -48,7 +48,7 @@ writeShellApplication {
         "\(.pack) \(.version)  [\(.license)]",
         "  \(.description)",
         (if (.collections // []) | length > 0 then "  collections: \(.collections | join(", "))" else empty end),
-        "  skills (\($n)): \(if $n > 40 and ($all | not) then (.skills[:40] | join(", ")) + ", ... (+\($n - 40) more; agentos-skills list --all)" else .skills | join(", ") end)",
+        "  skills (\($n)): \(if $n > 40 and ($all | not) then (.skills[:40] | join(", ")) + ", ... (+\($n - 40) more; nestlo-skills list --all)" else .skills | join(", ") end)",
         "  tools:  \(if (.tools | length) > 0 then .tools | join(", ") else "-" end)",
         "  mcp:    \(if (.mcp | length) > 0 then .mcp | keys | join(", ") else "-" end)",
         (if .notes != "" then "  notes:  \(.notes | rtrimstr("\n") | gsub("\n"; "\n          "))" else empty end),
@@ -58,11 +58,11 @@ writeShellApplication {
 
     cmd_path() {
       if [ $# -ne 1 ]; then
-        echo "usage: agentos-skills path <skill>" >&2
+        echo "usage: nestlo-skills path <skill>" >&2
         exit 2
       fi
       if [ ! -e "$bundle/skills/$1" ]; then
-        echo "agentos-skills: no skill named $1" >&2
+        echo "nestlo-skills: no skill named $1" >&2
         exit 1
       fi
       readlink -f "$bundle/skills/$1"
@@ -98,7 +98,7 @@ writeShellApplication {
         done < <(jq -r '.targets | to_entries[] | [.key, .value] | @tsv' "$conf")
       done < <(jq -r '.users[] | [.name, .home] | @tsv' "$conf")
       if [ "$bad" -ne 0 ]; then
-        echo "some links are missing or broken; try: systemctl restart 'agentos-skills-link-*'" >&2
+        echo "some links are missing or broken; try: systemctl restart 'nestlo-skills-link-*'" >&2
       fi
       exit "$bad"
     }
@@ -108,7 +108,7 @@ writeShellApplication {
       doctor) cmd_doctor ;;
       path) shift; cmd_path "$@" ;;
       *)
-        echo "usage: agentos-skills <list [--all] [--collections]|doctor|path <skill>>" >&2
+        echo "usage: nestlo-skills <list [--all] [--collections]|doctor|path <skill>>" >&2
         exit 2
         ;;
     esac

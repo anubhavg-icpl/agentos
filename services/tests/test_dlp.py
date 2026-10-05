@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from agentos_services import dlp as D
-from agentos_services.dlp import ALL_DETECTORS, Dlp
+from nestlo_services import dlp as D
+from nestlo_services.dlp import ALL_DETECTORS, Dlp
 from conftest import request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -68,7 +68,7 @@ def test_high_entropy_token():
     assert types("id 123e4567-e89b-12d3-a456-426614174000") == []
     assert types("sha512-" + "Zq8Xw3Lm9Vt2Kc7Rb5Nd1Hy6Jf4Gs0TaUe3RiOpAb1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv1Wx2Yz3==") == []
     assert types("getUserAccountBalanceFromTheDatabaseConnection2024Version") == []
-    assert types("/usr/lib/python3.11/site-packages/agentos_services/gateway/handlers") == []
+    assert types("/usr/lib/python3.11/site-packages/nestlo_services/gateway/handlers") == []
     assert types("src/components/billing/InvoiceTableRowActionsMenu2Item") == []
 
 
@@ -95,8 +95,8 @@ def test_no_false_positives_on_normal_code():
 import hashlib, json, os, re
 from dataclasses import dataclass
 
-TOKEN_HEADER = "x-agentos-token"
-CACHE_KEY = "agentos:%s:%s"
+TOKEN_HEADER = "x-nestlo-token"
+CACHE_KEY = "nestlo:%s:%s"
 API_URL = "https://api.example.com/v1/items?page=2&per_page=100"
 
 @dataclass
@@ -126,11 +126,11 @@ def render(user):
 
 
 def test_no_false_positives_on_this_repository():
-    """The detectors stay quiet over AgentOS's own source, docs and Nix modules."""
+    """The detectors stay quiet over Nestlo's own source, docs and Nix modules."""
     repo = os.path.dirname(ROOT)
     d = Dlp({"mode": "log"})
     hits = []
-    for pattern in ("services/agentos_services/*.py", "modules/*/default.nix", "nixos/**/*.nix", "docs/*.md"):
+    for pattern in ("services/nestlo_services/*.py", "modules/*/default.nix", "nixos/**/*.nix", "docs/*.md"):
         for path in glob.glob(os.path.join(repo, pattern), recursive=True):
             if path.endswith(("dlp.py", "dlp.md", "audit.md")):
                 continue                     # these name the secret formats on purpose
@@ -223,7 +223,7 @@ def test_plain_text_and_binary_bodies():
 
 
 def test_scan_speed():
-    text = open(os.path.join(ROOT, "agentos_services", "gateway.py")).read() * 20      # ~1 MB of code
+    text = open(os.path.join(ROOT, "nestlo_services", "gateway.py")).read() * 20      # ~1 MB of code
     d = Dlp({"mode": "mask"})
     start = time.time()
     d.scan_body(d.default, json.dumps({"c": text}).encode(), None, "application/json")

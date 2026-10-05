@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/anubhavg-icpl/agentos/marketplace/index.schema.json",
-  "title": "AgentOS marketplace index",
-  "description": "Checked by `agentos-market validate` (services/agentos_services/market.py), which also enforces what JSON Schema cannot: unique names and commands, and no collision with the built-in agent names.",
+  "$id": "https://github.com/anubhavg-icpl/nestlo/marketplace/index.schema.json",
+  "title": "Nestlo marketplace index",
+  "description": "Checked by `nestlo-market validate` (services/nestlo_services/market.py), which also enforces what JSON Schema cannot: unique names and commands, and no collision with the built-in agent names.",
   "type": "object",
   "required": ["agents"],
   "additionalProperties": false,
@@ -24,7 +24,7 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "description": "Name used with `agentos-market install` and `agentos spawn`",
+          "description": "Name used with `nestlo-market install` and `nestlo spawn`",
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,39}$"
         },

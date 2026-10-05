@@ -1,4 +1,4 @@
-# Pinned upstream sources of the agent skill packs (agentos.skills).
+# Pinned upstream sources of the agent skill packs (nestlo.skills).
 #
 # Every pack is fetched by commit and content hash, so the skills an agent
 # sees are reproducible and reviewable. To update one, change `rev`, set
@@ -220,7 +220,7 @@
 
   # herdr: persistent terminal workspaces for coding agents. Its skills/herdr
   # skill teaches an agent to drive panes and other agents through the herdr
-  # CLI (agentos.herdr, docs/herdr.md).
+  # CLI (nestlo.herdr, docs/herdr.md).
   herdr = fetchFromGitHub {
     owner = "herdrdev";
     repo = "herdr";

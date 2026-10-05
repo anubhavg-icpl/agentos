@@ -1,6 +1,6 @@
 # Software factory
 
-The factory turns **work items** (tickets) into pull requests. Each item passes through agent stages (planner, builder, reviewer, QA) that run as ordinary [orchestrator](orchestration.md) tasks, so sandboxing, gateway metering and budgets are unchanged. The factory only decides what to run next, keeps the evidence, enforces limits and opens the PR. Code: `services/agentos_services/factory.py` (service `agentos-factoryd`), `factory_cli.py` (`agentos-factory`), `scopecheck.py` (`agentos-factory-scope`).
+The factory turns **work items** (tickets) into pull requests. Each item passes through agent stages (planner, builder, reviewer, QA) that run as ordinary [orchestrator](orchestration.md) tasks, so sandboxing, gateway metering and budgets are unchanged. The factory only decides what to run next, keeps the evidence, enforces limits and opens the PR. Code: `services/nestlo_services/factory.py` (service `nestlo-factoryd`), `factory_cli.py` (`nestlo-factory`), `scopecheck.py` (`nestlo-factory-scope`).
 
 ```
  CLI / API / triggers ──▶ backlog ──▶ (awaiting_approval) ──▶ planning ─┬─▶ (awaiting_plan_approval) ─┐
@@ -31,7 +31,7 @@ Rules that hold in every mode:
 - Untrusted text (title, body, agent output) is **data**: control and bidi characters are stripped, length is capped, it is substituted in one pass into a per-role template and wrapped in `<<<DATA label nonce ... <<<END-DATA label nonce>>>` blocks that the agent is told not to obey. Output is never re-expanded. PR bodies put agent text in code fences and neutralise `@mentions`.
 - Reviewer and QA tasks run on a copy of the builder's branch (`start_from`) and are told not to change code; their changes are discarded.
 - Budget: the sum of the item's task spend (the gateway meters per task id) may not exceed `budget_usd_per_item`; each task gets `min(role budget, remaining)`. Exceeding it blocks the item.
-- `isolation`: the orchestrator task schema has no isolation field, so none is sent. Isolation comes from the host runtime and the `agentos.policy` minimum isolation for the workspace.
+- `isolation`: the orchestrator task schema has no isolation field, so none is sent. Isolation comes from the host runtime and the `nestlo.policy` minimum isolation for the workspace.
 
 ## Plan checkpoint, size triage, scope guard
 
@@ -39,7 +39,7 @@ The planner ends its answer with strict lines: `SIZE: small|medium|large`, optio
 
 - `plan_approval = "never" | "always" | "large"` (default `large`). With `large` only `SIZE: large` plans wait in `awaiting_plan_approval`; `small` plans never wait unless `always`. `approve` continues to the builder; `reject --note ...` sends the item back to the planner once with the note as (untrusted) feedback; a second reject blocks it.
 - `skip_review_for_small = true` skips the reviewer for small items (the skip is recorded in the evidence and PR).
-- `enforce_scope = true`: after each build round, files outside the plan's `SCOPE` globs block the item with the list. Task results do not carry a diff today, so: if a result has a `changed_files` list it is used; otherwise the builder task's verify command is wrapped as `agentos-factory-scope --allow G... [--base base_branch] -- <line.verify>`, which diffs against the merge-base, prints `SCOPE-VIOLATION: <path>` lines and exits 3 before running the real verify. The wrapper needs `agentos-factory-scope` on the PATH of the verify sandbox (unverified on a real host). Globs use fnmatch (`*` also matches `/`), `dir/` and `dir/**` match a subtree.
+- `enforce_scope = true`: after each build round, files outside the plan's `SCOPE` globs block the item with the list. Task results do not carry a diff today, so: if a result has a `changed_files` list it is used; otherwise the builder task's verify command is wrapped as `nestlo-factory-scope --allow G... [--base base_branch] -- <line.verify>`, which diffs against the merge-base, prints `SCOPE-VIOLATION: <path>` lines and exits 3 before running the real verify. The wrapper needs `nestlo-factory-scope` on the PATH of the verify sandbox (unverified on a real host). Globs use fnmatch (`*` also matches `/`), `dir/` and `dir/**` match a subtree.
 
 ## Configuration
 
@@ -47,8 +47,8 @@ The planner ends its answer with strict lines: `SIZE: small|medium|large`, optio
 
 ```toml
 [factory]
-socket = "/run/agentos-factory/factory.sock"
-orchestrator_socket = "/run/agentos-orchestrator/orchestrator.sock"
+socket = "/run/nestlo-factory/factory.sock"
+orchestrator_socket = "/run/nestlo-orchestrator/orchestrator.sock"
 tick_sec = 10
 lease_sec = 300
 metrics_port = 9960          # loopback only (metrics_listen = "127.0.0.1")
@@ -102,26 +102,26 @@ The tick loop takes a Redis lease per item (`owner = host:pid`, `lease_sec`) aro
 ## CLI
 
 ```sh
-agentos-factory submit --line web --title "Add retries" [--body-file issue.md] [--criteria "..."]... [--priority N]
-agentos-factory list [--line L] [--state S]      agentos-factory show <id>      agentos-factory export <id>
-agentos-factory approve|reject|cancel|retry|done|close <id> [--note "..."]
-agentos-factory lines     agentos-factory pause|resume <line>     agentos-factory watch [--line L]
+nestlo-factory submit --line web --title "Add retries" [--body-file issue.md] [--criteria "..."]... [--priority N]
+nestlo-factory list [--line L] [--state S]      nestlo-factory show <id>      nestlo-factory export <id>
+nestlo-factory approve|reject|cancel|retry|done|close <id> [--note "..."]
+nestlo-factory lines     nestlo-factory pause|resume <line>     nestlo-factory watch [--line L]
 ```
 
-`--socket` or `AGENTOS_FACTORY_SOCKET` selects the socket. **PR merge/close is not tracked automatically**: run `done <id>` when the PR was merged (item becomes `merged`) or `close <id>` when it was closed (`cancelled`). Items in `ready` count against `max_open_prs` until then.
+`--socket` or `NESTLO_FACTORY_SOCKET` selects the socket. **PR merge/close is not tracked automatically**: run `done <id>` when the PR was merged (item becomes `merged`) or `close <id>` when it was closed (`cancelled`). Items in `ready` count against `max_open_prs` until then.
 
 ## API (unix socket)
 
 `POST /items` `{line, title, body?, acceptance?[], source?: {kind: github|cli|api, repo?, number?, url?}, priority?}` returns 201 `{item}`; a github source with the same (line, repo, number) as an open item returns 200 with `deduplicated: true` (the triggers service routes labelled issues here). Criteria come from `acceptance`, else from a markdown heading "Acceptance criteria" with a list (checkboxes allowed) in a github body, else the planner writes them.
 `GET /items?line=&state=`, `GET /items/<id>`, `GET /items/<id>/export` (full record: evidence, tasks, costs, decisions), `POST /items/<id>/approve|reject|cancel|retry|done|close` `{note?}`, `GET /lines`, `POST /lines/<name>/pause|resume` (a pause survives restarts; the line starts nothing new, running items continue), `GET /healthz`, `GET /readyz`.
 
-RBAC (SO_PEERCRED, `agentos.rbac` roles): reads need viewer; `POST /items` submitter; approve, reject, retry, done, close approver; cancel the submitter or an admin; pause and resume admin. Every human decision is recorded on the item (`decisions`: action, user, uid, note, time).
+RBAC (SO_PEERCRED, `nestlo.rbac` roles): reads need viewer; `POST /items` submitter; approve, reject, retry, done, close approver; cancel the submitter or an admin; pause and resume admin. Every human decision is recorded on the item (`decisions`: action, user, uid, note, time).
 
 ## Audit and metrics
 
 Audit events (`[audit]` enabled): `factory.item.created`, `factory.item.state` (every transition), `factory.item.decision` (approve, reject, cancel, retry, done, close and export, with uid and note), `factory.item.publish`, `factory.line.pause`.
 
-Prometheus text on `127.0.0.1:metrics_port/metrics` (also `/healthz`, `/readyz`): `agentos_factory_items{line,state}`, `agentos_factory_item_age_seconds{line,state}` (age of the oldest item in the state), `agentos_factory_wip` and `_wip_limit{line,kind=in_flight|open_prs}`, `agentos_factory_line_paused`, `agentos_factory_items_by_size`, `agentos_factory_state_seconds_total{line,state}`, histograms `agentos_factory_rework_rounds`, `_lead_time_seconds` (created to PR open), `_item_cost_usd`, `agentos_factory_first_pass_yield{line}` (delivered items with zero fix rounds), `agentos_factory_blocked_total`, `agentos_factory_tick_age_seconds`. Metrics cover the items still retained (`item_ttl_days`).
+Prometheus text on `127.0.0.1:metrics_port/metrics` (also `/healthz`, `/readyz`): `nestlo_factory_items{line,state}`, `nestlo_factory_item_age_seconds{line,state}` (age of the oldest item in the state), `nestlo_factory_wip` and `_wip_limit{line,kind=in_flight|open_prs}`, `nestlo_factory_line_paused`, `nestlo_factory_items_by_size`, `nestlo_factory_state_seconds_total{line,state}`, histograms `nestlo_factory_rework_rounds`, `_lead_time_seconds` (created to PR open), `_item_cost_usd`, `nestlo_factory_first_pass_yield{line}` (delivered items with zero fix rounds), `nestlo_factory_blocked_total`, `nestlo_factory_tick_age_seconds`. Metrics cover the items still retained (`item_ttl_days`).
 
 ## Limitations
 
@@ -134,14 +134,14 @@ Prometheus text on `127.0.0.1:metrics_port/metrics` (also `/healthz`, `/readyz`)
 ## NixOS options
 
 ```nix
-agentos.orchestration.enable = true;
-agentos.git-automation.publish = {
+nestlo.orchestration.enable = true;
+nestlo.git-automation.publish = {
   tokenFile = "/run/secrets/github-token";
   repos."acme/widgets".workspaces = [ "widgets" ];
 };
-agentos.triggers = { enable = true; secretFile = "/run/secrets/webhook-secret"; };
+nestlo.triggers = { enable = true; secretFile = "/run/secrets/webhook-secret"; };
 
-agentos.factory = {
+nestlo.factory = {
   enable = true;
   lines.web = {
     repo = "acme/widgets";
@@ -153,22 +153,22 @@ agentos.factory = {
 };
 ```
 
-`agentos.factory`:
+`nestlo.factory`:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `enable` | false | Run `agentos-factory.service` and install the `agentos-factory` CLI |
+| `enable` | false | Run `nestlo-factory.service` and install the `nestlo-factory` CLI |
 | `tickSec` | 5 | How often the factory looks for work to advance |
 | `leaseSec` | 300 | Ownership of a step before another tick may pick it up (crash recovery) |
 | `itemTtlDays` | 90 | How long finished items are kept |
 | `metricsPort` | 9960 | Prometheus metrics on 127.0.0.1 |
 | `lines.<name>` | none | One line per repository and set of roles (below) |
 
-`agentos.factory.lines.<name>`:
+`nestlo.factory.lines.<name>`:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `repo` | required | `owner/name`; must be in `agentos.git-automation.publish.repos` |
+| `repo` | required | `owner/name`; must be in `nestlo.git-automation.publish.repos` |
 | `workspace` | required | Workspace holding a checkout |
 | `mode` | `supervised` | `supervised` (PR for a human), `approval-first` (every item is approved before planning; plan approval follows `planApproval`), `dark` (auto-merge) |
 | `maxInFlight` | 2 | Items worked on at once |
@@ -181,12 +181,12 @@ agentos.factory = {
 | `skipReviewForSmall` | false | No reviewer for small changes |
 | `enforceScope` | false | Fail items whose diff leaves the plan's declared scope |
 | `isolation` | null | Isolation profile for the line's tasks |
-| `roles.planner` / `builder` / `reviewer` | claude; opus-5-5 / sonnet-5-5 / opus-5-5 | `agent`, `model`, `budgetUSD`, `timeoutSec`; the agent needs an entry in `agentos.orchestration.taskCommands` |
+| `roles.planner` / `builder` / `reviewer` | claude; opus-5-5 / sonnet-5-5 / opus-5-5 | `agent`, `model`, `budgetUSD`, `timeoutSec`; the agent needs an entry in `nestlo.orchestration.taskCommands` |
 | `roles.qa` | null (no QA) | Same sub-options; `{ }` enables QA with the defaults |
 | `intake.github` | null | `{ }` takes issues labelled `factory:<name>` from `repo` (`label` and `repo` can be set) |
 | `paused` | false | Take no new work; running items finish |
 
-Settings are written to the `[factory]` table of `/etc/agentos/services.toml`
+Settings are written to the `[factory]` table of `/etc/nestlo/services.toml`
 (`socket`, `orchestrator_socket`, `tick_sec`, `lease_sec`, `item_ttl_days`,
 `metrics_port`, `lines.<name>.*` in snake_case).
 
@@ -194,7 +194,7 @@ Settings are written to the `[factory]` table of `/etc/agentos/services.toml`
 
 `dark` merges a pull request without a human. The build is refused unless:
 
-- `agentos.git-automation.publish.repos."<repo>".allowAutoMerge = true`,
+- `nestlo.git-automation.publish.repos."<repo>".allowAutoMerge = true`,
 - `verify` is not empty (something objective proves the change works),
 - the `qa` role is set (the acceptance criteria are checked), and
 - `planApproval` is not `never` or `enforceScope = true`: a human approves
@@ -203,19 +203,19 @@ Settings are written to the `[factory]` table of `/etc/agentos/services.toml`
 ### GitHub intake
 
 With `intake.github` set, a rule `factory-<name>` is added to
-`agentos.triggers.rules` (event `issues`, actions `opened` and `labeled`, the
+`nestlo.triggers.rules` (event `issues`, actions `opened` and `labeled`, the
 intake label, `factory = "<name>"`). Define a rule with that name yourself to
 replace it. A rule with `factory` posts `{line, title, body, source}` to the
 factory instead of submitting a task; trust (`trustedAssociations`,
 `trustLabeler`), text sanitising and delivery de-duplication are unchanged.
-`agentos.triggers.enable` is still needed for the webhook listener.
+`nestlo.triggers.enable` is still needed for the webhook listener.
 
 ### Monitoring
 
-Prometheus scrapes `agentos-factory` on `metricsPort`. Series:
-`agentos_factory_items{line,state}`, `agentos_factory_item_age_seconds{line,state}`,
-`agentos_factory_cost_usd_total{line}`. Alerts `AgentOSFactoryBlocked` (blocked
-items for 30 minutes), `AgentOSFactoryStuck` (an item in an active state not
-updated for 2 hours; tune with `agentos.observability.alerts.factoryActiveStates`
-and `factoryStuckSeconds`) and `AgentOSFactoryBudgetBurn`
+Prometheus scrapes `nestlo-factory` on `metricsPort`. Series:
+`nestlo_factory_items{line,state}`, `nestlo_factory_item_age_seconds{line,state}`,
+`nestlo_factory_cost_usd_total{line}`. Alerts `NestloFactoryBlocked` (blocked
+items for 30 minutes), `NestloFactoryStuck` (an item in an active state not
+updated for 2 hours; tune with `nestlo.observability.alerts.factoryActiveStates`
+and `factoryStuckSeconds`) and `NestloFactoryBudgetBurn`
 (`factoryBudgetBurnUSDPerHour`), with runbooks in `docs/runbooks/`.

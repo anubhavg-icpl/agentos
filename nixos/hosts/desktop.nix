@@ -1,10 +1,10 @@
-# The graphical session, shared by the desktop host (agentos-desktop), the
-# desktop VM image (agentos-desktop-vm) and the desktop live ISO
-# (agentos-desktop-iso).
+# The graphical session, shared by the desktop host (nestlo-desktop), the
+# desktop VM image (nestlo-desktop-vm) and the desktop live ISO
+# (nestlo-desktop-iso).
 { lib, ... }:
 
 {
-  agentos.desktop = {
+  nestlo.desktop = {
     enable = true;
     windowManager = lib.mkDefault "i3";
   };

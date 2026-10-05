@@ -1,11 +1,11 @@
-# AgentOS system modules — all submodules
+# Nestlo system modules — all submodules
 { lib, ... }:
 {
   # The planned services (MCP gateway, MCP registry service, provisioner,
   # memory manager) were stubs with no source and are removed; they come
   # back when implemented (docs/ROADMAP.md).
   imports = [
-    (lib.mkRemovedOptionModule [ "agentos" "plannedServices" "enable" ]
+    (lib.mkRemovedOptionModule [ "nestlo" "plannedServices" "enable" ]
       "The planned (unimplemented) services were removed; see docs/ROADMAP.md.")
 
     # Core infrastructure

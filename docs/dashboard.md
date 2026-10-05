@@ -3,14 +3,14 @@
 A read-only status page for operators: agents (running and recent), spend against budgets, spend by agent and model, the last seven days, recent gateway requests per agent, and service health. It refreshes every 5 seconds.
 
 ```nix
-agentos.dashboard = {
+nestlo.dashboard = {
   enable = true;
-  tokenFile = "/run/secrets/agentos-dashboard-token";   # required
+  tokenFile = "/run/secrets/nestlo-dashboard-token";   # required
   # port = 8090;
 };
 ```
 
-Create the token with `openssl rand -hex 24 > /run/secrets/agentos-dashboard-token` (or a sops secret). The file can be root-only (mode 0400): systemd hands it to the service as a credential.
+Create the token with `openssl rand -hex 24 > /run/secrets/nestlo-dashboard-token` (or a sops secret). The file can be root-only (mode 0400): systemd hands it to the service as a credential.
 
 ## Reaching it
 
@@ -30,7 +30,7 @@ We chose a token over a unix socket because a browser cannot open a socket direc
 
 ## Read-only by design
 
-The service runs as the `agentos` user with `ProtectSystem=strict` and no writable paths. It only reads Redis, the state directory and the request logs. It has no endpoints that change anything (`POST`, `PUT` and `DELETE` return 405). Killing an agent and changing a budget stay with `agentos kill` and `agentos-budget`, which use the gateway admin socket.
+The service runs as the `nestlo` user with `ProtectSystem=strict` and no writable paths. It only reads Redis, the state directory and the request logs. It has no endpoints that change anything (`POST`, `PUT` and `DELETE` return 405). Killing an agent and changing a budget stay with `nestlo kill` and `nestlo-budget`, which use the gateway admin socket.
 
 ## API
 
@@ -42,10 +42,10 @@ All `GET`, JSON:
 | `/api/agents` | `running` and `history` (last 25), each with `usd_today`, `limit_usd`, `budget_pct` |
 | `/api/spend` | Today's spend per agent (with tokens and request counts) and per model, plus the global limit |
 | `/api/history?days=7` | Spend per day (1 to 35), with per-agent and per-model split |
-| `/api/requests?agent=ID&limit=50` | Newest first, from `/var/lib/agentos/logs/<id>.log` |
+| `/api/requests?agent=ID&limit=50` | Newest first, from `/var/lib/nestlo/logs/<id>.log` |
 
-The command is `agentos-dashboard --token-file FILE [--listen ADDR] [--port N] [--config PATH]`.
+The command is `nestlo-dashboard --token-file FILE [--listen ADDR] [--port N] [--config PATH]`.
 
 ## Links to other web UIs
 
-`/api/links` returns the links configured in `[dashboard] links` of `services.toml` (only `http(s)` URLs) and the page shows them in the header. Enabling `agentos.dashboard.agentFleetWeb` adds its chat and hub ([docs/agent-fleet-web.md](agent-fleet-web.md)).
+`/api/links` returns the links configured in `[dashboard] links` of `services.toml` (only `http(s)` URLs) and the page shows them in the header. Enabling `nestlo.dashboard.agentFleetWeb` adds its chat and hub ([docs/agent-fleet-web.md](agent-fleet-web.md)).

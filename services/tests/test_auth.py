@@ -8,7 +8,7 @@ TOKEN = "s3cret-token-for-a1"
 
 def register(gw, agent, token):
     digest = hashlib.sha256(token.encode()).hexdigest()
-    return request(gw, "PUT", "/_agentos/agents/" + agent, {"token_sha256": digest}, admin=True)
+    return request(gw, "PUT", "/_nestlo/agents/" + agent, {"token_sha256": digest}, admin=True)
 
 
 def test_agent_must_present_registered_token(make_gateway, store):
@@ -55,11 +55,11 @@ def test_bus_sender_is_authenticated(make_gateway):
 def test_registration_needs_admin_socket_and_valid_hash(make_gateway, store):
     gw = make_gateway(gateway={"require_agent_tokens": True})
     digest = hashlib.sha256(b"x").hexdigest()
-    assert request(gw, "PUT", "/_agentos/agents/a1", {"token_sha256": digest})[0] == 403
+    assert request(gw, "PUT", "/_nestlo/agents/a1", {"token_sha256": digest})[0] == 403
     assert store.agent_token("a1") is None
-    assert request(gw, "PUT", "/_agentos/agents/a1", {"token_sha256": "nothex"}, admin=True)[0] == 400
+    assert request(gw, "PUT", "/_nestlo/agents/a1", {"token_sha256": "nothex"}, admin=True)[0] == 400
     assert register(gw, "a1", "x")[0] == 200
-    assert request(gw, "DELETE", "/_agentos/agents/a1", admin=True)[0] == 200
+    assert request(gw, "DELETE", "/_nestlo/agents/a1", admin=True)[0] == 200
     assert store.agent_token("a1") is None
 
 
@@ -67,12 +67,12 @@ def test_token_header_with_plain_agent_path(make_gateway, upstream, store):
     gw = make_gateway(gateway={"require_agent_tokens": True})
     register(gw, "a1", TOKEN)
     path = "/agent/a1/anthropic/v1/messages"
-    assert request(gw, "POST", path, {"model": "claude-test"}, {"x-agentos-token": TOKEN})[0] == 200
-    assert "x-agentos-token" not in {k.lower() for k in upstream.requests[-1]["headers"]}
-    assert request(gw, "POST", path, {"model": "claude-test"}, {"x-agentos-token": "wrong"})[0] == 401
+    assert request(gw, "POST", path, {"model": "claude-test"}, {"x-nestlo-token": TOKEN})[0] == 200
+    assert "x-nestlo-token" not in {k.lower() for k in upstream.requests[-1]["headers"]}
+    assert request(gw, "POST", path, {"model": "claude-test"}, {"x-nestlo-token": "wrong"})[0] == 401
     assert request(gw, "POST", path, {"model": "claude-test"})[0] == 401
     # the bus accepts it too, and the URL form keeps working
-    assert request(gw, "POST", "/agent/a1/bus/t", {"body": "x"}, {"x-agentos-token": TOKEN})[0] == 200
+    assert request(gw, "POST", "/agent/a1/bus/t", {"body": "x"}, {"x-nestlo-token": TOKEN})[0] == 200
     assert request(gw, "POST", "/agent/a1:%s/anthropic/v1/messages" % TOKEN, {"model": "claude-test"})[0] == 200
 
 
@@ -92,7 +92,7 @@ def test_token_is_redacted_from_logs(make_gateway, tmp_path, caplog):
 
 
 def test_redact():
-    from agentos_services.gateway import redact
+    from nestlo_services.gateway import redact
     assert redact("POST /agent/a1:abc/anthropic/v1 HTTP/1.1") == "POST /agent/a1:***/anthropic/v1 HTTP/1.1"
     assert redact("/agent/a1%3Aabc?x=1") == "/agent/a1:***?x=1"
     assert redact("/agent/a1/anthropic") == "/agent/a1/anthropic"

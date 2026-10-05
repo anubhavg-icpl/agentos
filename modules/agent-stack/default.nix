@@ -1,35 +1,35 @@
-# AgentOS agent-stack module
+# Nestlo agent-stack module
 #
-# Runs the apps of github.com/anubhavg-icpl/agent-fleet on the AgentOS host
+# Runs the apps of github.com/anubhavg-icpl/agent-fleet on the Nestlo host
 # instead of as Hugging Face Docker Spaces: n8n, Open WebUI + Ollama,
 # Flowise, Langflow, AnythingLLM, LobeChat and OpenMuse. See docs/agent-stack.md.
 #
-#   native    n8n (services.n8n), local chat (agentos.localAI: Ollama + Open WebUI)
+#   native    n8n (services.n8n), local chat (nestlo.localAI: Ollama + Open WebUI)
 #   podman    Flowise, Langflow, AnythingLLM, LobeChat, OpenMuse
 #             (virtualisation.oci-containers; OpenMuse needs an image you build)
 #
 # - Every published port is on 127.0.0.1. Reach the apps with an SSH tunnel.
 # - Secrets (basic-auth passwords, access codes, the n8n key, gateway tokens)
 #   are generated at first boot by a root oneshot into
-#   /var/lib/agentos-stack/secrets (0600) and handed over as env files or
+#   /var/lib/nestlo-stack/secrets (0600) and handed over as env files or
 #   systemd credentials. They never enter the Nix store.
-# - LLM calls go through the AgentOS model gateway with one agent id per app
+# - LLM calls go through the Nestlo model gateway with one agent id per app
 #   (`stack-<app>`), its own token and daily budget. The apps never see a real
-#   provider key: they get the placeholder `agentos-managed`.
+#   provider key: they get the placeholder `nestlo-managed`.
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.agentStack;
-  net = config.agentos.networking;
+  cfg = config.nestlo.agentStack;
+  net = config.nestlo.networking;
 
-  stateRoot = "/var/lib/agentos-stack";
+  stateRoot = "/var/lib/nestlo-stack";
   secretsDir = "${stateRoot}/secrets";
-  adminSocket = config.agentos.services.settings.gateway.admin_socket;
+  adminSocket = config.nestlo.services.settings.gateway.admin_socket;
   gwPort = toString net.modelGatewayPort;
   loopback = "127.0.0.1";
-  podmanUnit = app: "podman-agentos-stack-${app}.service";
-  secretsUnit = "agentos-stack-secrets.service";
-  gwUnit = app: "agentos-stack-gw-${app}.service";
+  podmanUnit = app: "podman-nestlo-stack-${app}.service";
+  secretsUnit = "nestlo-stack-secrets.service";
+  gwUnit = app: "nestlo-stack-gw-${app}.service";
   agentId = app: "stack-${app}";
 
   # name (dir/agent id) -> option set of the app
@@ -167,7 +167,7 @@ let
   '';
 
   secretsScript = pkgs.writeShellApplication {
-    name = "agentos-stack-secrets";
+    name = "nestlo-stack-secrets";
     runtimeInputs = [ pkgs.coreutils ];
     text = secretsText;
   };
@@ -179,48 +179,48 @@ let
       # n8n has no env switch: create an OpenAI/Anthropic credential in the UI
       OPENAI_BASE_URL=$oa
       ANTHROPIC_BASE_URL=$an
-      OPENAI_API_KEY=agentos-managed
+      OPENAI_API_KEY=nestlo-managed
     '';
     local-chat = ''
       OPENAI_API_BASE_URL=$oa
-      OPENAI_API_KEY=agentos-managed
+      OPENAI_API_KEY=nestlo-managed
     '';
     flowise = ''
       # Flowise has no env switch: set BasePath and the key in the UI credentials
       OPENAI_BASE_URL=$oa
       ANTHROPIC_BASE_URL=$an
-      OPENAI_API_KEY=agentos-managed
+      OPENAI_API_KEY=nestlo-managed
     '';
     langflow = ''
-      OPENAI_API_KEY=agentos-managed
+      OPENAI_API_KEY=nestlo-managed
       OPENAI_BASE_URL=$oa
       OPENAI_API_BASE=$oa
-      ANTHROPIC_API_KEY=agentos-managed
+      ANTHROPIC_API_KEY=nestlo-managed
       ANTHROPIC_BASE_URL=$an
       LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT=OPENAI_API_KEY,ANTHROPIC_API_KEY
     '';
     anythingllm = ''
       LLM_PROVIDER=generic-openai
       GENERIC_OPEN_AI_BASE_PATH=$oa
-      GENERIC_OPEN_AI_API_KEY=agentos-managed
+      GENERIC_OPEN_AI_API_KEY=nestlo-managed
       GENERIC_OPEN_AI_MODEL_PREF=${cfg.anythingllm.model}
       GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=8192
     '';
     lobechat = ''
-      OPENAI_API_KEY=agentos-managed
+      OPENAI_API_KEY=nestlo-managed
       OPENAI_PROXY_URL=$oa
-      ANTHROPIC_API_KEY=agentos-managed
+      ANTHROPIC_API_KEY=nestlo-managed
       ANTHROPIC_PROXY_URL=$an
     '';
     openmuse = ''
-      OPENAI_API_KEY=agentos-managed
+      OPENAI_API_KEY=nestlo-managed
       OPENAI_BASE_URL=$oa
     '';
   };
 
   # Token + registration with the gateway admin socket + the app's LLM env file
   gwScript = app: host: pkgs.writeShellApplication {
-    name = "agentos-stack-gw-${app}";
+    name = "nestlo-stack-gw-${app}";
     runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.jq ];
     text = ''
       umask 077
@@ -231,7 +231,7 @@ let
 
       admin() {
         curl -fsS -m 10 --unix-socket ${adminSocket} -X "$1" -H 'Content-Type: application/json' \
-          "''${@:3}" "http://x/_agentos/$2"
+          "''${@:3}" "http://x/_nestlo/$2"
       }
       for _ in $(seq 1 60); do
         if admin GET health >/dev/null 2>&1; then
@@ -261,19 +261,19 @@ let
   hostFor = app: if builtins.elem app (builtins.attrNames containerApps) then cfg.network.gatewayAddress else loopback;
 
   gwService = app: _: {
-    name = "agentos-stack-gw-${app}";
+    name = "nestlo-stack-gw-${app}";
     value = {
-      description = "Register ${agentId app} with the AgentOS model gateway";
+      description = "Register ${agentId app} with the Nestlo model gateway";
       wantedBy = [ "multi-user.target" ];
-      wants = [ "agentos-model-gateway.service" ];
+      wants = [ "nestlo-model-gateway.service" ];
       requires = [ secretsUnit ];
-      after = [ "agentos-model-gateway.service" secretsUnit ];
+      after = [ "nestlo-model-gateway.service" secretsUnit ];
       restartTriggers = [ (gwScript app (hostFor app)) ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
         TimeoutStartSec = 120;
-        ExecStart = "${gwScript app (hostFor app)}/bin/agentos-stack-gw-${app}";
+        ExecStart = "${gwScript app (hostFor app)}/bin/nestlo-stack-gw-${app}";
       };
     };
   };
@@ -341,7 +341,7 @@ let
       s = specs.${app};
     in
     {
-      name = "agentos-stack-${app}";
+      name = "nestlo-stack-${app}";
       value = {
         image = if a.image == null then "" else a.image;
         autoStart = true;
@@ -365,7 +365,7 @@ let
     };
 
   mkContainerUnit = app: _: {
-    name = "podman-agentos-stack-${app}";
+    name = "podman-nestlo-stack-${app}";
     value = {
       requires = [ secretsUnit (gwUnit app) ];
       after = [ secretsUnit (gwUnit app) ];
@@ -378,7 +378,7 @@ let
     containerApps;
 in
 {
-  options.agentos.agentStack = {
+  options.nestlo.agentStack = {
     enable = lib.mkEnableOption ''
       the agent-fleet app stack (n8n, Open WebUI + Ollama, Flowise, Langflow,
       AnythingLLM, LobeChat, OpenMuse) on this host. This switch only allows
@@ -391,7 +391,7 @@ in
         default = "openai";
         example = "local";
         description = ''
-          Gateway provider (agentos.networking.providers) behind the OpenAI-
+          Gateway provider (nestlo.networking.providers) behind the OpenAI-
           compatible base URL of the apps. Use `local` to keep every app on
           local models.
         '';
@@ -442,7 +442,7 @@ in
         default = [ "llama3.2:1b" "qwen2.5:0.5b" "nomic-embed-text" ];
         description = ''
           Ollama models to pull (the agent-fleet `local-chat` defaults). They
-          are added to agentos.localAI.models.
+          are added to nestlo.localAI.models.
         '';
       };
     };
@@ -512,14 +512,14 @@ in
       assertions = lib.mapAttrsToList
         (n: a: {
           assertion = !a.enable || cfg.enable;
-          message = "agentos.agentStack: ${n} is enabled but agentos.agentStack.enable is false";
+          message = "nestlo.agentStack: ${n} is enabled but nestlo.agentStack.enable is false";
         })
         apps;
     }
 
-    # Links in the AgentOS dashboard header (loopback; reach them over SSH)
+    # Links in the Nestlo dashboard header (loopback; reach them over SSH)
     (lib.mkIf (cfg.enable && enabledApps != { }) {
-      agentos.services.settings.dashboard.links = lib.mapAttrsToList
+      nestlo.services.settings.dashboard.links = lib.mapAttrsToList
         (name: a: { name = "stack: ${name}"; url = "http://${loopback}:${toString a.port}/"; })
         enabledApps;
     })
@@ -527,32 +527,32 @@ in
     (lib.mkIf (cfg.enable && enabledApps != { }) {
       assertions = [
         {
-          assertion = net.enable && config.agentos.runtime.enable;
-          message = "agentos.agentStack routes LLM calls through the model gateway: enable agentos.runtime and agentos.networking";
+          assertion = net.enable && config.nestlo.runtime.enable;
+          message = "nestlo.agentStack routes LLM calls through the model gateway: enable nestlo.runtime and nestlo.networking";
         }
         {
           assertion = !isOn "openmuse" || (cfg.openmuse.image != null && cfg.openmuse.cpkKeyFile != null);
           message = ''
-            agentos.agentStack.openmuse: there is no upstream OpenMuse image. Build one from agent-fleet's
-            spaces/openmuse/Dockerfile and set agentos.agentStack.openmuse.image, and set .cpkKeyFile
+            nestlo.agentStack.openmuse: there is no upstream OpenMuse image. Build one from agent-fleet's
+            spaces/openmuse/Dockerfile and set nestlo.agentStack.openmuse.image, and set .cpkKeyFile
             (see docs/agent-stack.md).
           '';
         }
         {
-          assertion = !isOn "local-chat" || config.agentos.localAI.backend == "ollama";
-          message = "agentos.agentStack.localChat needs agentos.localAI.backend = \"ollama\"";
+          assertion = !isOn "local-chat" || config.nestlo.localAI.backend == "ollama";
+          message = "nestlo.agentStack.localChat needs nestlo.localAI.backend = \"ollama\"";
         }
       ];
 
       # Secrets: one root oneshot, files 0600 in a 0700 directory
-      systemd.services.agentos-stack-secrets = {
+      systemd.services.nestlo-stack-secrets = {
         description = "Generate the agent-stack secrets (first boot only)";
         wantedBy = [ "multi-user.target" ];
         restartTriggers = [ secretsScript ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
-          ExecStart = "${secretsScript}/bin/agentos-stack-secrets";
+          ExecStart = "${secretsScript}/bin/nestlo-stack-secrets";
           UMask = "0077";
         };
       };
@@ -583,9 +583,9 @@ in
       };
     })
 
-    # ── local chat: agentos.localAI with the agent-fleet defaults ─────────
+    # ── local chat: nestlo.localAI with the agent-fleet defaults ─────────
     (lib.mkIf (isOn "local-chat") {
-      agentos.localAI = {
+      nestlo.localAI = {
         enable = lib.mkDefault true;
         backend = lib.mkDefault "ollama";
         models = cfg.localChat.models;
@@ -616,7 +616,7 @@ in
         lib.listToAttrs (map mkContainer (builtins.attrNames containerApps));
 
       systemd.services = lib.mapAttrs' mkContainerUnit containerApps // {
-        agentos-model-gateway = {
+        nestlo-model-gateway = {
           after = [ "network-addresses-lo.service" ];
           wants = [ "network-addresses-lo.service" ];
         };
@@ -627,7 +627,7 @@ in
       # A dedicated netavark network on bridge agentstack0
       environment.etc."containers/networks/${cfg.network.podmanNetwork}.json".text = builtins.toJSON {
         name = cfg.network.podmanNetwork;
-        id = builtins.hashString "sha256" "agentos-stack-${cfg.network.podmanNetwork}";
+        id = builtins.hashString "sha256" "nestlo-stack-${cfg.network.podmanNetwork}";
         driver = "bridge";
         network_interface = "agentstack0";
         subnets = [{
@@ -641,12 +641,12 @@ in
       };
 
       # The gateway listens on this host address too (a list that merges with
-      # the loopback and agentos0 entries)
+      # the loopback and nestlo0 entries)
       networking.interfaces.lo.ipv4.addresses = [{
         address = cfg.network.gatewayAddress;
         prefixLength = 32;
       }];
-      agentos.services.settings.gateway.listen = [ cfg.network.gatewayAddress ];
+      nestlo.services.settings.gateway.listen = [ cfg.network.gatewayAddress ];
 
       # From the stack bridge the host offers the gateway port and nothing else
       networking.firewall.extraCommands = ''
@@ -666,7 +666,7 @@ in
 
     # OpenMuse: the user's CopilotKit key is one more env file
     (lib.mkIf (isOn "openmuse") {
-      virtualisation.oci-containers.containers.agentos-stack-openmuse = {
+      virtualisation.oci-containers.containers.nestlo-stack-openmuse = {
         image = lib.mkForce cfg.openmuse.image;
         environmentFiles = [ (toString cfg.openmuse.cpkKeyFile) ];
       };

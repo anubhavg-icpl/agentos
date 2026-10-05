@@ -1,24 +1,24 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Policy-as-code and RBAC Module
+# Nestlo Policy-as-code and RBAC Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# agentos.policy   typed, versioned task policy, checked at evaluation time
+# nestlo.policy   typed, versioned task policy, checked at evaluation time
 #                  and enforced by the orchestrator at submit
-#                  (services/agentos_services/policy.py, docs/policy.md)
-# agentos.rbac     roles on the orchestrator socket, mapped from unix
+#                  (services/nestlo_services/policy.py, docs/policy.md)
+# nestlo.rbac     roles on the orchestrator socket, mapped from unix
 #                  groups through SO_PEERCRED (services/.../rbac.py)
 #
-# Both compile into /etc/agentos/services.toml ([policy] and [rbac]).
+# Both compile into /etc/nestlo/services.toml ([policy] and [rbac]).
 # The policy version is a hash of the compiled policy; every task records
 # the policy name and version it was admitted under.
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.policy;
-  rbac = config.agentos.rbac;
-  rt = config.agentos.runtime;
-  orch = config.agentos.orchestration;
+  cfg = config.nestlo.policy;
+  rbac = config.nestlo.rbac;
+  rt = config.nestlo.runtime;
+  orch = config.nestlo.orchestration;
 
   num = lib.types.either lib.types.int lib.types.float;
 
@@ -43,7 +43,7 @@ let
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
         default = null;
         example = [ "claude" "codex" ];
-        description = "Agents (keys of agentos.runtime.agents) tasks may use; null allows all";
+        description = "Agents (keys of nestlo.runtime.agents) tasks may use; null allows all";
       };
       allowedModels = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
@@ -61,9 +61,9 @@ let
         example = { "claude-opus-5-5" = "claude-sonnet-5-5"; };
         description = ''
           Model rewrites for tasks under this policy: a task's `model` is
-          replaced as listed. For `agentos.policy.default` the rewrites are
+          replaced as listed. For `nestlo.policy.default` the rewrites are
           also merged into the gateway's global routing rewrites (at
-          default priority, so agentos.budget-controller.routing wins).
+          default priority, so nestlo.budget-controller.routing wins).
         '';
       };
       requireApproval = {
@@ -97,7 +97,7 @@ let
         default = null;
         description = ''
           Minimum isolation. "container" refuses tasks unless the host runs
-          agents in containers (agentos.runtime.defaultIsolation).
+          agents in containers (nestlo.runtime.defaultIsolation).
         '';
       };
       publish.enable = lib.mkOption {
@@ -105,7 +105,7 @@ let
         default = null;
         description = "false refuses tasks that ask for a pull request (`publish`)";
       };
-      # Egress: the egress firewall (agentos.security) is per host and per
+      # Egress: the egress firewall (nestlo.security) is per host and per
       # agent user, not per task or repository, so there is no per-policy
       # allowlist. See docs/policy.md.
     };
@@ -150,12 +150,12 @@ let
   };
   version = builtins.substring 0 12 (builtins.hashString "sha256" (builtins.toJSON compiled));
 
-  pricing = builtins.fromJSON (builtins.readFile config.agentos.budget-controller.pricingFile);
+  pricing = builtins.fromJSON (builtins.readFile config.nestlo.budget-controller.pricingFile);
   # pricing.json matches exactly or by longest prefix
   priced = m: lib.any (k: lib.hasPrefix k m) (lib.attrNames pricing.models);
 
   show = v: builtins.toJSON v;
-  bad = name: msg: { assertion = false; message = "agentos.policy[${name}]: ${msg}"; };
+  bad = name: msg: { assertion = false; message = "nestlo.policy[${name}]: ${msg}"; };
   checks = name: p:
     let e = effective p; in
     lib.optional (builtins.match "[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)?" name == null)
@@ -168,7 +168,7 @@ let
       (bad name "budgetUsd (${show e.budgetUsd}) is above dailyBudgetUsd (${show e.dailyBudgetUsd}): no task could ever run")
     ++ lib.optional (e ? allowedAgents && e.allowedAgents == [ ])
       (bad name "allowedAgents is empty: every task would be refused")
-    ++ map (a: bad name "allowedAgents: unknown agent ${a} (not in agentos.runtime.agents)")
+    ++ map (a: bad name "allowedAgents: unknown agent ${a} (not in nestlo.runtime.agents)")
       (lib.filter (a: !(rt.agents ? ${a})) (e.allowedAgents or [ ]))
     ++ lib.optional (e ? allowedModels && e.allowedModels == [ ])
       (bad name "allowedModels is empty: every task naming a model would be refused")
@@ -191,9 +191,9 @@ let
       && (e.requireApproval.thresholdUsd or 0) >= e.budgetUsd)
       (bad name "costAbove threshold is not below budgetUsd: approval could never be required")
     ++ lib.optional ((e.isolation or "sandbox") == "container" && rt.defaultIsolation != "container")
-      (bad name "isolation = \"container\" needs agentos.runtime.defaultIsolation = \"container\"")
+      (bad name "isolation = \"container\" needs nestlo.runtime.defaultIsolation = \"container\"")
     ++ lib.optional (e ? maxRetries && e.maxRetries > orch.maxRetries)
-      (bad name "maxRetries (${show e.maxRetries}) is above agentos.orchestration.maxRetries (${show orch.maxRetries})");
+      (bad name "maxRetries (${show e.maxRetries}) is above nestlo.orchestration.maxRetries (${show orch.maxRetries})");
 
   roleType = lib.types.submodule {
     options = {
@@ -211,7 +211,7 @@ let
   };
 in
 {
-  options.agentos.policy = {
+  options.nestlo.policy = {
     enable = lib.mkEnableOption "typed task policy, enforced by the orchestrator at submit";
 
     default = lib.mkOption {
@@ -239,7 +239,7 @@ in
     };
   };
 
-  options.agentos.rbac = {
+  options.nestlo.rbac = {
     enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -266,11 +266,11 @@ in
 
   config = lib.mkMerge [
     {
-      # Operators in the agentos group (and the services that run in it)
+      # Operators in the nestlo group (and the services that run in it)
       # keep today's behaviour: they are admins.
-      agentos.rbac.roles.admin.groups = lib.mkDefault [ "agentos" ];
+      nestlo.rbac.roles.admin.groups = lib.mkDefault [ "nestlo" ];
 
-      agentos.services.settings.rbac = {
+      nestlo.services.settings.rbac = {
         enable = rbac.enable;
         separate_approver = rbac.separateApprover;
         roles = lib.mapAttrs (_: r: { inherit (r) groups users; }) rbac.roles;
@@ -281,14 +281,14 @@ in
       assertions = [
         {
           assertion = orch.enable;
-          message = "agentos.policy is enforced by the orchestrator; enable agentos.orchestration";
+          message = "nestlo.policy is enforced by the orchestrator; enable nestlo.orchestration";
         }
       ] ++ lib.concatLists (lib.mapAttrsToList checks all);
 
-      agentos.services.settings.policy = compiled // { inherit version; };
+      nestlo.services.settings.policy = compiled // { inherit version; };
 
       # The gateway applies the default policy's model rewrites to all agents
-      agentos.services.settings.routing.rewrites =
+      nestlo.services.settings.routing.rewrites =
         lib.mapAttrs (_: lib.mkDefault) (cfg.default.routing or { });
     })
   ];

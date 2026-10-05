@@ -1,24 +1,24 @@
-# AgentOS GPU module
+# Nestlo GPU module
 #
 # Driver stack for one GPU vendor, GPU-accelerated Ollama, and the state
 # behind per-agent GPU scheduling:
-#   - `agentos spawn --gpu [N|any]` reserves GPUs through `agentos-gpu`
-#     (services/agentos_services/gpu.py). A GPU is held by one agent at a
+#   - `nestlo spawn --gpu [N|any]` reserves GPUs through `nestlo-gpu`
+#     (services/nestlo_services/gpu.py). A GPU is held by one agent at a
 #     time: <lockDir>/<index> contains the holder's agent id.
 #   - the agent's unit gets access to exactly those device nodes
 #     (DeviceAllow=; bind-mounted into container-isolated agents)
 #   - the lock is released by the unit's ExecStopPost, and by the agent
 #     daemon's reaper if that did not run
-# Without GPUs (or with the module off) `agentos gpu` reports "No GPUs".
+# Without GPUs (or with the module off) `nestlo gpu` reports "No GPUs".
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.gpu;
-  ollamaOn = config.agentos.ai-ml.enable && config.agentos.ai-ml.enableOllama;
-  lockDir = "/run/agentos/gpu";
+  cfg = config.nestlo.gpu;
+  ollamaOn = config.nestlo.ai-ml.enable && config.nestlo.ai-ml.enableOllama;
+  lockDir = "/run/nestlo/gpu";
 in
 {
-  options.agentos.gpu = {
+  options.nestlo.gpu = {
     enable = lib.mkEnableOption "GPU drivers and per-agent GPU scheduling";
 
     vendor = lib.mkOption {
@@ -39,21 +39,21 @@ in
   config = lib.mkIf cfg.enable (lib.mkMerge [
     {
       assertions = [{
-        assertion = config.agentos.runtime.enable;
-        message = "agentos.gpu needs agentos.runtime.enable";
+        assertion = config.nestlo.runtime.enable;
+        message = "nestlo.gpu needs nestlo.runtime.enable";
       }];
 
       # The stock host is headless (hardware.graphics.enable = false)
       hardware.graphics.enable = lib.mkForce true;
 
-      # Allocation registry. Group agentos = operators and the daemon; the
+      # Allocation registry. Group nestlo = operators and the daemon; the
       # sandboxed agent user cannot even see the directory.
       systemd.tmpfiles.rules = [
-        "d /run/agentos 0755 root root"
-        "d ${lockDir} 2770 root agentos"
+        "d /run/nestlo 0755 root root"
+        "d ${lockDir} 2770 root nestlo"
       ];
-      agentos.services.settings.gpu.lock_dir = lockDir;
-      systemd.services.agentos-daemon.serviceConfig.ReadWritePaths = [ "-${lockDir}" ];
+      nestlo.services.settings.gpu.lock_dir = lockDir;
+      systemd.services.nestlo-daemon.serviceConfig.ReadWritePaths = [ "-${lockDir}" ];
     }
 
     (lib.mkIf (cfg.vendor == "nvidia") {

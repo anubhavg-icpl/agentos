@@ -14,22 +14,22 @@ Complete documentation of every feature built into Nestlo.
 
 ### 1. Runtime (`modules/runtime`)
 Runs each agent in its own sandbox and keeps track of it.
-- **Sandboxed agents:** `agentos spawn` starts the agent as a transient systemd unit (`agentos-agent-<id>.service`) running as the unprivileged `agentos-agent` user: no sudo, read-only system, private /tmp, home directories hidden, write access only to its workspace and its own home.
-- **Resource limits:** memory, CPU quota and process count per agent (from `agentos.circuit-breaker`).
-- **Shared workspaces:** `/var/lib/agentos/workspaces/<name>`, shared between the operator and the agent user through group ACLs. Every run gets its own `agent/<id>` git branch.
+- **Sandboxed agents:** `nestlo spawn` starts the agent as a transient systemd unit (`nestlo-agent-<id>.service`) running as the unprivileged `nestlo-agent` user: no sudo, read-only system, private /tmp, home directories hidden, write access only to its workspace and its own home.
+- **Resource limits:** memory, CPU quota and process count per agent (from `nestlo.circuit-breaker`).
+- **Shared workspaces:** `/var/lib/nestlo/workspaces/<name>`, shared between the operator and the agent user through group ACLs. Every run gets its own `agent/<id>` git branch.
 - **Agent daemon:** tracks running agents, stops agents that exceed their budget, sends notifications, and exports Prometheus metrics on `127.0.0.1:9950`.
 - **Control-plane Redis:** unix socket only; agents cannot read or change spend or budgets.
-- **Config:** `agentos.runtime.enable = true;` (`maxAgents`, `operators`, `agents`)
+- **Config:** `nestlo.runtime.enable = true;` (`maxAgents`, `operators`, `agents`)
 
 **CLI:**
 ```bash
-agentos workspace create api --from https://github.com/me/api.git
-agentos spawn claude --workspace api --budget 5
-agentos list                  # running + recent agents, spend today
-agentos logs <agent-id> [-f]  # every model API call: model, tokens, cost
-agentos kill <agent-id>
-agentos shell <agent-id>      # shell inside the agent's sandbox
-agentos status
+nestlo workspace create api --from https://github.com/me/api.git
+nestlo spawn claude --workspace api --budget 5
+nestlo list                  # running + recent agents, spend today
+nestlo logs <agent-id> [-f]  # every model API call: model, tokens, cost
+nestlo kill <agent-id>
+nestlo shell <agent-id>      # shell inside the agent's sandbox
+nestlo status
 ```
 
 ### 2. Storage & Snapshots (`modules/storage`)
@@ -38,22 +38,22 @@ btrfs-based copy-on-write filesystem for instant branching and snapshots.
 - **Auto-snapshots:** Hourly snapshots with configurable retention.
 - **Deduplication:** Daily content-addressed dedup saves disk space.
 - **Workspace GC:** Automatically cleans up abandoned workspaces.
-- **Config:** `agentos.storage.enable = true;`
+- **Config:** `nestlo.storage.enable = true;`
 
 ### 3. Networking & Model Gateway (`modules/networking`)
 Every LLM call from a sandboxed agent goes through the model gateway on `127.0.0.1:8080`.
 - **Per-agent routing:** agents get `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` pointing at `/agent/<id>/<provider>`, so each request is attributed to the agent that made it.
 - **Metering:** token usage is read from JSON and streaming (SSE) responses of the Anthropic Messages API and the OpenAI Chat Completions and Responses APIs, then priced with `pricing.json`.
-- **Key injection:** with a provider `keyFile` (e.g. a sops secret), agents only see the placeholder key `agentos-managed`; the gateway adds the real key upstream.
+- **Key injection:** with a provider `keyFile` (e.g. a sops secret), agents only see the placeholder key `nestlo-managed`; the gateway adds the real key upstream.
 - **Enforcement:** budgets (402), per-agent rate limit (429), circuit breaker (503).
-- **Admin socket:** `/run/agentos-gateway/admin.sock` for budget changes, writable by operators only.
-- **Config:** `agentos.networking.providers.<name> = { baseUrl; api; keyFile; };`
+- **Admin socket:** `/run/nestlo-gateway/admin.sock` for budget changes, writable by operators only.
+- **Config:** `nestlo.networking.providers.<name> = { baseUrl; api; keyFile; };`
 
 ### 4. Security (`modules/security`)
 - **Egress allowlist:** with `defaultEgress = "deny"`, dnsmasq only resolves allowlisted domains and records their addresses in an ipset; iptables rejects every other outbound connection (host-wide).
-- **Gateway-only provider APIs:** the `agentos-agent` user cannot connect to provider API hosts directly, use a DNS server other than the local one, or use IPv6. Budgets cannot be bypassed.
+- **Gateway-only provider APIs:** the `nestlo-agent` user cannot connect to provider API hosts directly, use a DNS server other than the local one, or use IPv6. Budgets cannot be bypassed.
 - **AppArmor, auditd, kernel hardening** (sysctl, BPF JIT hardening, protected links/FIFOs).
-- **Config:** `agentos.security.defaultEgress = "deny";`
+- **Config:** `nestlo.security.defaultEgress = "deny";`
 
 ### 5. Observability (`modules/observability`)
 Full observability stack: Prometheus + Tempo + Grafana.
@@ -61,7 +61,7 @@ Full observability stack: Prometheus + Tempo + Grafana.
 - **Dashboards:** Grafana on `localhost:2342` (reach it with `ssh -L 2342:localhost:2342`); set `grafanaAdminPasswordFile`.
 - **Agent metrics:** the daemon exports spend, budgets, tokens and request counts per agent; Prometheus scrapes it.
 - **Retention:** 30 days by default.
-- **Config:** `agentos.observability.enable = true;`
+- **Config:** `nestlo.observability.enable = true;`
 
 ---
 
@@ -74,29 +74,29 @@ Persistent vector memory for agents.
 - **Shared knowledge base:** Agents share learnings about a project.
 - **Embedding service:** Text → vectors using `text-embedding-3-small`.
 - **Memory GC:** Old memories auto-expired after 90 days.
-- **Config:** `agentos.context.enable = true;`
+- **Config:** `nestlo.context.enable = true;`
 
 **CLI:**
 ```bash
-agentos-memory stats        # Show vector counts
-agentos-memory search       # Browse collections
-agentos-memory forget       # Clear all memories
+nestlo-memory stats        # Show vector counts
+nestlo-memory search       # Browse collections
+nestlo-memory forget       # Clear all memories
 ```
 
 ### 7. Multi-Agent Orchestration (`modules/orchestration`)
 Queued tasks, pipelines, swarms with verify and judge steps, DAG workflows,
-approval gates, retries and priorities, driven by `agentos-task`. GitHub
+approval gates, retries and priorities, driven by `nestlo-task`. GitHub
 webhooks can create tasks and publish pull requests. See
 [orchestration.md](orchestration.md) and [triggers.md](triggers.md).
 
 ### 7a. Software factory (`modules/factory`)
-`agentos.factory.lines.<name>` runs work items (GitHub issues or
-`agentos-factory`) through planner, builder, verify, reviewer, a fix loop and
+`nestlo.factory.lines.<name>` runs work items (GitHub issues or
+`nestlo-factory`) through planner, builder, verify, reviewer, a fix loop and
 QA against the acceptance criteria, then opens a pull request (`supervised`,
 `approval-first`) or merges it (`dark`, which needs `allowAutoMerge` on the
 repository, a verify command, a QA role and a plan approval or scope guard).
-Every step is an orchestrator task. Metrics `agentos_factory_*`, alerts
-`AgentOSFactoryBlocked`, `AgentOSFactoryStuck`, `AgentOSFactoryBudgetBurn`.
+Every step is an orchestrator task. Metrics `nestlo_factory_*`, alerts
+`NestloFactoryBlocked`, `NestloFactoryStuck`, `NestloFactoryBudgetBurn`.
 See [factory.md](factory.md).
 
 ---
@@ -109,15 +109,15 @@ Manages MCP (Model Context Protocol) tool servers that extend agent capabilities
 - **Per-agent permissions:** Control which tools each agent can use.
 - **Auto-discovery:** Tools register themselves on startup.
 - **Health checking:** Registry monitors tool server health.
-- **Config:** `agentos.mcp-registry.enable = true;`
+- **Config:** `nestlo.mcp-registry.enable = true;`
 
 **CLI:**
 ```bash
-agentos-tools list                           # List all tools
-agentos-tools enable puppeteer               # Enable a tool
-agentos-tools disable sqlite                 # Disable a tool
-agentos-tools add my-tool "npx @my/tool"     # Add custom tool
-agentos-tools test github                    # Health check
+nestlo-tools list                           # List all tools
+nestlo-tools enable puppeteer               # Enable a tool
+nestlo-tools disable sqlite                 # Disable a tool
+nestlo-tools add my-tool "npx @my/tool"     # Add custom tool
+nestlo-tools test github                    # Health check
 ```
 
 ---
@@ -131,27 +131,27 @@ Caps what agents can spend on LLM APIs. Enforced by the model gateway.
 - **Threshold alerts** at 50/80/95% and an event when the budget is exceeded.
 - **Auto-shutdown:** the agent daemon stops the agent's unit.
 - **Pricing** for current Claude, OpenAI, Gemini, DeepSeek, Qwen and Llama models (`pricing.json`, USD per million tokens, including cache reads and writes). Unknown models are priced conservatively.
-- **Config:** `agentos.budget-controller.defaultDailyBudgetUSD = 50.0;`
+- **Config:** `nestlo.budget-controller.defaultDailyBudgetUSD = 50.0;`
 
 **CLI:**
 ```bash
-agentos-budget status       # spend per agent today, limits, request counts
-agentos-budget set <id> 25  # daily budget for one agent
-agentos-budget reset <id>   # back to the default
-agentos-budget history      # 7-day global spend
-agentos-budget by-model
+nestlo-budget status       # spend per agent today, limits, request counts
+nestlo-budget set <id> 25  # daily budget for one agent
+nestlo-budget reset <id>   # back to the default
+nestlo-budget history      # 7-day global spend
+nestlo-budget by-model
 ```
 
 ### 10. Circuit Breaker (`modules/circuit-breaker`)
 - **Rate limit:** max LLM requests per agent per minute (HTTP 429 with Retry-After).
 - **Circuit breaker:** after N consecutive upstream failures an agent's requests are refused for a cooldown (HTTP 503).
 - **Resource limits:** memory, CPU share and process count for each sandboxed agent.
-- **Config:** `agentos.circuit-breaker.maxConsecutiveFailures = 5;`
+- **Config:** `nestlo.circuit-breaker.maxConsecutiveFailures = 5;`
 
 **CLI:**
 ```bash
-agentos-breaker status
-agentos-breaker reset <id>  # close an open circuit
+nestlo-breaker status
+nestlo-breaker reset <id>  # close an open circuit
 ```
 
 ### 11. Secrets Manager (`modules/secrets-manager`)
@@ -161,14 +161,14 @@ Secure API key management.
 - **Never in logs:** Secrets injected at spawn, not persisted in env.
 - **Auto-rotation:** Optional periodic key rotation.
 - **9 pre-configured keys:** Anthropic, OpenAI, Google, GitHub, Factory, Slack, Linear, Sentry, Brave.
-- **Config:** `agentos.secrets-manager.backend = "sops";`
+- **Config:** `nestlo.secrets-manager.backend = "sops";`
 
 **CLI:**
 ```bash
-agentos-secrets list        # Show configured keys (values hidden)
-agentos-secrets set KEY     # Set a secret (prompted, hidden)
-agentos-secrets edit        # Edit secrets file in $EDITOR
-agentos-secrets check       # Show access mapping
+nestlo-secrets list        # Show configured keys (values hidden)
+nestlo-secrets set KEY     # Set a secret (prompted, hidden)
+nestlo-secrets edit        # Edit secrets file in $EDITOR
+nestlo-secrets check       # Show access mapping
 ```
 
 ---
@@ -176,18 +176,18 @@ agentos-secrets check       # Show access mapping
 ## Developer Experience
 
 ### 12. Git Automation (`modules/git-automation`)
-- **Branch per agent session:** `agentos spawn` creates `agent/<agent-id>` in the workspace.
-- **Hooks:** pre-commit checks for secrets, large files and failing tests (`agentos-git init`).
+- **Branch per agent session:** `nestlo spawn` creates `agent/<agent-id>` in the workspace.
+- **Hooks:** pre-commit checks for secrets, large files and failing tests (`nestlo-git init`).
 - **Helpers** for commits, checkpoints and PRs via the GitHub CLI.
 - `autoCommit` is not acted on yet. `autoPR` pushes `agent/<task-id>` and opens a PR for successful orchestrator tasks of workspaces listed in `publish.repos` (see docs/triggers.md).
 
 **CLI:**
 ```bash
-agentos-git init            # Set up hooks in workspace
-agentos-git commit "msg"
-agentos-git pr "title"      # Create PR via GitHub CLI
-agentos-git snapshot        # Checkpoint commit
-agentos-git undo            # Undo last commit, keep changes
+nestlo-git init            # Set up hooks in workspace
+nestlo-git commit "msg"
+nestlo-git pr "title"      # Create PR via GitHub CLI
+nestlo-git snapshot        # Checkpoint commit
+nestlo-git undo            # Undo last commit, keep changes
 ```
 
 ### 13. Environment Provisioning (`modules/provisioning`)
@@ -197,16 +197,16 @@ Auto-detects project type and provisions the right environment.
 - **Nix dev shells:** Reproducible environments per project.
 - **Local cache:** Binary cache for fast environment creation.
 - **Pre-build:** Pre-build common environments at install time.
-- **Config:** `agentos.provisioning.enable = true;`
+- **Config:** `nestlo.provisioning.enable = true;`
 
 **CLI:**
 ```bash
-agentos-env detect          # Detect project type
-agentos-env list            # List available environments
-agentos-env shell           # Launch detected environment
-agentos-env shell python-3.11  # Launch specific environment
-agentos-env init            # Create shell.nix for current project
-agentos-env prebuild        # Pre-build environments
+nestlo-env detect          # Detect project type
+nestlo-env list            # List available environments
+nestlo-env shell           # Launch detected environment
+nestlo-env shell python-3.11  # Launch specific environment
+nestlo-env init            # Create shell.nix for current project
+nestlo-env prebuild        # Pre-build environments
 ```
 
 ---
@@ -215,18 +215,18 @@ agentos-env prebuild        # Pre-build environments
 
 ### 14. Scheduler (`modules/scheduler`)
 Recurring tasks on systemd `OnCalendar` schedules, managed with
-`agentos-schedule` or declared in Nix. See [orchestration.md](orchestration.md).
+`nestlo-schedule` or declared in Nix. See [orchestration.md](orchestration.md).
 
 ### 15. Notifications (`modules/notifications`)
 The agent daemon forwards events to Slack, Discord or a generic JSON webhook.
 - **Events:** `agent-started`, `task-completed`, `budget-threshold` (thresholds, budget exceeded), `agent-error` (agent stopped, circuit opened).
 - **Secret URLs** are read from files (`slackWebhookFile`, `discordWebhookFile`, `webhookUrlFile`), e.g. sops secrets, never the Nix store.
-- **Config:** `agentos.notifications.slackWebhookFile = "/run/secrets/SLACK_WEBHOOK";`
+- **Config:** `nestlo.notifications.slackWebhookFile = "/run/secrets/SLACK_WEBHOOK";`
 
 **CLI:**
 ```bash
-agentos-notify status
-agentos-notify test "hello"
+nestlo-notify status
+nestlo-notify test "hello"
 ```
 
 ---
@@ -247,22 +247,22 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 
 | Feature | Module | CLI Command | Status |
 |---------|--------|-------------|---------|
-| Sandboxed agents, registry, daemon | runtime | `agentos spawn` | ✅ (VM-tested) |
+| Sandboxed agents, registry, daemon | runtime | `nestlo spawn` | ✅ (VM-tested) |
 | Model gateway | networking | (automatic) | ✅ (VM-tested) |
-| Budget controller | budget-controller | `agentos-budget` | ✅ (VM-tested) |
-| Circuit breaker, rate limit, resource limits | circuit-breaker | `agentos-breaker` | ✅ |
-| Notifications | notifications | `agentos-notify` | ✅ (VM-tested) |
+| Budget controller | budget-controller | `nestlo-budget` | ✅ (VM-tested) |
+| Circuit breaker, rate limit, resource limits | circuit-breaker | `nestlo-breaker` | ✅ |
+| Notifications | notifications | `nestlo-notify` | ✅ (VM-tested) |
 | Egress allowlist, gateway-only provider access | security | (automatic) | ✅ (VM-tested) |
-| Storage & snapshots | storage | `agentos snapshot` | ✅ |
+| Storage & snapshots | storage | `nestlo snapshot` | ✅ |
 | Observability | observability | Grafana | ✅ |
-| Secrets manager | secrets-manager | `agentos-secrets` | ✅ (after sops setup) |
-| Git automation | git-automation | `agentos-git` | Helpers ✅, auto-PR for orchestrator tasks ✅, auto-commit planned |
-| Context & memory | context | `agentos-memory` | Qdrant ✅, memory manager planned |
-| MCP servers | mcp-servers | `agentos-mcp` | ✅ (config) |
-| Provisioning | provisioning | `agentos-env` | ✅ (provisioner service planned) |
-| Orchestration | orchestration | `agentos-task` | ✅ |
-| Scheduler | scheduler | `agentos-schedule` | ✅ |
-| 20 coding agents | agents | `agentos agents` | ✅ |
+| Secrets manager | secrets-manager | `nestlo-secrets` | ✅ (after sops setup) |
+| Git automation | git-automation | `nestlo-git` | Helpers ✅, auto-PR for orchestrator tasks ✅, auto-commit planned |
+| Context & memory | context | `nestlo-memory` | Qdrant ✅, memory manager planned |
+| MCP servers | mcp-servers | `nestlo-mcp` | ✅ (config) |
+| Provisioning | provisioning | `nestlo-env` | ✅ (provisioner service planned) |
+| Orchestration | orchestration | `nestlo-task` | ✅ |
+| Scheduler | scheduler | `nestlo-schedule` | ✅ |
+| 20 coding agents | agents | `nestlo agents` | ✅ |
 
 ---
 
@@ -286,11 +286,11 @@ Nestlo installs the VIBE library into the supported agent CLIs on first boot, fe
 
 **CLI:**
 ```bash
-agentos-vibe install     # Install into all agents
-agentos-vibe status      # Check installation
-agentos-vibe categories  # List 52 categories
-agentos-vibe search rag  # Search library
-agentos-vibe add <name>  # Install specific asset
+nestlo-vibe install     # Install into all agents
+nestlo-vibe status      # Check installation
+nestlo-vibe categories  # List 52 categories
+nestlo-vibe search rag  # Search library
+nestlo-vibe add <name>  # Install specific asset
 
 # Direct VIBE CLI also available:
 vibe                     # Interactive picker
@@ -302,17 +302,17 @@ vibe search "security"   # Search
 
 ## Agent Skills (`modules/skills`)
 
-`agentos.skills` links skill packs (nixos/packages/skills, pinned sources) into every agent CLI's user-level skills directory, for the agent user and `agentos.skills.users`.
+`nestlo.skills` links skill packs (nixos/packages/skills, pinned sources) into every agent CLI's user-level skills directory, for the agent user and `nestlo.skills.users`.
 
-- Packs: `fwc-swiftui-skills`, `ui-skills`, `img2threejs`; one `agentos.skills.packs.<name>.enable` option per pack.
-- Targets (`agentos.skills.targets`): `.agents/skills`, `.claude/skills`, `.codex/skills`, `.config/opencode/skills`, `.gemini/skills`, `.copilot/skills`, `.cursor/skills`, `.factory/skills`, `.config/agents/skills` (Amp), `.config/goose/skills`, `.qwen/skills`, `.config/crush/skills`.
+- Packs: `fwc-swiftui-skills`, `ui-skills`, `img2threejs`; one `nestlo.skills.packs.<name>.enable` option per pack.
+- Targets (`nestlo.skills.targets`): `.agents/skills`, `.claude/skills`, `.codex/skills`, `.config/opencode/skills`, `.gemini/skills`, `.copilot/skills`, `.cursor/skills`, `.factory/skills`, `.config/agents/skills` (Amp), `.config/goose/skills`, `.qwen/skills`, `.config/crush/skills`.
 - A name used by two packs fails the build. Skills a user wrote are not overwritten; stale links of ours are removed.
-- Pack tools are added to the PATH; pack MCP servers to `agentos.mcp-registry.extraToolServers`.
+- Pack tools are added to the PATH; pack MCP servers to `nestlo.mcp-registry.extraToolServers`.
 
 ```bash
-agentos-skills list
-agentos-skills doctor
-agentos-skills path <skill>
+nestlo-skills list
+nestlo-skills doctor
+nestlo-skills path <skill>
 ```
 
 See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skills`.
@@ -321,12 +321,12 @@ See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skill
 
 ## herdr (`modules/herdr`)
 
-`agentos.herdr` integrates [herdr](https://herdr.dev), persistent terminal workspaces in which panes are marked working, blocked or idle.
+`nestlo.herdr` integrates [herdr](https://herdr.dev), persistent terminal workspaces in which panes are marked working, blocked or idle.
 
-- A headless herdr server for the agent user (`agentos-herdr-server-agentos-agent`, sandboxed, not restarted by rebuilds); operators attach with `agentos-herdr attach`.
-- Management bridge `agentos-herdr status|metrics|monitor`: panes and agents per user and state, loopback Prometheus metrics (`agentos_herdr_panes{user,state}`, scraped by `agentos.observability`), and a notification through `agentos.notifications` when an agent stays blocked.
+- A headless herdr server for the agent user (`nestlo-herdr-server-nestlo-agent`, sandboxed, not restarted by rebuilds); operators attach with `nestlo-herdr attach`.
+- Management bridge `nestlo-herdr status|metrics|monitor`: panes and agents per user and state, loopback Prometheus metrics (`nestlo_herdr_panes{user,state}`, scraped by `nestlo.observability`), and a notification through `nestlo.notifications` when an agent stays blocked.
 - The Nestlo herdr plugin (`integrations/herdr-plugin`): orchestrator tasks, factory items, budgets, approve and cancel for gated tasks.
-- Declarative plugins (`agentos.herdr.plugins`, pinned to a commit, idempotent, uninstalls only what it installed) and `agentos-herdr-plugins` (marketplace catalog, review, pinned install, `install-all`, update with manifest diff).
+- Declarative plugins (`nestlo.herdr.plugins`, pinned to a commit, idempotent, uninstalls only what it installed) and `nestlo-herdr-plugins` (marketplace catalog, review, pinned install, `install-all`, update with manifest diff).
 - Opt-in daily marketplace sweep (`marketplace.installAll`): unreviewed third-party code, off by default, warned about for the agent user.
 - Skill pack `herdr`, `packages.<system>.herdr`, desktop launcher entry.
 
@@ -334,10 +334,10 @@ See [herdr.md](herdr.md). VM test `herdr`; unit tests `services/tests/test_herdr
 
 ## Nestlo Cloud (`modules/cloud`)
 
-`agentos.cloud` provides the exe.dev feature set on the host.
+`nestlo.cloud` provides the exe.dev feature set on the host.
 
-- Persistent VMs: systemd-nspawn machines with an ext4 disk each, user-namespaced root, pool slices (shared vCPU and memory) and standalone VMs, OCI images or the `agentos` image (the host's Nix store read-only: agents, dev tools, podman, Shelley).
-- The lobby over SSH (`ssh lobby@<host> <command>`) and the HTTPS API (`POST /exec`, SSH-signed `agentos0.` tokens with command allowlists, expiry and context; `exe0.`/`exe1.` accepted).
+- Persistent VMs: systemd-nspawn machines with an ext4 disk each, user-namespaced root, pool slices (shared vCPU and memory) and standalone VMs, OCI images or the `nestlo` image (the host's Nix store read-only: agents, dev tools, podman, Shelley).
+- The lobby over SSH (`ssh lobby@<host> <command>`) and the HTTPS API (`POST /exec`, SSH-signed `nestlo0.` tokens with command allowlists, expiry and context; `exe0.`/`exe1.` accepted).
 - A private HTTPS proxy per VM (Caddy, on-demand TLS): sharing with users or the team (web or root access), share links, public sites, any port, custom domains, login by SSH magic link or OIDC, identity headers, VM tokens.
 - Integrations injecting secrets at the edge: http-proxy, GitHub (git, repo allowlist, read-only), LLM (the model gateway per VM, exe.dev's protocol), peer; reflection integration and metadata service.
 - Teams, invites, plan quotas with metering, audit events, Prometheus metrics.
@@ -348,7 +348,7 @@ See [cloud.md](cloud.md). VM test `cloud`; unit tests `services/tests/test_cloud
 
 ## MCP Server Registry (36 servers)
 
-Preconfigured Model Context Protocol servers, written to `/etc/agentos/mcp-servers.json`. Each entry runs a published npm package (`npx -y`) or PyPI package (`uvx`), fetched on first start. Runtime enable/disable changes are stored in `/var/lib/agentos/mcp-servers.json`.
+Preconfigured Model Context Protocol servers, written to `/etc/nestlo/mcp-servers.json`. Each entry runs a published npm package (`npx -y`) or PyPI package (`uvx`), fetched on first start. Runtime enable/disable changes are stored in `/var/lib/nestlo/mcp-servers.json`.
 
 ### Core (7)
 | Server | Description | Package |
@@ -419,9 +419,9 @@ Preconfigured Model Context Protocol servers, written to `/etc/agentos/mcp-serve
 
 **CLI:**
 ```bash
-agentos-mcp list [category]   # List servers
-agentos-mcp enable <name>     # Enable (stored in /var/lib/agentos)
-agentos-mcp start <name>      # Run a server in the foreground
-agentos-mcp stats
+nestlo-mcp list [category]   # List servers
+nestlo-mcp enable <name>     # Enable (stored in /var/lib/nestlo)
+nestlo-mcp start <name>      # Run a server in the foreground
+nestlo-mcp stats
 ```
 

@@ -5,12 +5,12 @@ import os
 
 import pytest
 
-from agentos_services import policy as P
-from agentos_services import rbac as R
-from agentos_services import tasks as T
-from agentos_services import unixapi
-from agentos_services.orchestrator import Orchestrator
-from agentos_services.unixapi import ApiError
+from nestlo_services import policy as P
+from nestlo_services import rbac as R
+from nestlo_services import tasks as T
+from nestlo_services import unixapi
+from nestlo_services.orchestrator import Orchestrator
+from nestlo_services.unixapi import ApiError
 from orchfix import (cfg, clock, complete, orch, runtime, statuses, submit, systemctl,  # noqa: F401
                      taskstore)
 
@@ -200,7 +200,7 @@ def test_runner_revalidation_accepts_policy_fields(porch, runtime):
 # ── RBAC ─────────────────────────────────────────────────────────────────
 USERS = {  # name -> (uid, groups)
     "vera": (1001, {"auditors"}), "sam": (1002, {"devs"}), "alice": (1003, {"leads"}),
-    "root": (0, set()), "olga": (1004, {"agentos"}), "nobody": (1005, set()),
+    "root": (0, set()), "olga": (1004, {"nestlo"}), "nobody": (1005, set()),
 }
 
 
@@ -217,12 +217,12 @@ def _clear_peer():
 
 @pytest.fixture
 def rorch(cfg, taskstore, runtime, clock, systemctl, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("agentos_services.orchestrator.peer_identity",
+    monkeypatch.setattr("nestlo_services.orchestrator.peer_identity",
                         lambda peer: (peer["name"], peer["uid"]) if peer else ("unknown", None))
     cfg = copy.deepcopy(cfg)
     cfg["rbac"] = {"enable": True, "separate_approver": False, "roles": {
         "viewer": {"groups": ["auditors"]}, "submitter": {"groups": ["devs"]},
-        "approver": {"groups": ["leads"]}, "admin": {"groups": ["agentos"]}}}
+        "approver": {"groups": ["leads"]}, "admin": {"groups": ["nestlo"]}}}
     o = Orchestrator(cfg, taskstore, runtime=runtime, clock=clock, runner=systemctl, agents_running=lambda e: 0)
     o.rbac = R.Rbac(cfg, group_lookup=lambda peer: (peer["name"], set(peer["groups"])))
     return o
@@ -339,10 +339,10 @@ def test_whoami_lists_roles(rorch):
 
 
 def test_default_roles_keep_operators_working(cfg):
-    # Nix emits admin.groups = ["agentos"]; operators in that group can do everything
+    # Nix emits admin.groups = ["nestlo"]; operators in that group can do everything
     cfg = copy.deepcopy(cfg)
-    cfg["rbac"] = {"enable": True, "roles": {"admin": {"groups": ["agentos"]}}}
-    r = R.Rbac(cfg, group_lookup=lambda peer: ("op", {"agentos"}))
+    cfg["rbac"] = {"enable": True, "roles": {"admin": {"groups": ["nestlo"]}}}
+    r = R.Rbac(cfg, group_lookup=lambda peer: ("op", {"nestlo"}))
     ident = r.identity({"uid": 1000, "gid": 1, "pid": 1})
     assert ident["roles"] == ["admin"]
     for action in R.ALLOWED:
@@ -390,7 +390,7 @@ def test_self_approval_allowed_when_not_separate(rorch):
 
 
 def test_policy_gate_plus_four_eyes(cfg, taskstore, runtime, clock, systemctl, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("agentos_services.orchestrator.peer_identity",
+    monkeypatch.setattr("nestlo_services.orchestrator.peer_identity",
                         lambda peer: (peer["name"], peer["uid"]) if peer else ("unknown", None))
     cfg = copy.deepcopy(cfg)
     cfg["policy"] = {"default": {"require_approval": {"mode": "always"}}}

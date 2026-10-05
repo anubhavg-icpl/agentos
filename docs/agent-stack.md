@@ -1,15 +1,15 @@
 # Agent stack
 
-`agentos.agentStack` runs the apps of
+`nestlo.agentStack` runs the apps of
 [agent-fleet](https://github.com/anubhavg-icpl/agent-fleet) on the Nestlo host.
 agent-fleet deploys them as Hugging Face Docker Spaces; here they are NixOS
 services and podman containers behind the model gateway.
 
 ```nix
-agentos.agentStack = {
+nestlo.agentStack = {
   enable = true;                 # allows the apps below; off by default
   n8n.enable = true;
-  localChat.enable = true;       # Open WebUI + Ollama through agentos.localAI
+  localChat.enable = true;       # Open WebUI + Ollama through nestlo.localAI
   flowise.enable = true;
   langflow.enable = true;
   anythingllm.enable = true;
@@ -18,7 +18,7 @@ agentos.agentStack = {
 };
 ```
 
-Needs `agentos.runtime.enable` and `agentos.networking.enable` (the model
+Needs `nestlo.runtime.enable` and `nestlo.networking.enable` (the model
 gateway). Everything is off by default; an app enabled without
 `agentStack.enable` fails the build.
 
@@ -27,7 +27,7 @@ gateway). Everything is off by default; an app enabled without
 | App | How | Host port (127.0.0.1) | Login |
 |---|---|---|---|
 | n8n | native, `services.n8n` | 5678 | owner account on first visit |
-| local chat | native, `agentos.localAI` (Ollama + `services.open-webui`) | 8180 | first Open WebUI signup is admin |
+| local chat | native, `nestlo.localAI` (Ollama + `services.open-webui`) | 8180 | first Open WebUI signup is admin |
 | Flowise | podman, `flowiseai/flowise` | 3000 | basic auth, `fleet-admin` + generated password |
 | Langflow | podman, `langflowai/langflow` | 7860 | `langflow` + generated password |
 | AnythingLLM | podman, `mintplexlabs/anythingllm` | 3001 | generated instance password, then the wizard |
@@ -50,9 +50,9 @@ use `http://127.0.0.1` or `localhost` through the tunnel.
 
 ### Local chat
 
-`agentStack.localChat.enable` turns on `agentos.localAI` (Ollama backend) with
+`agentStack.localChat.enable` turns on `nestlo.localAI` (Ollama backend) with
 Open WebUI and pulls the agent-fleet models `llama3.2:1b`, `qwen2.5:0.5b` and
-`nomic-embed-text` (`localChat.models`, appended to `agentos.localAI.models`).
+`nomic-embed-text` (`localChat.models`, appended to `nestlo.localAI.models`).
 It is the same instance as in [local-ai.md](local-ai.md), not a second copy;
 the `local` gateway provider is registered as usual. `WEBUI_AUTH=True`, and a
 generated `WEBUI_SECRET_KEY`. The agent-fleet image bakes the models in; here
@@ -62,17 +62,17 @@ open signup in Open WebUI after the first account exists.
 ### Flowise, Langflow, AnythingLLM, LobeChat
 
 `virtualisation.oci-containers` with the podman backend, container names
-`agentos-stack-<app>`, units `podman-agentos-stack-<app>.service`. Each one:
+`nestlo-stack-<app>`, units `podman-nestlo-stack-<app>.service`. Each one:
 
 - publishes `127.0.0.1:<port>:<container port>`;
-- has a persistent directory `/var/lib/agentos-stack/<app>` mounted where the
+- has a persistent directory `/var/lib/nestlo-stack/<app>` mounted where the
   app keeps its state (Flowise `/root/.flowise`, Langflow `/app/langflow`,
   AnythingLLM `/app/server/storage`; LobeChat keeps chats in the browser and
   gets an unused `/data`);
 - runs with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, no
   `--privileged`, `--memory=<memoryMax>` without swap and `--pids-limit=2048`;
 - is on its own podman network `agentstack` (bridge `agentstack0`);
-- reads `/var/lib/agentos-stack/secrets/<app>.env` and, where the app takes its
+- reads `/var/lib/nestlo-stack/secrets/<app>.env` and, where the app takes its
   LLM endpoint from the environment, `<app>.llm.env`.
 
 Capabilities can be added back per app (`agentStack.<app>.capabilities =
@@ -103,7 +103,7 @@ podman build --build-arg PUBLIC_URL=http://127.0.0.1:7861 \
 ```
 
 ```nix
-agentos.agentStack.openmuse = {
+nestlo.agentStack.openmuse = {
   enable = true;
   image = "localhost/openmuse:local";            # pin by digest when you can
   cpkKeyFile = "/run/secrets/cpk-intelligence";  # CPK_INTELLIGENCE_API_KEY=...
@@ -117,8 +117,8 @@ Treat OpenMuse as unsupported.
 
 ## Secrets
 
-`agentos-stack-secrets.service` (root oneshot, before every app) creates
-`/var/lib/agentos-stack/secrets` (0700) and these files (0600) when missing:
+`nestlo-stack-secrets.service` (root oneshot, before every app) creates
+`/var/lib/nestlo-stack/secrets` (0700) and these files (0600) when missing:
 
 | File | Content |
 |---|---|
@@ -131,8 +131,8 @@ Treat OpenMuse as unsupported.
 | `openmuse.env` | `OPENMUSE_ACCESS_KEY`, `TOKEN_ENCRYPTION_KEY`, `WORKER_TOKEN` |
 | `<app>.gateway-token`, `<app>.llm.env` | gateway token and LLM endpoint (below) |
 
-Read a password with `sudo cat /var/lib/agentos-stack/secrets/flowise.env`.
-Rotate by deleting the file and restarting `agentos-stack-secrets` and the
+Read a password with `sudo cat /var/lib/nestlo-stack/secrets/flowise.env`.
+Rotate by deleting the file and restarting `nestlo-stack-secrets` and the
 app. Existing files are never overwritten (n8n: changing the key makes stored
 credentials unreadable). Nothing generated is in the Nix store or in a unit
 file; the container units only reference the paths.
@@ -141,13 +141,13 @@ file; the container units only reference the paths.
 
 Every enabled app is a gateway agent `stack-<app>` (`stack-n8n`,
 `stack-local-chat`, `stack-flowise`, `stack-langflow`, `stack-anythingllm`,
-`stack-lobechat`, `stack-openmuse`). `agentos-stack-gw-<app>.service` creates a
+`stack-lobechat`, `stack-openmuse`). `nestlo-stack-gw-<app>.service` creates a
 token (`<app>.gateway-token`), registers its sha256 through the admin socket
 and sets the daily budget `agentStack.<app>.budgetUsd` (default 2 USD), as
 [openclaw.md](openclaw.md) does. It writes `<app>.llm.env` with the OpenAI-
 and Anthropic-compatible base URLs
 `http://<host>:8080/agent/stack-<app>:<token>/{openai/v1,anthropic}` and the
-placeholder key `agentos-managed`; the gateway injects the real key. The apps
+placeholder key `nestlo-managed`; the gateway injects the real key. The apps
 never get a provider key. `agentStack.gateway.openaiProvider = "local"` points
 the OpenAI-compatible URL at the local Ollama instead.
 
@@ -174,7 +174,7 @@ Unix socket and is not reachable at all.
 ## Limits
 
 - Containers have outbound internet through podman's NAT (Flowise and others
-  fetch URLs and packages); the `agentos.security` egress allowlist applies to
+  fetch URLs and packages); the `nestlo.security` egress allowlist applies to
   agents, not to these containers. DNS is not provided on the stack bridge:
   containers inherit the host's resolver configuration, which does not work if
   it is a loopback stub. Set `extraOptions = [ "--dns=1.1.1.1" ]` per app.

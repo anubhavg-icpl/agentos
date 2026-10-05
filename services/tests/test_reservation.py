@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from agentos_services.store import BudgetRefused
+from nestlo_services.store import BudgetRefused
 from conftest import request
 
 ANTHROPIC = "/agent/a1/anthropic/v1/messages"

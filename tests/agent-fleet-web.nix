@@ -7,18 +7,18 @@
 # cross-origin isolation headers wllama needs on /chat/ only, refuses path
 # traversal and writes, is bound to loopback only, and that the vendored chat
 # no longer loads wllama from a CDN.
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 pkgs.testers.runNixOSTest {
-  name = "agentos-agent-fleet-web";
+  name = "nestlo-agent-fleet-web";
   globalTimeout = 900;
 
   nodes.machine = { ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 1536;
 
-    agentos.dashboard.agentFleetWeb.enable = true;
+    nestlo.dashboard.agentFleetWeb.enable = true;
     environment.systemPackages = [ pkgs.curl ];
   };
 

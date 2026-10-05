@@ -1,4 +1,4 @@
-# Eval-only check for agentos.policy and agentos.rbac. Nothing is built or
+# Eval-only check for nestlo.policy and nestlo.rbac. Nothing is built or
 # booted: a violation makes evaluation fail.
 #
 #   nix build .#checks.x86_64-linux.policy-eval
@@ -8,14 +8,14 @@
 #   - a deliberately invalid policy (negative budget, unknown agent, model
 #     missing from pricing.json, costAbove without a threshold, container
 #     isolation on a sandbox host) trips one assertion each
-#   - agentos.rbac defaults keep the agentos group as admins
+#   - nestlo.rbac defaults keep the nestlo group as admins
 { pkgs, host }:
 
 let
   inherit (pkgs) lib;
 
   failing = cfg: map (a: a.message) (lib.filter (a: !a.assertion) cfg.config.assertions);
-  with' = policy: host.extendModules { modules = [{ agentos.policy = { enable = true; } // policy; }]; };
+  with' = policy: host.extendModules { modules = [{ nestlo.policy = { enable = true; } // policy; }]; };
 
   valid = with' {
     default = { budgetUsd = 20; dailyBudgetUsd = 100; maxRetries = 2; };
@@ -43,12 +43,12 @@ let
 
   messages = failing invalid;
   mentions = s: lib.any (m: lib.hasInfix s m) messages;
-  settings = valid.config.agentos.services.settings;
-  roles = valid.config.agentos.rbac.roles;
+  settings = valid.config.nestlo.services.settings;
+  roles = valid.config.nestlo.rbac.roles;
 in
 assert lib.assertMsg (failing valid == [ ]) "valid policy: assertions fail: ${toString (failing valid)}";
 assert lib.assertMsg
-  (settings.policy.version == valid.config.agentos.policy.version
+  (settings.policy.version == valid.config.nestlo.policy.version
     && builtins.stringLength settings.policy.version == 12)
   "policy version is not the compiled hash";
 assert lib.assertMsg
@@ -60,11 +60,11 @@ assert lib.assertMsg
     && settings.policy.repos.scratch.budget_usd == 20)
   "policy did not compile into services.toml";
 assert lib.assertMsg
-  (roles.admin.groups == [ "agentos" ] && settings.rbac.separate_approver == false)
-  "rbac defaults changed: operators in the agentos group must stay admins";
+  (roles.admin.groups == [ "nestlo" ] && settings.rbac.separate_approver == false)
+  "rbac defaults changed: operators in the nestlo group must stay admins";
 assert lib.assertMsg (mentions "must be positive (got -1)") "negative budget was not caught: ${toString messages}";
 assert lib.assertMsg (mentions "unknown agent no-such-agent") "unknown agent was not caught: ${toString messages}";
 assert lib.assertMsg (mentions "no-such-model is not in the pricing file") "unknown model was not caught: ${toString messages}";
 assert lib.assertMsg (mentions "needs thresholdUsd") "costAbove without threshold was not caught: ${toString messages}";
 assert lib.assertMsg (mentions "isolation = \"container\"") "container isolation was not caught: ${toString messages}";
-pkgs.runCommand "agentos-policy-eval" { } "touch $out"
+pkgs.runCommand "nestlo-policy-eval" { } "touch $out"

@@ -1,25 +1,25 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Triggers Module
+# Nestlo Triggers Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# GitHub webhooks become orchestrator tasks (services/agentos_services/triggers.py,
+# GitHub webhooks become orchestrator tasks (services/nestlo_services/triggers.py,
 # docs/triggers.md):
-#   - agentos-triggers listens on 127.0.0.1; put your reverse proxy or
+#   - nestlo-triggers listens on 127.0.0.1; put your reverse proxy or
 #     tunnel in front of it
 #   - every request must carry a valid X-Hub-Signature-256; deliveries are
 #     deduplicated; the body size is capped
 #   - declarative rules say which events (issue opened / labeled, a
-#     "/agentos ..." comment, a failed check run, a review comment) start
+#     "/nestlo ..." comment, a failed check run, a review comment) start
 #     which agent in which workspace, and whether the result is published
-#     as a pull request (see agentos.git-automation.publish)
-#   - the service runs as `agentos` and only talks to the orchestrator
-#     socket (group agentos), like the scheduler does
+#     as a pull request (see nestlo.git-automation.publish)
+#   - the service runs as `nestlo` and only talks to the orchestrator
+#     socket (group nestlo), like the scheduler does
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.triggers;
-  rt = config.agentos.runtime;
+  cfg = config.nestlo.triggers;
+  rt = config.nestlo.runtime;
 
   ruleType = lib.types.submodule {
     options = {
@@ -50,7 +50,7 @@ let
       commandPrefix = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
-        example = "/agentos";
+        example = "/nestlo";
         description = ''
           Comment events only: the comment must start with this word.
           `{comment.body}` is then the text after it.
@@ -76,7 +76,7 @@ let
         default = null;
         example = "web";
         description = ''
-          Name of an `agentos.factory.lines` entry. A matching issue is then
+          Name of an `nestlo.factory.lines` entry. A matching issue is then
           POSTed to the factory (`/items`: line, title, body, source) instead
           of being submitted as an orchestrator task; `workspace`, `agent`
           and `prompt` are not used. Trust rules, sanitisation and
@@ -86,13 +86,13 @@ let
       workspace = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
-        description = "Workspace name or path under agentos.runtime.workspaceRoot (never taken from the event). Required unless `factory` is set.";
+        description = "Workspace name or path under nestlo.runtime.workspaceRoot (never taken from the event). Required unless `factory` is set.";
       };
       agent = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
         example = "claude";
-        description = "Agent to run; it needs an entry in agentos.orchestration.taskCommands. Required unless `factory` is set.";
+        description = "Agent to run; it needs an entry in nestlo.orchestration.taskCommands. Required unless `factory` is set.";
       };
       prompt = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
@@ -112,7 +112,7 @@ let
         default = false;
         description = ''
           Push the agent's branch and open a pull request when the task
-          succeeds (needs agentos.git-automation.publish for this repository).
+          succeeds (needs nestlo.git-automation.publish for this repository).
         '';
       };
       gate = lib.mkOption {
@@ -132,7 +132,7 @@ let
       timeoutSec = lib.mkOption {
         type = lib.types.nullOr lib.types.ints.positive;
         default = null;
-        description = "Task timeout (null: agentos.orchestration.taskTimeoutSec)";
+        description = "Task timeout (null: nestlo.orchestration.taskTimeoutSec)";
       };
     };
   };
@@ -152,8 +152,8 @@ let
     // lib.optionalAttrs (r.timeoutSec != null) { timeout_sec = r.timeoutSec; };
 in
 {
-  options.agentos.triggers = {
-    enable = lib.mkEnableOption "AgentOS GitHub event triggers";
+  options.nestlo.triggers = {
+    enable = lib.mkEnableOption "Nestlo GitHub event triggers";
 
     address = lib.mkOption {
       type = lib.types.str;
@@ -170,7 +170,7 @@ in
     secretFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
-      example = "/run/secrets/agentos-webhook-secret";
+      example = "/run/secrets/nestlo-webhook-secret";
       description = ''
         File holding the webhook secret (the same string as in the GitHub
         webhook settings, at least 8 characters, e.g. `openssl rand -hex 32`).
@@ -221,7 +221,7 @@ in
           fix-labeled-issue = {
             event = "issues";
             action = [ "labeled" ];
-            label = "agentos";
+            label = "nestlo";
             repo = "acme/widgets";
             workspace = "widgets";
             agent = "claude";
@@ -235,10 +235,10 @@ in
   };
 
   config = lib.mkMerge [
-    # Rules for the factory lines that take GitHub issues (agentos.factory).
+    # Rules for the factory lines that take GitHub issues (nestlo.factory).
     # mkDefault on the whole rule: a user rule named factory-<line> replaces it.
     {
-      agentos.triggers.rules = lib.mapAttrs'
+      nestlo.triggers.rules = lib.mapAttrs'
         (name: l: lib.nameValuePair "factory-${name}" (lib.mkDefault {
           event = "issues";
           action = [ "opened" "labeled" ];
@@ -246,41 +246,41 @@ in
           repo = l.intake.github.repo;
           factory = name;
         }))
-        (lib.filterAttrs (_: l: l.intake.github != null) config.agentos.factory.lines);
+        (lib.filterAttrs (_: l: l.intake.github != null) config.nestlo.factory.lines);
     }
     (lib.mkIf cfg.enable {
     assertions = [
       {
         assertion = rt.enable;
-        message = "agentos.triggers needs agentos.runtime.enable (Redis and the agentos user)";
+        message = "nestlo.triggers needs nestlo.runtime.enable (Redis and the nestlo user)";
       }
       {
-        assertion = config.agentos.orchestration.enable;
-        message = "agentos.triggers submits its work to the orchestrator; set agentos.orchestration.enable = true";
+        assertion = config.nestlo.orchestration.enable;
+        message = "nestlo.triggers submits its work to the orchestrator; set nestlo.orchestration.enable = true";
       }
       {
         assertion = cfg.secretFile != null;
-        message = "agentos.triggers.secretFile must be set: webhooks are never accepted unsigned";
+        message = "nestlo.triggers.secretFile must be set: webhooks are never accepted unsigned";
       }
       {
-        assertion = lib.all (r: !r.publish) (lib.attrValues cfg.rules) || config.agentos.git-automation.publish.repos != { };
-        message = "agentos.triggers rules with publish = true need agentos.git-automation.publish.repos";
+        assertion = lib.all (r: !r.publish) (lib.attrValues cfg.rules) || config.nestlo.git-automation.publish.repos != { };
+        message = "nestlo.triggers rules with publish = true need nestlo.git-automation.publish.repos";
       }
       {
         assertion = lib.all (r: r.factory != null || (r.agent != null && r.workspace != null && r.prompt != null)) (lib.attrValues cfg.rules);
-        message = "agentos.triggers rules need agent, workspace and prompt unless they set `factory`";
+        message = "nestlo.triggers rules need agent, workspace and prompt unless they set `factory`";
       }
       {
-        assertion = lib.all (r: r.factory == null || builtins.hasAttr r.factory config.agentos.factory.lines) (lib.attrValues cfg.rules);
-        message = "agentos.triggers rules with `factory` must name a line of agentos.factory.lines";
+        assertion = lib.all (r: r.factory == null || builtins.hasAttr r.factory config.nestlo.factory.lines) (lib.attrValues cfg.rules);
+        message = "nestlo.triggers rules with `factory` must name a line of nestlo.factory.lines";
       }
       {
-        assertion = lib.all (r: r.factory == null || (config.agentos.factory.enable && r.event == "issues")) (lib.attrValues cfg.rules);
-        message = "agentos.triggers rules with `factory` need agentos.factory.enable and event = \"issues\"";
+        assertion = lib.all (r: r.factory == null || (config.nestlo.factory.enable && r.event == "issues")) (lib.attrValues cfg.rules);
+        message = "nestlo.triggers rules with `factory` need nestlo.factory.enable and event = \"issues\"";
       }
     ];
 
-    agentos.services.settings.triggers = {
+    nestlo.services.settings.triggers = {
       listen = cfg.address;
       inherit (cfg) port;
       max_body_bytes = cfg.maxBodyKB * 1024;
@@ -290,23 +290,23 @@ in
       rules = lib.mapAttrs toRule cfg.rules;
     };
 
-    systemd.services.agentos-triggers = {
-      description = "AgentOS GitHub webhook triggers";
-      after = [ "network.target" "redis-agentos.service" "agentos-orchestrator.service" ];
-      requires = [ "redis-agentos.service" ];
-      wants = [ "agentos-orchestrator.service" ];
+    systemd.services.nestlo-triggers = {
+      description = "Nestlo GitHub webhook triggers";
+      after = [ "network.target" "redis-nestlo.service" "nestlo-orchestrator.service" ];
+      requires = [ "redis-nestlo.service" ];
+      wants = [ "nestlo-orchestrator.service" ];
       wantedBy = [ "multi-user.target" ];
-      restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+      restartTriggers = [ config.environment.etc."nestlo/services.toml".source ];
 
       serviceConfig = {
         Type = "simple";
-        # `agentos` is the group of the orchestrator socket (what operators
+        # `nestlo` is the group of the orchestrator socket (what operators
         # use), like the scheduler's; the service has no other privileges
-        User = "agentos";
-        Group = "agentos";
-        SupplementaryGroups = [ "redis-agentos" ];
+        User = "nestlo";
+        Group = "nestlo";
+        SupplementaryGroups = [ "redis-nestlo" ];
         LoadCredential = lib.optional (cfg.secretFile != null) "webhook-secret:${toString cfg.secretFile}";
-        ExecStart = "${pkgs.agentos.services}/bin/agentos-triggers --secret-file %d/webhook-secret";
+        ExecStart = "${pkgs.nestlo.services}/bin/nestlo-triggers --secret-file %d/webhook-secret";
         Restart = "on-failure";
         RestartSec = 3;
 

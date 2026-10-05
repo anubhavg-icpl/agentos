@@ -1,20 +1,20 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Scheduler Module
+# Nestlo Scheduler Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Runs agent tasks on a calendar (services/agentos_services/scheduler.py):
+# Runs agent tasks on a calendar (services/nestlo_services/scheduler.py):
 #   - schedules use systemd OnCalendar syntax, evaluated by
 #     `systemd-analyze calendar` (UTC unless the expression names a zone)
 #   - each firing submits a task (or a swarm) to the orchestrator, so
 #     concurrency, sandboxing, budgets and logs are the orchestrator's
 #   - persistent schedules run once at start-up if a run was missed
-#   - declare schedules here, or manage them at runtime with `agentos-schedule`
+#   - declare schedules here, or manage them at runtime with `nestlo-schedule`
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.scheduler;
-  rt = config.agentos.runtime;
+  cfg = config.nestlo.scheduler;
+  rt = config.nestlo.runtime;
 
   scheduleType = lib.types.submodule {
     options = {
@@ -26,11 +26,11 @@ let
       agent = lib.mkOption {
         type = lib.types.str;
         example = "claude";
-        description = "Agent to run; it needs an entry in agentos.orchestration.taskCommands";
+        description = "Agent to run; it needs an entry in nestlo.orchestration.taskCommands";
       };
       workspace = lib.mkOption {
         type = lib.types.str;
-        description = "Workspace name or path under agentos.runtime.workspaceRoot";
+        description = "Workspace name or path under nestlo.runtime.workspaceRoot";
       };
       prompt = lib.mkOption {
         type = lib.types.str;
@@ -44,7 +44,7 @@ let
       timeoutSec = lib.mkOption {
         type = lib.types.nullOr lib.types.ints.positive;
         default = null;
-        description = "Task timeout (null: agentos.orchestration.taskTimeoutSec)";
+        description = "Task timeout (null: nestlo.orchestration.taskTimeoutSec)";
       };
       swarm = lib.mkOption {
         type = lib.types.ints.positive;
@@ -80,18 +80,18 @@ let
 in
 {
   imports = [
-    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "maxConcurrent" ]
-      "Concurrency is limited by agentos.orchestration.maxWorkers.")
-    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "enablePriorityQueues" ]
-      "Schedules have no priority queues. Tasks take a priority of their own: `agentos-task submit --priority`.")
-    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursOnly" ]
+    (lib.mkRemovedOptionModule [ "nestlo" "scheduler" "maxConcurrent" ]
+      "Concurrency is limited by nestlo.orchestration.maxWorkers.")
+    (lib.mkRemovedOptionModule [ "nestlo" "scheduler" "enablePriorityQueues" ]
+      "Schedules have no priority queues. Tasks take a priority of their own: `nestlo-task submit --priority`.")
+    (lib.mkRemovedOptionModule [ "nestlo" "scheduler" "offHoursOnly" ]
       "Put the window in the schedule's calendar expression instead, e.g. \"*-*-* 22..23,00..05:00/30:00\".")
-    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursStart" ] "See offHoursOnly.")
-    (lib.mkRemovedOptionModule [ "agentos" "scheduler" "offHoursEnd" ] "See offHoursOnly.")
+    (lib.mkRemovedOptionModule [ "nestlo" "scheduler" "offHoursStart" ] "See offHoursOnly.")
+    (lib.mkRemovedOptionModule [ "nestlo" "scheduler" "offHoursEnd" ] "See offHoursOnly.")
   ];
 
-  options.agentos.scheduler = {
-    enable = lib.mkEnableOption "AgentOS scheduler";
+  options.nestlo.scheduler = {
+    enable = lib.mkEnableOption "Nestlo scheduler";
 
     schedules = lib.mkOption {
       type = lib.types.attrsOf scheduleType;
@@ -111,7 +111,7 @@ in
       description = ''
         Schedules managed by the configuration (keyed by name). They are
         re-synced whenever the scheduler starts and cannot be removed with
-        `agentos-schedule`. Schedules added with the CLI are kept separately.
+        `nestlo-schedule`. Schedules added with the CLI are kept separately.
       '';
     };
   };
@@ -120,35 +120,35 @@ in
     assertions = [
       {
         assertion = rt.enable;
-        message = "agentos.scheduler needs agentos.runtime.enable (it stores schedules in the control-plane Redis)";
+        message = "nestlo.scheduler needs nestlo.runtime.enable (it stores schedules in the control-plane Redis)";
       }
       {
-        assertion = config.agentos.orchestration.enable;
-        message = "agentos.scheduler submits its work to the orchestrator; set agentos.orchestration.enable = true";
+        assertion = config.nestlo.orchestration.enable;
+        message = "nestlo.scheduler submits its work to the orchestrator; set nestlo.orchestration.enable = true";
       }
     ];
 
-    agentos.services.settings.scheduler.schedules = lib.mapAttrsToList toSettings cfg.schedules;
+    nestlo.services.settings.scheduler.schedules = lib.mapAttrsToList toSettings cfg.schedules;
 
     # ─ Scheduler service ─────────────────────────────────────────────
-    systemd.services.agentos-scheduler = {
-      description = "AgentOS scheduler";
-      after = [ "redis-agentos.service" "agentos-orchestrator.service" ];
-      requires = [ "redis-agentos.service" ];
-      wants = [ "agentos-orchestrator.service" ];
+    systemd.services.nestlo-scheduler = {
+      description = "Nestlo scheduler";
+      after = [ "redis-nestlo.service" "nestlo-orchestrator.service" ];
+      requires = [ "redis-nestlo.service" ];
+      wants = [ "nestlo-orchestrator.service" ];
       wantedBy = [ "multi-user.target" ];
-      restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+      restartTriggers = [ config.environment.etc."nestlo/services.toml".source ];
       path = [ config.systemd.package ]; # systemd-analyze
 
       serviceConfig = {
         Type = "simple";
-        User = "agentos";
-        Group = "agentos";
-        SupplementaryGroups = [ "redis-agentos" ];
-        ExecStart = "${pkgs.agentos.services}/bin/agentos-scheduler";
+        User = "nestlo";
+        Group = "nestlo";
+        SupplementaryGroups = [ "redis-nestlo" ];
+        ExecStart = "${pkgs.nestlo.services}/bin/nestlo-scheduler";
         Restart = "on-failure";
         RestartSec = 3;
-        RuntimeDirectory = "agentos-scheduler";
+        RuntimeDirectory = "nestlo-scheduler";
         RuntimeDirectoryMode = "0750";
         UMask = "0007";
 
@@ -166,6 +166,6 @@ in
       };
     };
 
-    environment.systemPackages = [ pkgs.agentos.schedule-cli ];
+    environment.systemPackages = [ pkgs.nestlo.schedule-cli ];
   };
 }

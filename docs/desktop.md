@@ -9,38 +9,38 @@ change; everything below is opt-in.
 
 | Output | What it is |
 |---|---|
-| `nixosConfigurations.agentos-desktop` | The `agentos` host plus the desktop (bare metal, installed with `agentos-install --desktop`) |
-| `nixosConfigurations.agentos-desktop-vm` | The same as a QEMU/KVM guest |
-| `nixosConfigurations.agentos-desktop-iso` | Live installer ISO with the desktop |
-| `packages.<system>.desktop-vm-image` | Bootable qcow2 of the desktop VM (a random `admin` password is generated at first boot, shown on the console and in `/var/lib/agentos/first-boot-password`, and must be changed at first login) |
+| `nixosConfigurations.nestlo-desktop` | The `nestlo` host plus the desktop (bare metal, installed with `nestlo-install --desktop`) |
+| `nixosConfigurations.nestlo-desktop-vm` | The same as a QEMU/KVM guest |
+| `nixosConfigurations.nestlo-desktop-iso` | Live installer ISO with the desktop |
+| `packages.<system>.desktop-vm-image` | Bootable qcow2 of the desktop VM (a random `admin` password is generated at first boot, shown on the console and in `/var/lib/nestlo/first-boot-password`, and must be changed at first login) |
 | `packages.<system>.desktop-iso-image` | The desktop live ISO (several GB larger than `iso-image`) |
 
 ```
 nix build .#desktop-vm-image
 nix build .#desktop-iso-image
-sudo agentos-install /dev/nvme0n1 --desktop     # from a live ISO
+sudo nestlo-install /dev/nvme0n1 --desktop     # from a live ISO
 ```
 
-`agentos-install --desktop` installs `agentos-desktop` (`agentos-desktop-aarch64`
+`nestlo-install --desktop` installs `nestlo-desktop` (`nestlo-desktop-aarch64`
 on ARM) and asks for a password for `admin`. The server host only accepts SSH
 keys, but a desktop needs a local login. The password hash is written to
-`/etc/agentos/admin-password`, which `users.users.admin.hashedPasswordFile`
+`/etc/nestlo/admin-password`, which `users.users.admin.hashedPasswordFile`
 points at.
 
-On a desktop host built without `agentos-install`, set
-`agentos.desktop.initialHashedPassword` (from `mkpasswd -m yescrypt`) or create
-`/etc/agentos/admin-password`; activation warns when neither exists.
-`agentos-install --encrypt` puts the root filesystem on LUKS2 (passphrase at
+On a desktop host built without `nestlo-install`, set
+`nestlo.desktop.initialHashedPassword` (from `mkpasswd -m yescrypt`) or create
+`/etc/nestlo/admin-password`; activation warns when neither exists.
+`nestlo-install --encrypt` puts the root filesystem on LUKS2 (passphrase at
 boot; TPM2 unlock is on the roadmap).
 
 ## Enabling it on your own host
 
-For sway or Hyprland, set `agentos.desktop.windowManager` in your host
+For sway or Hyprland, set `nestlo.desktop.windowManager` in your host
 configuration and rebuild. The flake does not ship separate host outputs for
 them, which keeps `nix flake check` within CI memory.
 
 ```nix
-agentos.desktop = {
+nestlo.desktop = {
   enable = true;
   windowManager = "i3";          # "i3" | "sway" | "hyprland"
   autologin.enable = false;      # off by default
@@ -61,7 +61,7 @@ Options: `gaps.inner` / `gaps.outer`, `compositor` (picom under i3),
   sway config `/etc/sway/config`; both apply to every user until they create
   `~/.config/i3/config` / `~/.config/sway/config`. Hyprland has no system-wide
   lookup path, so the greeter starts it with
-  `--config /etc/agentos/desktop/hyprland.conf`; copy that file to
+  `--config /etc/nestlo/desktop/hyprland.conf`; copy that file to
   `~/.config/hypr/hyprland.conf` and start Hyprland yourself to customise it.
 - **Display manager.** i3 uses LightDM (best-supported X11 login manager,
   proper autologin). sway and hyprland use greetd with tuigreet, a text-mode
@@ -75,13 +75,13 @@ Options: `gaps.inner` / `gaps.outer`, `compositor` (picom under i3),
   screenshots (flameshot / grim + slurp + swappy), NetworkManager applet,
   polkit agent, gnome-keyring, PipeWire (with PulseAudio and ALSA
   compatibility), xdg portals, optional Bluetooth.
-- **Dashboard.** `agentos status` and `agentos list` run in a hidden terminal
+- **Dashboard.** `nestlo status` and `nestlo list` run in a hidden terminal
   that starts at login: `$mod+grave` shows or hides it (scratchpad on i3 and
   sway, special workspace on hyprland).
 - **IDEs.** VS Code with extensions (Nix, Python + Pylance, Go, rust-analyzer,
   ESLint, Prettier, GitLens, TOML, YAML, direnv, Docker, One Dark Pro), Zed,
   and Firefox. JetBrains IDEs are off by default (large): set
-  `agentos.desktop.jetbrains.enable = true`. neovim and helix come from the
+  `nestlo.desktop.jetbrains.enable = true`. neovim and helix come from the
   existing `editors` module.
 - **Default editor settings** are copied to `~/.config/Code/User/settings.json`
   and `~/.config/zed/settings.json` on first login (only if missing).
@@ -115,7 +115,7 @@ Options: `gaps.inner` / `gaps.outer`, `compositor` (picom under i3),
 - **VS Code is `vscode` with `vscode-with-extensions`**, not `vscode-fhs`: the
   extension set is declarative and reproducible. The trade-off is that
   extensions installed at runtime from the marketplace cannot run unpatched
-  binaries. Set `agentos.desktop.vscode.fhs = true` for `vscode-fhs` (no
+  binaries. Set `nestlo.desktop.vscode.fhs = true` for `vscode-fhs` (no
   pre-installed extensions) if you prefer that.
 - **Hyprland needs GPU acceleration.** It performs poorly or fails in VMs
   without 3D support. Use i3 or sway in VMs; the VM image and live ISO default

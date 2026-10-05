@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Environment Provisioning Module
+# Nestlo Environment Provisioning Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Automatically provisions the right dev environment for each project:
@@ -12,16 +12,16 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.provisioning;
+  cfg = config.nestlo.provisioning;
 in
 {
   imports = [
-    (lib.mkRemovedOptionModule [ "agentos" "provisioning" "enableAutoDetect" ]
-      "The provisioner service was a stub and is removed; `agentos-env` always auto-detects. See docs/ROADMAP.md.")
+    (lib.mkRemovedOptionModule [ "nestlo" "provisioning" "enableAutoDetect" ]
+      "The provisioner service was a stub and is removed; `nestlo-env` always auto-detects. See docs/ROADMAP.md.")
   ];
 
-  options.agentos.provisioning = {
-    enable = lib.mkEnableOption "AgentOS environment provisioning";
+  options.nestlo.provisioning = {
+    enable = lib.mkEnableOption "Nestlo environment provisioning";
 
     enableCache = lib.mkOption {
       type = lib.types.bool;
@@ -52,11 +52,11 @@ in
     services.nix-serve = lib.mkIf cfg.enableCache {
       enable = true;
       port = 5000;
-      secretKeyFile = "/var/lib/agentos/cache-priv-key.pem";
+      secretKeyFile = "/var/lib/nestlo/cache-priv-key.pem";
     };
 
     # Generate cache key on first boot
-    systemd.services.agentos-cache-key = lib.mkIf cfg.enableCache {
+    systemd.services.nestlo-cache-key = lib.mkIf cfg.enableCache {
       description = "Generate Nix cache signing key";
       after = [ "local-fs.target" ];
       before = [ "nix-serve.service" ];
@@ -65,10 +65,10 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = toString (pkgs.writeShellScript "gen-key" ''
-          if [ ! -f /var/lib/agentos/cache-priv-key.pem ]; then
-            mkdir -p /var/lib/agentos
+          if [ ! -f /var/lib/nestlo/cache-priv-key.pem ]; then
+            mkdir -p /var/lib/nestlo
             ${config.nix.package}/bin/nix-store --generate-binary-cache-key \
-              agentos-local /var/lib/agentos/cache-priv-key.pem /var/lib/agentos/cache-pub-key.pem
+              nestlo-local /var/lib/nestlo/cache-priv-key.pem /var/lib/nestlo/cache-pub-key.pem
             echo "[cache-key] Generated local cache key"
           fi
         '');
@@ -76,7 +76,7 @@ in
     };
 
     # ─ Environment templates ─────────────────────────────────────────
-    environment.etc."agentos/env-templates/python-3.11.nix".text = ''
+    environment.etc."nestlo/env-templates/python-3.11.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ python311 ];
@@ -89,35 +89,35 @@ in
       }
     '';
 
-    environment.etc."agentos/env-templates/python-3.12.nix".text = ''
+    environment.etc."nestlo/env-templates/python-3.12.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ python312 ];
       }
     '';
 
-    environment.etc."agentos/env-templates/node-22.nix".text = ''
+    environment.etc."nestlo/env-templates/node-22.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ nodejs_22 pnpm yarn ];
       }
     '';
 
-    environment.etc."agentos/env-templates/node-24.nix".text = ''
+    environment.etc."nestlo/env-templates/node-24.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ nodejs_24 pnpm ];
       }
     '';
 
-    environment.etc."agentos/env-templates/go.nix".text = ''
+    environment.etc."nestlo/env-templates/go.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ go gopls gotools go-tools ];
       }
     '';
 
-    environment.etc."agentos/env-templates/rust-stable.nix".text = ''
+    environment.etc."nestlo/env-templates/rust-stable.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ rustc cargo rustfmt clippy rust-analyzer ];
@@ -125,14 +125,14 @@ in
       }
     '';
 
-    environment.etc."agentos/env-templates/cpp-gcc.nix".text = ''
+    environment.etc."nestlo/env-templates/cpp-gcc.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ gcc gnumake cmake pkg-config ];
       }
     '';
 
-    environment.etc."agentos/env-templates/java-21.nix".text = ''
+    environment.etc."nestlo/env-templates/java-21.nix".text = ''
       { pkgs ? import <nixpkgs> {} }:
       pkgs.mkShell {
         packages = with pkgs; [ jdk21 maven gradle ];
@@ -141,7 +141,7 @@ in
 
     # ─ Provisioning CLI ──────────────────────────────────────────────
     environment.systemPackages = [
-      (pkgs.writeShellScriptBin "agentos-env" ''
+      (pkgs.writeShellScriptBin "nestlo-env" ''
         #!/usr/bin/env bash
         set -euo pipefail
 
@@ -154,7 +154,7 @@ in
         ok()   { echo -e "''${GREEN}[OK]''${NC} $*"; }
         warn() { echo -e "''${YELLOW}[WARN]''${NC} $*"; }
 
-        TEMPLATES="/etc/agentos/env-templates"
+        TEMPLATES="/etc/nestlo/env-templates"
 
         detect_project() {
           if [ -f "package.json" ]; then
@@ -206,7 +206,7 @@ in
               ENV=$(detect_project | tail -1)
               if [ "$ENV" = "unknown" ]; then
                 echo "Could not auto-detect environment. Specify manually:"
-                echo "  agentos-env shell python-3.11"
+                echo "  nestlo-env shell python-3.11"
                 exit 1
               fi
               info "Auto-detected: $ENV"
@@ -240,18 +240,18 @@ in
             echo -e "''${BOLD}Pre-building environment images:''${NC}"
             for img in ${lib.concatStringsSep " " cfg.prebuildImages}; do
               info "Building $img..."
-              nix-build "$TEMPLATES/$img.nix" --out-link "/var/lib/agentos/cache/$img" 2>/dev/null && \
+              nix-build "$TEMPLATES/$img.nix" --out-link "/var/lib/nestlo/cache/$img" 2>/dev/null && \
                 ok "Built: $img" || warn "Failed: $img"
             done
             ;;
 
           *)
-            echo "Usage: agentos-env <detect|list|shell|init|prebuild> [args]"
+            echo "Usage: nestlo-env <detect|list|shell|init|prebuild> [args]"
             ;;
         esac
       '')
     ];
 
-    networking.firewall.interfaces.agentos0.allowedTCPPorts = lib.optional cfg.enableCache 5000;
+    networking.firewall.interfaces.nestlo0.allowedTCPPorts = lib.optional cfg.enableCache 5000;
   };
 }

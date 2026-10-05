@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentos_services.usage import Pricing, UsageParser, output_cap
+from nestlo_services.usage import Pricing, UsageParser, output_cap
 
 from conftest import PRICING
 

@@ -1,15 +1,15 @@
-# The three pieces that let OpenClaw hand work to AgentOS and nothing else:
+# The three pieces that let OpenClaw hand work to Nestlo and nothing else:
 #
-#   agentos-openclaw-bridge   a small server that sits between OpenClaw and
+#   nestlo-openclaw-bridge   a small server that sits between OpenClaw and
 #                             the orchestrator and enforces the policy (agent
 #                             and workspace allowlists, a budget and timeout
 #                             per task, a cap on active tasks, no access to
 #                             tasks other people submitted)
-#   agentos-task-chat         the only command OpenClaw's exec tool may run;
+#   nestlo-task-chat         the only command OpenClaw's exec tool may run;
 #                             a thin client of the bridge
 #   skill                     the SKILL.md that tells the model about it
 #
-# Why a bridge: the orchestrator socket is group `agentos`, and so is the
+# Why a bridge: the orchestrator socket is group `nestlo`, and so is the
 # model gateway's admin socket (it can register tokens for any agent id, set
 # budgets and read recordings). Putting the `openclaw` user in that group
 # would hand a prompt-injected chat session all of that, and the orchestrator
@@ -19,8 +19,8 @@
 { pkgs, lib, agents, workspaces, taskBudgetUsd, taskTimeoutSec, maxActiveTasks }:
 
 let
-  bridgeSocket = "/run/agentos-openclaw/bridge.sock";
-  orchestratorSocket = "/run/agentos-orchestrator/orchestrator.sock";
+  bridgeSocket = "/run/nestlo-openclaw/bridge.sock";
+  orchestratorSocket = "/run/nestlo-orchestrator/orchestrator.sock";
 
   policy = pkgs.writeText "openclaw-bridge-policy.json" (builtins.toJSON {
     socket = bridgeSocket;
@@ -33,7 +33,7 @@ let
     origin = "openclaw";
   });
 
-  bridge = pkgs.writers.writePython3Bin "agentos-openclaw-bridge"
+  bridge = pkgs.writers.writePython3Bin "nestlo-openclaw-bridge"
     {
       # style only: the server is a single short file
       flakeIgnore = [ "E501" "E722" ];
@@ -205,18 +205,18 @@ let
     '';
 
   wrapper = pkgs.writeShellApplication {
-    name = "agentos-task-chat";
+    name = "nestlo-task-chat";
     runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.jq ];
     text = ''
       SOCKET=${bridgeSocket}
       AGENTS='${lib.concatStringsSep ", " agents}'
       WORKSPACES='${lib.concatStringsSep ", " workspaces}'
 
-      die() { echo "agentos-task-chat: $*" >&2; exit 1; }
+      die() { echo "nestlo-task-chat: $*" >&2; exit 1; }
 
       usage() {
         cat <<EOF
-      agentos-task-chat: run coding agents on AgentOS (the only command you may use for this)
+      nestlo-task-chat: run coding agents on Nestlo (the only command you may use for this)
 
         submit --agent <agent> --workspace <workspace> --prompt <text>
         status <task-id>
@@ -235,7 +235,7 @@ let
         if [ -n "''${3:-}" ]; then
           args+=(--data-binary "$3")
         fi
-        resp=$(curl "''${args[@]}" "http://bridge$2") || die "cannot reach the AgentOS bridge"
+        resp=$(curl "''${args[@]}" "http://bridge$2") || die "cannot reach the Nestlo bridge"
         code=''${resp##*$'\n'}
         body=''${resp%$'\n'*}
         if [ "''${code:0:1}" != "2" ]; then
@@ -300,26 +300,26 @@ let
     '';
   };
 
-  skill = pkgs.writeTextDir "agentos/SKILL.md" ''
+  skill = pkgs.writeTextDir "nestlo/SKILL.md" ''
     ---
-    name: agentos
-    description: Run, monitor and cancel AgentOS coding tasks (headless coding agents working in a git workspace) with the agentos-task-chat command. Use when the user asks you to write, change, review or fix code in one of the allowed workspaces.
+    name: nestlo
+    description: Run, monitor and cancel Nestlo coding tasks (headless coding agents working in a git workspace) with the nestlo-task-chat command. Use when the user asks you to write, change, review or fix code in one of the allowed workspaces.
     ---
 
-    # AgentOS tasks
+    # Nestlo tasks
 
-    AgentOS runs coding agents in sandboxes on this machine. You do not write
+    Nestlo runs coding agents in sandboxes on this machine. You do not write
     code yourself: you hand a task to an agent and report what happened.
 
-    Use the command `agentos-task-chat` through the exec tool. It is the only
+    Use the command `nestlo-task-chat` through the exec tool. It is the only
     command you are allowed to run; anything else is refused. Do not try to
     work around that.
 
     ```
-    agentos-task-chat submit --agent <agent> --workspace <workspace> --prompt "<what to do>"
-    agentos-task-chat status <task-id>
-    agentos-task-chat list
-    agentos-task-chat cancel <task-id>
+    nestlo-task-chat submit --agent <agent> --workspace <workspace> --prompt "<what to do>"
+    nestlo-task-chat status <task-id>
+    nestlo-task-chat list
+    nestlo-task-chat cancel <task-id>
     ```
 
     - Agents: ${lib.concatMapStringsSep ", " (a: "`${a}`") agents}
@@ -331,7 +331,7 @@ let
     1. Put everything the agent needs in the prompt: it has no access to this chat.
        Write the prompt yourself from what the user asked for.
     2. Quote the prompt as one shell argument. Do not use pipes, redirects, `$(...)`,
-       backticks or `;`; the command line must be exactly one `agentos-task-chat` call.
+       backticks or `;`; the command line must be exactly one `nestlo-task-chat` call.
     3. `submit` prints a task id. Tasks take minutes: tell the user the id, then use
        `status <id>` when asked (or when you are woken up) instead of polling in a loop.
     4. A task works on its own git branch (`agent/<task-id>`), shown by `status`.

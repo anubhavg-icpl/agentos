@@ -1,10 +1,10 @@
 # OpenClaw
 
-[OpenClaw](https://github.com/openclaw/openclaw) is a Node daemon that connects chat channels (Telegram, Slack, Discord, WhatsApp, ...) to an LLM agent with skills, cron and memory. The `agentos.openclaw` module (`modules/openclaw/`) runs it as a hardened systemd service and connects it to Nestlo in two directions:
+[OpenClaw](https://github.com/openclaw/openclaw) is a Node daemon that connects chat channels (Telegram, Slack, Discord, WhatsApp, ...) to an LLM agent with skills, cron and memory. The `nestlo.openclaw` module (`modules/openclaw/`) runs it as a hardened systemd service and connects it to Nestlo in two directions:
 
 ```
  chat user ──DM (allowlist)──▶ OpenClaw (user openclaw, 127.0.0.1:18789)
-                                   │ LLM calls                          │ exec: agentos-task-chat
+                                   │ LLM calls                          │ exec: nestlo-task-chat
                                    ▼                                    ▼
           model gateway  /agent/openclaw:<token>/anthropic      task bridge (socket, group openclaw)
           (real key injected, daily budget for "openclaw")                │ allowlisted agent + workspace,
@@ -18,7 +18,7 @@ nixpkgs has the package (`pkgs.openclaw`) but no NixOS module; this one is Nestl
 ## Enabling
 
 ```nix
-agentos = {
+nestlo = {
   runtime.enable = true;
   networking = {
     enable = true;                       # the model gateway; holds the real API key
@@ -56,16 +56,16 @@ agentos = {
 | `memoryMax` | `2G` | `MemoryMax` of the service. |
 | `channels.telegram.{enable,tokenFile,allowFrom}` | off | See [Channels](#channels). |
 | `channels.slack.{enable,tokenFile,appTokenFile,allowFrom}` | off | See [Channels](#channels). |
-| `agents` | `["claude"]` | Agents OpenClaw may start tasks with (each needs `agentos.orchestration.taskCommands`). |
+| `agents` | `["claude"]` | Agents OpenClaw may start tasks with (each needs `nestlo.orchestration.taskCommands`). |
 | `workspaces` | `[]` | Workspaces OpenClaw may start tasks in. Empty disables the task bridge, the skill and the exec tool. |
 | `taskBudgetUsd` / `taskTimeoutSec` / `maxActiveTasks` | `2` / `1800` / `3` | Fixed limits for the tasks it submits. |
 
-The service is `openclaw.service`; the state (config copy, tokens, workspace, sessions, memory) is in `/var/lib/openclaw`. Operators run the CLI as the service user, with the service's environment, through `sudo agentos-openclaw <args>`, for example:
+The service is `openclaw.service`; the state (config copy, tokens, workspace, sessions, memory) is in `/var/lib/openclaw`. Operators run the CLI as the service user, with the service's environment, through `sudo nestlo-openclaw <args>`, for example:
 
 ```
-sudo agentos-openclaw config validate
-sudo agentos-openclaw doctor --non-interactive
-sudo agentos-openclaw channels status
+sudo nestlo-openclaw config validate
+sudo nestlo-openclaw doctor --non-interactive
+sudo nestlo-openclaw channels status
 ```
 
 The Control UI is on `http://127.0.0.1:18789/`. It asks for the gateway token, which is generated on first start into `/var/lib/openclaw/gateway-token` (read it as root). To reach it from another machine use an SSH tunnel (`ssh -L 18789:127.0.0.1:18789 host`); the module never opens the port.
@@ -73,8 +73,8 @@ The Control UI is on `http://127.0.0.1:18789/`. It asks for the gateway token, w
 ## How it is wired
 
 - **Config.** `openclaw.json` is rendered from a Nix attrset and copied (not linked) to `/var/lib/openclaw/.openclaw/openclaw.json` by an `ExecStartPre` on every start, because OpenClaw rewrites its config with atomic renames. The schema is strict (an unknown key stops the gateway), so every key was checked against the package's own schema. The file only contains `${VAR}` references; the start script fills them from files in the state directory and from systemd credentials.
-- **LLM access.** The provider `agentos` points at `http://127.0.0.1:8080/agent/openclaw:<token>/anthropic` with the placeholder key `agentos-managed`. A root `ExecStartPre` generates the token on first start, registers its SHA-256 with the gateway admin socket (`PUT /_agentos/agents/openclaw`, the same call `agentos spawn` makes) and sets the budget (`PUT /_agentos/budget/openclaw`). The gateway injects the real key, meters and prices every call, applies routing, loop detection and the circuit breaker, and answers `402` once the daily budget is used up. OpenClaw never sees the provider key. This needs `agentos.networking` with a managed key; without one the placeholder is forwarded as is and the provider refuses it.
-- **Tasks.** The skill `agentos` (vendored in the Nix store, installed root-owned and read-only into the workspace) tells the model to run `agentos-task-chat submit|status|list|cancel`. See below.
+- **LLM access.** The provider `nestlo` points at `http://127.0.0.1:8080/agent/openclaw:<token>/anthropic` with the placeholder key `nestlo-managed`. A root `ExecStartPre` generates the token on first start, registers its SHA-256 with the gateway admin socket (`PUT /_nestlo/agents/openclaw`, the same call `nestlo spawn` makes) and sets the budget (`PUT /_nestlo/budget/openclaw`). The gateway injects the real key, meters and prices every call, applies routing, loop detection and the circuit breaker, and answers `402` once the daily budget is used up. OpenClaw never sees the provider key. This needs `nestlo.networking` with a managed key; without one the placeholder is forwarded as is and the provider refuses it.
+- **Tasks.** The skill `nestlo` (vendored in the Nix store, installed root-owned and read-only into the workspace) tells the model to run `nestlo-task-chat submit|status|list|cancel`. See below.
 
 ## Channels
 
@@ -94,16 +94,16 @@ Other channels (Discord, WhatsApp, ...) are not supported by the module. They wo
 
 ## Running Nestlo tasks from chat
 
-With `workspaces` set, OpenClaw can start coding agents, but only through one command, `agentos-task-chat`:
+With `workspaces` set, OpenClaw can start coding agents, but only through one command, `nestlo-task-chat`:
 
 ```
-agentos-task-chat submit --agent <agent> --workspace <workspace> --prompt "<text>"
-agentos-task-chat status <task-id>
-agentos-task-chat list
-agentos-task-chat cancel <task-id>
+nestlo-task-chat submit --agent <agent> --workspace <workspace> --prompt "<text>"
+nestlo-task-chat status <task-id>
+nestlo-task-chat list
+nestlo-task-chat cancel <task-id>
 ```
 
-The orchestrator socket is group `agentos`, which is also the group of the gateway admin socket (it can register tokens for any agent, set budgets and read recordings). Giving the `openclaw` user that group would hand all of it to a chat session, so it does not have it. Instead a small service, `agentos-openclaw-bridge` (user `openclaw-bridge`, group `agentos` only for itself, with `/run/agentos-gateway`, `/run/redis-agentos` and `/var/lib/agentos` hidden), listens on `/run/agentos-openclaw/bridge.sock` (group `openclaw`) and enforces the policy server-side:
+The orchestrator socket is group `nestlo`, which is also the group of the gateway admin socket (it can register tokens for any agent, set budgets and read recordings). Giving the `openclaw` user that group would hand all of it to a chat session, so it does not have it. Instead a small service, `nestlo-openclaw-bridge` (user `openclaw-bridge`, group `nestlo` only for itself, with `/run/nestlo-gateway`, `/run/redis-nestlo` and `/var/lib/nestlo` hidden), listens on `/run/nestlo-openclaw/bridge.sock` (group `openclaw`) and enforces the policy server-side:
 
 - the agent and workspace must be in `agents` and `workspaces` (names only, no paths);
 - the only fields accepted are `agent`, `workspace` and `prompt`; budget, timeout and `origin = "openclaw"` are set by the bridge, and `--after`, `--swarm`, `--group`, `--isolate` do not exist;
@@ -111,14 +111,14 @@ The orchestrator socket is group `agentos`, which is also the group of the gatew
 - `status`, `list` and `cancel` only see tasks with `origin = "openclaw"`: OpenClaw cannot read or cancel operators' or the scheduler's tasks;
 - nothing but those four endpoints is forwarded.
 
-The tasks themselves run as any orchestrator task does: sandboxed, on their own branch `agent/<task-id>`, metered and budgeted by the gateway under their own id. `agentos-task show <id>` and `agentos list` show them to operators.
+The tasks themselves run as any orchestrator task does: sandboxed, on their own branch `agent/<task-id>`, metered and budgeted by the gateway under their own id. `nestlo-task show <id>` and `nestlo list` show them to operators.
 
-OpenClaw's exec tool is restricted to that wrapper: `tools.exec.security = "allowlist"`, `ask = "off"`, `askFallback = "deny"`, `safeBins = []`, `strictInlineEval = true`, and `~/.openclaw/exec-approvals.json` allowlists exactly the store path of `agentos-task-chat`. Anything else is denied without a prompt.
+OpenClaw's exec tool is restricted to that wrapper: `tools.exec.security = "allowlist"`, `ask = "off"`, `askFallback = "deny"`, `safeBins = []`, `strictInlineEval = true`, and `~/.openclaw/exec-approvals.json` allowlists exactly the store path of `nestlo-task-chat`. Anything else is denied without a prompt.
 
 ## Security model
 
 - **Loopback only.** `gateway.bind = "loopback"`, token auth, `tailscale.mode = "off"`, mDNS discovery off; the service may only open `AF_UNIX`, `AF_INET`, `AF_INET6` sockets and nothing in the module opens a firewall port. The channels connect outwards. The test checks the listener addresses.
-- **No self-modification, no ClawHub.** `OPENCLAW_NIX_MODE=1` (no auto-installs), `OPENCLAW_NO_AUTO_UPDATE=1`, `update.checkOnStart = false`, `update.auto.enabled = false`, `models.pricing.enabled = false` (no catalog fetches). The only skill the agent may use is the vendored `agentos` one (`agents.defaults.skills`), the skill directory is root-owned and read-only, and the agent has no file-write tools, no `gateway` tool, no browser, web, canvas, node or cron tools, no sub-agents and no elevated mode. OpenClaw's config has no switch for ClawHub itself (`openclaw skills install`, `openclaw plugins install clawhub:...`); the controls are that these are CLI commands that need a shell, which only operators have, `/plugins` and `/config` are off, and exec is allowlisted. Operators running `sudo agentos-openclaw skills install ...` bypass that on purpose; third-party skills and plugins are untrusted code, do not install them.
+- **No self-modification, no ClawHub.** `OPENCLAW_NIX_MODE=1` (no auto-installs), `OPENCLAW_NO_AUTO_UPDATE=1`, `update.checkOnStart = false`, `update.auto.enabled = false`, `models.pricing.enabled = false` (no catalog fetches). The only skill the agent may use is the vendored `nestlo` one (`agents.defaults.skills`), the skill directory is root-owned and read-only, and the agent has no file-write tools, no `gateway` tool, no browser, web, canvas, node or cron tools, no sub-agents and no elevated mode. OpenClaw's config has no switch for ClawHub itself (`openclaw skills install`, `openclaw plugins install clawhub:...`); the controls are that these are CLI commands that need a shell, which only operators have, `/plugins` and `/config` are off, and exec is allowlisted. Operators running `sudo nestlo-openclaw skills install ...` bypass that on purpose; third-party skills and plugins are untrusted code, do not install them.
 - **Allowlisted DMs.** Only the ids you list can talk to the bot; groups are off.
 - **Systemd hardening.** `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `RestrictAddressFamilies`, `SystemCallFilter=@system-service`, empty `CapabilityBoundingSet`, `MemoryMax`, no namespaces, writes only to `/var/lib/openclaw`. The gateway has no `MemoryDenyWriteExecute` (V8 needs executable memory).
 - **Secrets.** Provider keys stay in the model gateway. The `openclaw` agent token (which only works against the gateway, for agent id `openclaw`, within its budget), the Control UI token and the channel tokens are files outside the store (`0400` in the state directory, systemd credentials) and are read into the process environment. A process that can run code as `openclaw` can read them, which is why the model gets no shell beyond the wrapper.
@@ -134,4 +134,4 @@ CVE-2026-25253 is an OpenClaw vulnerability that is fixed in the version nixpkgs
 
 ## Testing
 
-`nix build .#checks.x86_64-linux.openclaw` boots a VM with the real package and checks: loopback-only listening; the config being a copy that passes `openclaw config validate` and holds no secret; the service sandbox; the gateway registration (the token reaches a mock LLM through the model gateway with the real key injected, a wrong token is refused, the budget is enforced); the exec allowlist and read-only skill; and `agentos-task-chat` creating a task through the bridge, the bridge's refusals, the cap, task isolation between submitters, and the `openclaw` user having no path to the orchestrator or admin sockets. It does not drive a chat or a real model.
+`nix build .#checks.x86_64-linux.openclaw` boots a VM with the real package and checks: loopback-only listening; the config being a copy that passes `openclaw config validate` and holds no secret; the service sandbox; the gateway registration (the token reaches a mock LLM through the model gateway with the real key injected, a wrong token is refused, the budget is enforced); the exec allowlist and read-only skill; and `nestlo-task-chat` creating a task through the bridge, the bridge's refusals, the cap, task isolation between submitters, and the `openclaw` user having no path to the orchestrator or admin sockets. It does not drive a chat or a real model.

@@ -1,7 +1,7 @@
-# AgentOS unattended upgrades with a health gate.
+# Nestlo unattended upgrades with a health gate.
 #
 # Wraps system.autoUpgrade. nixos-upgrade drops a marker once it has built
-# the new generation; agentos-upgrade-gate then waits for the AgentOS
+# the new generation; nestlo-upgrade-gate then waits for the Nestlo
 # services to report ready (/readyz) and, when they do not, rolls back with
 # `nixos-rebuild switch --rollback`, logs loudly and posts an alert to
 # Alertmanager when one is configured. The gate runs right after a
@@ -10,15 +10,15 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.upgrade;
+  cfg = config.nestlo.upgrade;
   gate = cfg.healthGate;
 
-  rt = config.agentos.runtime;
+  rt = config.nestlo.runtime;
   curl = "${pkgs.curl}/bin/curl";
-  gwSocket = config.agentos.services.settings.gateway.admin_socket or "/run/agentos-gateway/admin.sock";
-  daemonPort = config.agentos.services.settings.daemon.metrics_port or 9950;
-  orchSocket = config.agentos.services.settings.orchestrator.socket or "/run/agentos-orchestrator/orchestrator.sock";
-  dashAddr = config.agentos.dashboard.address;
+  gwSocket = config.nestlo.services.settings.gateway.admin_socket or "/run/nestlo-gateway/admin.sock";
+  daemonPort = config.nestlo.services.settings.daemon.metrics_port or 9950;
+  orchSocket = config.nestlo.services.settings.orchestrator.socket or "/run/nestlo-orchestrator/orchestrator.sock";
+  dashAddr = config.nestlo.dashboard.address;
   # Wildcard binds are probed on loopback; IPv6 literals need brackets in a URL
   dashHost =
     if dashAddr == "0.0.0.0" then "127.0.0.1"
@@ -27,23 +27,23 @@ let
     else dashAddr;
 
   checks = lib.concatStringsSep "\n" (
-    lib.optional config.agentos.networking.enable
+    lib.optional config.nestlo.networking.enable
       "check gateway ${curl} -fsS --max-time 5 --unix-socket ${gwSocket} http://localhost/readyz"
     ++ lib.optional rt.enable
       "check daemon ${curl} -fsS --max-time 5 http://127.0.0.1:${toString daemonPort}/readyz"
-    ++ lib.optional config.agentos.orchestration.enable
+    ++ lib.optional config.nestlo.orchestration.enable
       "check orchestrator ${curl} -fsS --max-time 5 --unix-socket ${orchSocket} http://localhost/readyz"
-    ++ lib.optional config.agentos.dashboard.enable
-      "check dashboard ${curl} -fsS --max-time 5 http://${dashHost}:${toString config.agentos.dashboard.port}/readyz"
+    ++ lib.optional config.nestlo.dashboard.enable
+      "check dashboard ${curl} -fsS --max-time 5 http://${dashHost}:${toString config.nestlo.dashboard.port}/readyz"
     ++ gate.extraChecks
   );
 
-  stateDir = "/var/lib/agentos-upgrade";
+  stateDir = "/var/lib/nestlo-upgrade";
   marker = "${stateDir}/pending";
 
-  runbook = "${config.agentos.observability.alerts.runbookBaseUrl}/AgentOSUpgradeRolledBack.md";
+  runbook = "${config.nestlo.observability.alerts.runbookBaseUrl}/NestloUpgradeRolledBack.md";
 
-  gateScript = pkgs.writeShellScript "agentos-upgrade-gate" ''
+  gateScript = pkgs.writeShellScript "nestlo-upgrade-gate" ''
     set -u
     export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.util-linux config.systemd.package ]}:$PATH
 
@@ -71,8 +71,8 @@ let
     run_checks() {
       failed=""
       ${checks}
-      # Any AgentOS unit that crashed is a failure too
-      bad=$(systemctl list-units --state=failed --plain --no-legend 'agentos-*' 'redis-agentos*' | cut -d' ' -f1 | grep -Ev '^(agentos-task-runner@|agentos-agent-)' | tr '\n' ' ')
+      # Any Nestlo unit that crashed is a failure too
+      bad=$(systemctl list-units --state=failed --plain --no-legend 'nestlo-*' 'redis-nestlo*' | cut -d' ' -f1 | grep -Ev '^(nestlo-task-runner@|nestlo-agent-)' | tr '\n' ' ')
       if [ -n "$bad" ]; then
         echo "FAILED: units in failed state: $bad" >&2
         failed="$failed units"
@@ -95,28 +95,28 @@ let
 
     msg="upgrade to $generation failed its health gate (failed:$failed); rolling back"
     echo "$msg" >&2
-    ${pkgs.util-linux}/bin/logger -t agentos-upgrade -p user.crit "$msg"
+    ${pkgs.util-linux}/bin/logger -t nestlo-upgrade -p user.crit "$msg"
     ${lib.optionalString (gate.alertmanagerUrl != null) ''
     ${curl} -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
-      ${gate.alertmanagerUrl}/api/v2/alerts -d "[{\"labels\":{\"alertname\":\"AgentOSUpgradeRolledBack\",\"severity\":\"critical\"},\"annotations\":{\"summary\":\"An upgrade failed its health gate and was rolled back\",\"description\":\"$msg\",\"runbook_url\":\"${runbook}\"}}]" \
+      ${gate.alertmanagerUrl}/api/v2/alerts -d "[{\"labels\":{\"alertname\":\"NestloUpgradeRolledBack\",\"severity\":\"critical\"},\"annotations\":{\"summary\":\"An upgrade failed its health gate and was rolled back\",\"description\":\"$msg\",\"runbook_url\":\"${runbook}\"}}]" \
       || echo "could not reach Alertmanager" >&2
     ''}
     ${config.system.build.nixos-rebuild}/bin/nixos-rebuild switch --rollback
     rc=$?
     echo "rollback finished with status $rc" >&2
-    ${pkgs.util-linux}/bin/logger -t agentos-upgrade -p user.crit "rollback finished with status $rc"
+    ${pkgs.util-linux}/bin/logger -t nestlo-upgrade -p user.crit "rollback finished with status $rc"
     # Keep the marker when the rollback failed, so the boot-time gate retries
     [ "$rc" -eq 0 ] && rm -f ${marker}
     exit 1
   '';
 in
 {
-  options.agentos.upgrade = {
-    enable = lib.mkEnableOption "unattended upgrades (system.autoUpgrade) with an AgentOS health gate and automatic rollback";
+  options.nestlo.upgrade = {
+    enable = lib.mkEnableOption "unattended upgrades (system.autoUpgrade) with an Nestlo health gate and automatic rollback";
 
     flake = lib.mkOption {
       type = lib.types.str;
-      example = "github:anubhavg-icpl/agentos#agentos";
+      example = "github:anubhavg-icpl/nestlo#nestlo";
       description = "Flake reference of the configuration to upgrade to, including the host (passed to system.autoUpgrade.flake).";
     };
 
@@ -180,7 +180,7 @@ in
         type = lib.types.nullOr lib.types.str;
         default = null;
         example = "http://127.0.0.1:9093";
-        description = "Alertmanager base URL; the gate posts AgentOSUpgradeRolledBack there on a rollback. A rollback is always logged to the journal at crit level.";
+        description = "Alertmanager base URL; the gate posts NestloUpgradeRolledBack there on a rollback. A rollback is always logged to the journal at crit level.";
       };
     };
   };
@@ -201,13 +201,13 @@ in
       serviceConfig = {
         # Remember the generation before, and mark the new one only when the
         # upgrade changed it: a night without changes must not roll back.
-        ExecStartPre = pkgs.writeShellScript "agentos-upgrade-before" ''
+        ExecStartPre = pkgs.writeShellScript "nestlo-upgrade-before" ''
           ${pkgs.coreutils}/bin/readlink -f /nix/var/nix/profiles/system > ${stateDir}/before
         '';
         # After a live `switch` judge it right away; after a reboot the
         # boot-time unit below does.
         ExecStartPost = [
-          (pkgs.writeShellScript "agentos-upgrade-mark" ''
+          (pkgs.writeShellScript "nestlo-upgrade-mark" ''
             now=$(${pkgs.coreutils}/bin/readlink -f /nix/var/nix/profiles/system)
             if [ "$now" != "$(cat ${stateDir}/before)" ]; then
               echo "$now" > ${marker}
@@ -218,19 +218,19 @@ in
       };
     };
 
-    systemd.services.agentos-upgrade-gate = lib.mkIf gate.enable {
-      description = "AgentOS post-upgrade health gate (rolls back a failing upgrade)";
+    systemd.services.nestlo-upgrade-gate = lib.mkIf gate.enable {
+      description = "Nestlo post-upgrade health gate (rolls back a failing upgrade)";
       wantedBy = [ "multi-user.target" ];
       # The rollback switches configurations; it must not stop the gate running it
       restartIfChanged = false;
       wants = [ "network-online.target" ];
       after = [
         "network-online.target"
-        "redis-agentos.service"
-        "agentos-model-gateway.service"
-        "agentos-daemon.service"
-        "agentos-orchestrator.service"
-        "agentos-dashboard.service"
+        "redis-nestlo.service"
+        "nestlo-model-gateway.service"
+        "nestlo-daemon.service"
+        "nestlo-orchestrator.service"
+        "nestlo-dashboard.service"
       ];
       serviceConfig = {
         Type = "oneshot";

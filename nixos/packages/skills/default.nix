@@ -1,4 +1,4 @@
-# AgentOS skill packs: one attribute per pack, each built with mkSkillPack
+# Nestlo skill packs: one attribute per pack, each built with mkSkillPack
 # (lib.nix) from a pinned source (sources.nix). See docs/skills.md.
 # useLocks = false makes discovery read the pinned sources at evaluation time
 # (import from derivation); update-locks.sh does that to regenerate locks/.

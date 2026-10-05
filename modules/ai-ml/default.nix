@@ -1,14 +1,14 @@
-# AgentOS AI/ML Tools Module
+# Nestlo AI/ML Tools Module
 # Local model inference and ML tooling
 { config, pkgs, lib, ... }:
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.ai-ml;
+  cfg = config.nestlo.ai-ml;
 in
 {
-  options.agentos.ai-ml = {
-    enable = lib.mkEnableOption "AgentOS AI/ML tools";
+  options.nestlo.ai-ml = {
+    enable = lib.mkEnableOption "Nestlo AI/ML tools";
     enableOllama = lib.mkOption {
       type = lib.types.bool;
       default = true;

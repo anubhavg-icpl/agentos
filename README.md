@@ -5,13 +5,13 @@
 <br/>
 
 <p>
-  <a href="https://github.com/anubhavg-icpl/agentos/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/anubhavg-icpl/agentos/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
-  <a href="https://github.com/anubhavg-icpl/agentos/releases"><img src="https://img.shields.io/github/v/release/anubhavg-icpl/agentos?style=flat-square&color=2BB5A0" alt="Release"></a>
+  <a href="https://github.com/anubhavg-icpl/nestlo/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/anubhavg-icpl/nestlo/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/anubhavg-icpl/nestlo/releases"><img src="https://img.shields.io/github/v/release/anubhavg-icpl/nestlo?style=flat-square&color=2BB5A0" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-F2A541?style=flat-square" alt="MIT License"></a>
   <a href="https://nixos.org"><img src="https://img.shields.io/badge/NixOS-26.05-5277C3?style=flat-square&logo=nixos&logoColor=white" alt="NixOS 26.05"></a>
   <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/agents-20-2BB5A0?style=flat-square" alt="20 agents"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-C8873A?style=flat-square" alt="PRs welcome"></a>
-  <a href="https://github.com/anubhavg-icpl/agentos/stargazers"><img src="https://img.shields.io/github/stars/anubhavg-icpl/agentos?style=flat-square&color=F4EFE6" alt="Stars"></a>
+  <a href="https://github.com/anubhavg-icpl/nestlo/stargazers"><img src="https://img.shields.io/github/stars/anubhavg-icpl/nestlo?style=flat-square&color=F4EFE6" alt="Stars"></a>
 </p>
 
 <p>
@@ -28,7 +28,7 @@
 **Nestlo is an operating system for AI coding agents.** It runs Claude Code, Codex, Gemini CLI and 17 more agents on your own hardware, each in a sandbox with a spending cap, behind a gateway that meters every model call. It also gives people and agents persistent cloud VMs with HTTPS, sharing and secret-free integrations, in the style of exe.dev. It is built on NixOS, so the whole system is declared in one file and rebuilds the same way every time.
 
 > [!NOTE]
-> **AgentOS is now Nestlo.** The project was renamed in October 2026. NixOS options (`agentos.*`), commands (`agentos ...`) and unit names keep the old prefix for now so that existing configurations keep working; they will move in a later release with compatibility aliases.
+> **Formerly AgentOS.** The project was renamed to Nestlo in October 2026: NixOS options are now `nestlo.*`, the command is `nestlo`, and services, users and paths use the `nestlo` prefix. Upgrading an existing machine? See [the migration notes](CHANGELOG.md#renamed-from-agentos).
 
 ## Why Nestlo
 
@@ -48,7 +48,7 @@ Run a coding agent on a normal machine and it gets your shell, your files, your 
 **Option 1: try it in a VM**
 
 ```bash
-git clone https://github.com/anubhavg-icpl/agentos.git nestlo && cd nestlo
+git clone https://github.com/anubhavg-icpl/nestlo.git nestlo && cd nestlo
 nix build .#vm-image                          # a QEMU/KVM disk image
 cp result/*.qcow2 nestlo.qcow2 && chmod u+w nestlo.qcow2
 qemu-system-x86_64 -m 8192 -enable-kvm -bios OVMF.fd -drive file=nestlo.qcow2,if=virtio
@@ -58,19 +58,19 @@ qemu-system-x86_64 -m 8192 -enable-kvm -bios OVMF.fd -drive file=nestlo.qcow2,if
 
 ```bash
 nix build .#iso-image                         # also attached to every GitHub release
-sudo dd if=result/iso/agentos-*.iso of=/dev/sdX bs=4M status=progress
+sudo dd if=result/iso/nestlo-*.iso of=/dev/sdX bs=4M status=progress
 # boot the stick, then (erases the disk; only SSH keys can log in):
-sudo agentos-install /dev/nvme0n1 --ssh-key "ssh-ed25519 AAAA... you@laptop"
+sudo nestlo-install /dev/nvme0n1 --ssh-key "ssh-ed25519 AAAA... you@laptop"
 ```
 
 **Your first agent, with a $5/day budget**
 
 ```bash
 ssh admin@nestlo
-agentos workspace create api --from https://github.com/me/api.git
-agentos spawn claude --workspace api --budget 5
-agentos list              # agents, status, spend today
-agentos logs <id>         # every model call with tokens and cost
+nestlo workspace create api --from https://github.com/me/api.git
+nestlo spawn claude --workspace api --budget 5
+nestlo list              # agents, status, spend today
+nestlo logs <id>         # every model call with tokens and cost
 ```
 
 **Your first cloud VM** (with [Nestlo Cloud](#nestlo-cloud) enabled)
@@ -124,46 +124,46 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 
 | Module | Description | CLI Command |
 |:---|:---|:---|
-| runtime | Agent sandbox, daemon, workspaces, control-plane Redis | `agentos spawn` |
+| runtime | Agent sandbox, daemon, workspaces, control-plane Redis | `nestlo spawn` |
 | security | AppArmor, default-deny egress allowlist, auditd | automatic |
 | observability | Prometheus + Tempo + Grafana | Grafana `:2342` |
-| storage | btrfs snapshots, dedup, workspace GC | `agentos snapshot` |
+| storage | btrfs snapshots, dedup, workspace GC | `nestlo snapshot` |
 | networking | Metering model gateway, agent bridge, NAT | automatic |
-| context | Qdrant vector DB, persistent memory | `agentos-memory` |
-| orchestration | Multi-agent coordination † | `agentos-orchestrate` |
-| factory | Software factory: planner, builder, verify, reviewer, fix loop, QA, then PR or auto-merge | `agentos-factory` |
-| policy | Typed policy-as-code and RBAC roles on the orchestrator socket | `agentos-task policy show`, `whoami` |
-| mcp-registry | 14 core MCP tools | `agentos-tools` |
-| mcp-servers | 36 MCP servers (8 categories) | `agentos-mcp` |
-| budget-controller | Per-agent and global daily caps, auto-shutdown | `agentos-budget` |
-| circuit-breaker | Rate limit, circuit breaker, resource limits | `agentos-breaker` |
-| secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
-| audit | Tamper-evident audit log, SIEM export, gateway DLP (`agentos.audit`, `agentos.gateway.dlp`) | `agentos-audit` |
-| git-automation | Branch/commit/PR helpers, hooks (auto-commit †) | `agentos-git` |
-| provenance | Signed provenance for agent-authored commits (Ed25519, in-toto/DSSE, commit status) | `agentos-provenance` |
-| provisioning | Env detection, Nix dev shells | `agentos-env` |
-| scheduler | Cron-like task scheduling † | `agentos-schedule` |
-| notifications | Slack, Discord, webhook | `agentos-notify` |
-| language-toolchains | 20+ runtimes pre-installed | `agentos-langs` |
-| databases | Postgres, Redis, SQLite, DuckDB | `agentos-db` |
+| context | Qdrant vector DB, persistent memory | `nestlo-memory` |
+| orchestration | Multi-agent coordination † | `nestlo-orchestrate` |
+| factory | Software factory: planner, builder, verify, reviewer, fix loop, QA, then PR or auto-merge | `nestlo-factory` |
+| policy | Typed policy-as-code and RBAC roles on the orchestrator socket | `nestlo-task policy show`, `whoami` |
+| mcp-registry | 14 core MCP tools | `nestlo-tools` |
+| mcp-servers | 36 MCP servers (8 categories) | `nestlo-mcp` |
+| budget-controller | Per-agent and global daily caps, auto-shutdown | `nestlo-budget` |
+| circuit-breaker | Rate limit, circuit breaker, resource limits | `nestlo-breaker` |
+| secrets-manager | sops-nix encrypted API keys | `nestlo-secrets` |
+| audit | Tamper-evident audit log, SIEM export, gateway DLP (`nestlo.audit`, `nestlo.gateway.dlp`) | `nestlo-audit` |
+| git-automation | Branch/commit/PR helpers, hooks (auto-commit †) | `nestlo-git` |
+| provenance | Signed provenance for agent-authored commits (Ed25519, in-toto/DSSE, commit status) | `nestlo-provenance` |
+| provisioning | Env detection, Nix dev shells | `nestlo-env` |
+| scheduler | Cron-like task scheduling † | `nestlo-schedule` |
+| notifications | Slack, Discord, webhook | `nestlo-notify` |
+| language-toolchains | 20+ runtimes pre-installed | `nestlo-langs` |
+| databases | Postgres, Redis, SQLite, DuckDB | `nestlo-db` |
 | dev-tools | 100+ developer utilities | automatic |
-| security-tools | Semgrep, trivy, nmap, ghidra | `agentos-scan` |
-| browser-tools | Chromium, Playwright, Puppeteer | `agentos-web` |
+| security-tools | Semgrep, trivy, nmap, ghidra | `nestlo-scan` |
+| browser-tools | Chromium, Playwright, Puppeteer | `nestlo-web` |
 | networking-tools | nmap, tcpdump, wireshark | automatic |
 | cloud-tools | AWS, GCP, Azure, CF, Vercel CLIs | automatic |
 | package-managers | pip, npm, cargo, bundler, maven | automatic |
 | editors | Neovim (LSP configured), Helix | automatic |
 | ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
-| vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
-| skills | Skill packs linked into every agent CLI | `agentos-skills` |
-| herdr | Persistent agent workspaces, status bridge, plugin marketplace | `agentos-herdr`, `agentos-herdr-plugins` |
+| vibe-integration | 853 modes, 5340 skills from VIBE | `nestlo-vibe` |
+| skills | Skill packs linked into every agent CLI | `nestlo-skills` |
+| herdr | Persistent agent workspaces, status bridge, plugin marketplace | `nestlo-herdr`, `nestlo-herdr-plugins` |
 
 † Planned service, not implemented yet ([status](docs/STATUS.md)).
 | cloud | Nestlo Cloud: persistent VMs over SSH and HTTPS, private HTTPS proxy, sharing, custom domains, integrations, teams | `ssh lobby@<host> new` |
-| triggers | GitHub webhooks to tasks, factory items and pull requests | `agentos-triggers` |
-| fleet | Remote agent fleets over SSH | `agentos fleet` |
-| marketplace | Reviewed agent and skill index | `agentos market` |
-| dashboard | Web dashboard for agents, tasks and spend | `agentos-dashboard` |
+| triggers | GitHub webhooks to tasks, factory items and pull requests | `nestlo-triggers` |
+| fleet | Remote agent fleets over SSH | `nestlo fleet` |
+| marketplace | Reviewed agent and skill index | `nestlo market` |
+| dashboard | Web dashboard for agents, tasks and spend | `nestlo-dashboard` |
 | gpu | GPU scheduling for local inference | automatic |
 | local-ai | Ollama and Open WebUI on the host | automatic |
 | agent-stack | agent-fleet apps (n8n, Flowise, Langflow, ...) through the gateway | automatic |
@@ -171,7 +171,7 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 | openclaw | Chat front end (Telegram, Slack) for the orchestrator | automatic |
 | pullrun | Pullrun OCI runtime and Firecracker microVMs (experimental) | `pullrun` |
 | desktop | Desktop edition (i3 with gaps, sway, Hyprland) | automatic |
-| backup | restic backups and a restore drill | `agentos-restore` |
+| backup | restic backups and a restore drill | `nestlo-restore` |
 | upgrade | Auto-upgrades that roll back on a failed health gate | automatic |
 
 </details>
@@ -205,8 +205,8 @@ Sixteen agents are built from nixpkgs and pinned by `flake.lock`; four that nixp
 | `interpreter` | Open Interpreter | Open Source | PyPI launcher |
 
 ```bash
-agentos spawn claude --workspace api --budget 5          # sandboxed and metered
-agentos spawn aider --workspace api -- --model sonnet    # arguments after -- go to the agent
+nestlo spawn claude --workspace api --budget 5          # sandboxed and metered
+nestlo spawn aider --workspace api -- --model sonnet    # arguments after -- go to the agent
 claude                                                   # directly, as yourself
 ```
 
@@ -218,7 +218,7 @@ claude                                                   # directly, as yourself
 Every feature is a toggle:
 
 ```nix
-agentos = {
+nestlo = {
   runtime = {
     enable = true;
     maxAgents = 8;
@@ -374,7 +374,7 @@ Everything above is implemented in [`services/`](services/) (Python) and [`modul
 Contributions are welcome: new agents, modules, skill packs, docs and bug reports. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
-git clone https://github.com/anubhavg-icpl/agentos.git nestlo && cd nestlo
+git clone https://github.com/anubhavg-icpl/nestlo.git nestlo && cd nestlo
 nix develop                                   # the dev shell
 nix flake check --no-build --all-systems      # evaluate everything
 nix build .#services                          # the service unit tests

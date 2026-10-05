@@ -1,13 +1,13 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Desktop Module
+# Nestlo Desktop Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # An optional graphical session for developers who want to sit in front of
-# AgentOS: a tiling window manager (i3, sway or hyprland) with one dark
+# Nestlo: a tiling window manager (i3, sway or hyprland) with one dark
 # theme, audio, fonts, IDEs and a browser. Off by default: the server host
 # stays headless.
 #
-#   agentos.desktop = {
+#   nestlo.desktop = {
 #     enable = true;
 #     windowManager = "i3";   # or "sway" / "hyprland"
 #   };
@@ -21,7 +21,7 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.desktop;
+  cfg = config.nestlo.desktop;
   c = import ./common.nix { inherit config pkgs lib; };
   inherit (c) p;
   avail = import ../lib/available.nix { inherit pkgs lib; };
@@ -62,13 +62,13 @@ let
     if cfg.windowManager == "sway" then
       "${pkgs.coreutils}/bin/env ${env} ${config.programs.sway.package}/bin/sway"
     else
-      "${config.programs.hyprland.package}/bin/start-hyprland -- --config /etc/agentos/desktop/hyprland.conf";
+      "${config.programs.hyprland.package}/bin/start-hyprland -- --config /etc/nestlo/desktop/hyprland.conf";
 in
 {
   imports = [ ./i3.nix ./sway.nix ./hyprland.nix ];
 
-  options.agentos.desktop = {
-    enable = lib.mkEnableOption "the AgentOS graphical desktop (window manager, IDEs, browser)";
+  options.nestlo.desktop = {
+    enable = lib.mkEnableOption "the Nestlo graphical desktop (window manager, IDEs, browser)";
 
     windowManager = lib.mkOption {
       type = lib.types.enum [ "i3" "sway" "hyprland" ];

@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Secrets Manager Module
+# Nestlo Secrets Manager Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Manages API keys and secrets for agents:
@@ -12,11 +12,11 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.secrets-manager;
+  cfg = config.nestlo.secrets-manager;
 in
 {
-  options.agentos.secrets-manager = {
-    enable = lib.mkEnableOption "AgentOS secrets manager";
+  options.nestlo.secrets-manager = {
+    enable = lib.mkEnableOption "Nestlo secrets manager";
 
     backend = lib.mkOption {
       type = lib.types.enum [ "sops" "vault" "file" ];
@@ -26,7 +26,7 @@ in
 
     secretsFile = lib.mkOption {
       type = lib.types.str;
-      default = "/var/lib/agentos/secrets/secrets.yaml";
+      default = "/var/lib/nestlo/secrets/secrets.yaml";
       description = "Path (on the target machine) to the sops-encrypted secrets file";
     };
 
@@ -76,26 +76,26 @@ in
       # The file lives on the target machine, not in this repository
       validateSopsFiles = false;
       age = {
-        keyFile = "/var/lib/agentos/secrets/age-key.txt";
+        keyFile = "/var/lib/nestlo/secrets/age-key.txt";
         sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
       };
 
-      # Each becomes /run/secrets/<name>, readable by the agentos group
+      # Each becomes /run/secrets/<name>, readable by the nestlo group
       secrets = lib.genAttrs cfg.secrets (_: {
-        group = "agentos";
+        group = "nestlo";
         mode = "0440";
       });
     };
 
     # ─ Secrets directory ─────────────────────────────────────────────
     systemd.tmpfiles.rules = [
-      "d /var/lib/agentos/secrets 0700 root root"
+      "d /var/lib/nestlo/secrets 0700 root root"
     ];
 
     # ─ Secret injection for agents ───────────────────────────────────
     # When an agent spawns, the daemon reads from /run/secrets/ and
     # injects only the needed keys into the agent's environment.
-    environment.etc."agentos/secret-mapping.yaml".text = ''
+    environment.etc."nestlo/secret-mapping.yaml".text = ''
       # Maps agents to which secrets they're allowed to access
       claude-code:
         - ANTHROPIC_API_KEY
@@ -121,7 +121,7 @@ in
 
     # ─ Secrets CLI ───────────────────────────────────────────────────
     environment.systemPackages = [
-      (pkgs.writeShellScriptBin "agentos-secrets" ''
+      (pkgs.writeShellScriptBin "nestlo-secrets" ''
         #!/usr/bin/env bash
         set -euo pipefail
 
@@ -146,13 +146,13 @@ in
           set)
             KEY="''${2:-}"
             if [ -z "$KEY" ]; then
-              echo "Usage: agentos-secrets set <KEY_NAME>"
+              echo "Usage: nestlo-secrets set <KEY_NAME>"
               echo "You will be prompted to enter the value (hidden)"
               exit 1
             fi
             if [ ! -f "${cfg.secretsFile}" ]; then
               echo -e "''${RED}No secrets file at ${cfg.secretsFile}.''${NC}"
-              echo "Create it (encrypted) with: agentos-secrets edit"
+              echo "Create it (encrypted) with: nestlo-secrets edit"
               exit 1
             fi
             read -rsp "Enter value for $KEY: " VALUE
@@ -169,17 +169,17 @@ in
 
           check)
             echo "Secret access mapping:"
-            cat /etc/agentos/secret-mapping.yaml
+            cat /etc/nestlo/secret-mapping.yaml
             ;;
 
           rotate)
             echo "Rotating secrets..."
             # This would call the backend's rotation API
-            echo "Manual rotation required. Use: agentos-secrets edit"
+            echo "Manual rotation required. Use: nestlo-secrets edit"
             ;;
 
           *)
-            echo "Usage: agentos-secrets <list|set|edit|check|rotate>"
+            echo "Usage: nestlo-secrets <list|set|edit|check|rotate>"
             ;;
         esac
       '')

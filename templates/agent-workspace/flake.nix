@@ -1,8 +1,8 @@
 # Agent workspace template
 # Scaffold a new project with agent tools available.
-# Usage: nix flake init -t github:anubhavg-icpl/agentos
+# Usage: nix flake init -t github:anubhavg-icpl/nestlo
 {
-  description = "AgentOS workspace - a project scaffolded for coding agents";
+  description = "Nestlo workspace - a project scaffolded for coding agents";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
@@ -33,12 +33,12 @@
             gh
 
             # Install specific agents as needed:
-            # nix profile install github:anubhavg-icpl/agentos#claude-code
-            # nix profile install github:anubhavg-icpl/agentos#aider
+            # nix profile install github:anubhavg-icpl/nestlo#claude-code
+            # nix profile install github:anubhavg-icpl/nestlo#aider
           ];
 
           shellHook = ''
-            echo "AgentOS workspace active"
+            echo "Nestlo workspace active"
             echo "Git initialized: $(git rev-parse --is-inside-work-tree 2>/dev/null || echo 'no')"
           '';
         };

@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS VIBE Integration Module
+# Nestlo VIBE Integration Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Integrates the VIBE library (anubhavg-icpl/vibe) which provides:
@@ -14,18 +14,18 @@
 #   - 18 end-to-end recipes
 #   - 13 output styles
 #
-# On boot, AgentOS auto-installs the entire VIBE library into every
+# On boot, Nestlo auto-installs the entire VIBE library into every
 # supported agent CLI, so all agents immediately have access to
 # expert-level domain knowledge.
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.vibe-integration;
+  cfg = config.nestlo.vibe-integration;
 in
 {
-  options.agentos.vibe-integration = {
-    enable = lib.mkEnableOption "AgentOS VIBE integration (auto-installs 5340+ skills)";
+  options.nestlo.vibe-integration = {
+    enable = lib.mkEnableOption "Nestlo VIBE integration (auto-installs 5340+ skills)";
 
     repoUrl = lib.mkOption {
       type = lib.types.str;
@@ -122,8 +122,8 @@ in
         exec ${pkgs.nodejs_22}/bin/npx -y ${cfg.repoUrl} "$@"
       '')
 
-      # ── AgentOS VIBE installer ─────────────────────────────────────
-      (pkgs.writeShellScriptBin "agentos-vibe" ''
+      # ── Nestlo VIBE installer ─────────────────────────────────────
+      (pkgs.writeShellScriptBin "nestlo-vibe" ''
         #!/usr/bin/env bash
         set -euo pipefail
 
@@ -219,7 +219,7 @@ in
                 count=$(find "$dir" -name "SKILL.md" -o -name "*.md" 2>/dev/null | wc -l)
                 ok "  $target: $count files in $dir"
               else
-                echo "  $target: not installed (run 'agentos-vibe install')"
+                echo "  $target: not installed (run 'nestlo-vibe install')"
               fi
             done
             ;;
@@ -227,7 +227,7 @@ in
           search)
             QUERY="''${2:-}"
             if [ -z "$QUERY" ]; then
-              echo "Usage: agentos-vibe search <query>"
+              echo "Usage: nestlo-vibe search <query>"
               exit 1
             fi
             ${pkgs.nodejs_22}/bin/npx -y ${cfg.repoUrl} search "$QUERY"
@@ -245,7 +245,7 @@ in
           add)
             ASSET="''${2:-}"
             if [ -z "$ASSET" ]; then
-              echo "Usage: agentos-vibe add <skill-name>"
+              echo "Usage: nestlo-vibe add <skill-name>"
               exit 1
             fi
             shift 2
@@ -310,10 +310,10 @@ in
 
           *)
             cat <<'HELP'
-        AgentOS VIBE Integration
+        Nestlo VIBE Integration
 
         USAGE:
-            agentos-vibe <COMMAND> [ARGS]
+            nestlo-vibe <COMMAND> [ARGS]
 
         COMMANDS:
             install              Install VIBE into all agent CLIs
@@ -342,8 +342,8 @@ in
     ];
 
     # ── Auto-install VIBE on first boot ──────────────────────────────
-    systemd.services.agentos-vibe-install = lib.mkIf cfg.autoInstallOnBoot {
-      description = "AgentOS VIBE Library Auto-Installer";
+    systemd.services.nestlo-vibe-install = lib.mkIf cfg.autoInstallOnBoot {
+      description = "Nestlo VIBE Library Auto-Installer";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
@@ -352,14 +352,14 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         User = "admin";
-        # /var/lib/agentos-vibe, owned by admin, so the marker can be written
-        StateDirectory = "agentos-vibe";
+        # /var/lib/nestlo-vibe, owned by admin, so the marker can be written
+        StateDirectory = "nestlo-vibe";
         ExecStart = toString (pkgs.writeShellScript "vibe-auto-install" ''
           set -euo pipefail
-          MARKER="/var/lib/agentos-vibe/installed"
+          MARKER="/var/lib/nestlo-vibe/installed"
 
           if [ -f "$MARKER" ]; then
-            echo "[vibe] Already installed. Run 'agentos-vibe update' to refresh."
+            echo "[vibe] Already installed. Run 'nestlo-vibe update' to refresh."
             exit 0
           fi
 

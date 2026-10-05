@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services.providers import adapter_for
-from agentos_services.usage import UsageParser
+from nestlo_services import config as configmod
+from nestlo_services.providers import adapter_for
+from nestlo_services.usage import UsageParser
 from conftest import request
 
 
@@ -27,7 +27,7 @@ ANTHROPIC = "/agent/a1/anthropic/v1/messages"
 def test_gemini_key_usage_and_pricing(make_gateway, upstream, store, tmp_path):
     gw = make_gateway(providers=provs(upstream, tmp_path))
     status, _, body = request(gw, "POST", GEMINI, {"contents": [{"parts": [{"text": "hi"}]}]},
-                              {"x-goog-api-key": "agentos-managed"})
+                              {"x-goog-api-key": "nestlo-managed"})
     assert status == 200
     seen = upstream.requests[-1]
     assert seen["path"] == "/v1beta/models/gemini-test:generateContent"
@@ -40,7 +40,7 @@ def test_gemini_key_usage_and_pricing(make_gateway, upstream, store, tmp_path):
 
 def test_gemini_streaming_usage_and_legacy_key_param(make_gateway, upstream, store, tmp_path):
     gw = make_gateway(providers=provs(upstream, tmp_path))
-    path = "/agent/g1/gemini/v1beta/models/gemini-test:streamGenerateContent?alt=sse&key=agentos-managed"
+    path = "/agent/g1/gemini/v1beta/models/gemini-test:streamGenerateContent?alt=sse&key=nestlo-managed"
     status, headers, body = request(gw, "POST", path, {"contents": [{"parts": [{"text": "hi"}]}]})
     assert status == 200 and body.count(b"data: ") == 2
     seen = upstream.requests[-1]
@@ -92,7 +92,7 @@ def test_azure_deployment_path_key_and_api_version(make_gateway, upstream, store
     gw = make_gateway(providers=provs(upstream, tmp_path))
     path = "/agent/z1/azure/openai/deployments/my-gpt/chat/completions"
     status, _, _ = request(gw, "POST", path, {"messages": [{"role": "user", "content": "x"}]},
-                           {"api-key": "agentos-managed"})
+                           {"api-key": "nestlo-managed"})
     assert status == 200
     seen = upstream.requests[-1]
     assert seen["path"] == "/openai/deployments/my-gpt/chat/completions?api-version=2024-10-21"
@@ -101,7 +101,7 @@ def test_azure_deployment_path_key_and_api_version(make_gateway, upstream, store
     # response says gpt-test (the underlying model): 800*1 + 500*2 + 200*0.5
     assert store.spend("z1") == pytest.approx(1900 / 1e6)
     # an explicit api-version from the client wins
-    request(gw, "POST", path + "?api-version=2023-05-15", {"messages": []}, {"api-key": "agentos-managed"})
+    request(gw, "POST", path + "?api-version=2023-05-15", {"messages": []}, {"api-key": "nestlo-managed"})
     assert upstream.requests[-1]["path"].endswith("?api-version=2023-05-15")
 
 
@@ -160,7 +160,7 @@ def test_cost_routing_can_choose_the_local_provider(make_gateway, upstream, stor
     assert store.spend("r1") == 0
     entry = json.loads((tmp_path / "logs" / "r1.log").read_text().splitlines()[-1])
     assert entry["provider"] == "local" and entry["routed_provider"] == "local"
-    described = json.loads(request(gw, "GET", "/_agentos/routing?agent=r1&provider=openai&model=gpt-test", admin=True)[2])
+    described = json.loads(request(gw, "GET", "/_nestlo/routing?agent=r1&provider=openai&model=gpt-test", admin=True)[2])
     assert described["effective"]["routed_provider"] == "local"
 
 

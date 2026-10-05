@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Language Toolchains Module
+# Nestlo Language Toolchains Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Pre-installs every major programming language runtime, compiler,
@@ -14,11 +14,11 @@
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.language-toolchains;
+  cfg = config.nestlo.language-toolchains;
 in
 {
-  options.agentos.language-toolchains = {
-    enable = lib.mkEnableOption "AgentOS language toolchains (all runtimes pre-installed)";
+  options.nestlo.language-toolchains = {
+    enable = lib.mkEnableOption "Nestlo language toolchains (all runtimes pre-installed)";
 
     enableAll = lib.mkOption {
       type = lib.types.bool;
@@ -227,10 +227,10 @@ in
       ]))
     ]) ++ [
       # ── Language versions command ──────────────────────────────────
-      (pkgs.writeShellScriptBin "agentos-langs" ''
+      (pkgs.writeShellScriptBin "nestlo-langs" ''
         #!/usr/bin/env bash
         echo "╔══════════════════════════════════════════════╗"
-        echo "║     AgentOS — Pre-installed Languages        ║"
+        echo "║     Nestlo — Pre-installed Languages        ║"
         echo "╚══════════════════════════════════════════════╝"
         echo ""
         declare -A CMDS=(

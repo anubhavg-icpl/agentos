@@ -1,13 +1,13 @@
-# AgentOS - Live ISO configuration
+# Nestlo - Live ISO configuration
 # Builds a bootable ISO that boots into a minimal agent-ready environment.
 { config, pkgs, lib, ... }:
 
 {
   # ── ISO identity ───────────────────────────────────────────────────
-  image.baseName = lib.mkForce "agentos-${config.system.nixos.version}";
+  image.baseName = lib.mkForce "nestlo-${config.system.nixos.version}";
 
   isoImage = {
-    volumeID = lib.mkForce "AGENTOS";
+    volumeID = lib.mkForce "NESTLO";
     makeEfiBootable = true;
     makeUsbBootable = true;
     squashfsCompression = "zstd -Xcompression-level 19";
@@ -15,7 +15,7 @@
 
   # ── Kernel ────────────────────────────────────────────────────────
   boot.kernelPackages = pkgs.linuxPackages_latest;
-  # ZFS usually lags the latest kernel; AgentOS installs to btrfs anyway
+  # ZFS usually lags the latest kernel; Nestlo installs to btrfs anyway
   boot.supportedFilesystems.zfs = lib.mkForce false;
   boot.kernelParams = [
     "quiet"
@@ -24,15 +24,15 @@
   ];
 
   # ── Hostname ──────────────────────────────────────────────────────
-  networking.hostName = "agentos-live";
+  networking.hostName = "nestlo-live";
   networking.networkmanager.enable = true;
   networking.wireless.enable = lib.mkForce false;
 
   # ── SSH on the ISO (key-only) ──────────────────────────────────────
   # The live user and root have empty passwords for the console, so sshd
   # must never accept passwords: keys only. To install over SSH, add a
-  # public key to ~/.ssh/authorized_keys of agentos-live on the console
-  # (agentos-install also offers that key to the installed admin user).
+  # public key to ~/.ssh/authorized_keys of nestlo-live on the console
+  # (nestlo-install also offers that key to the installed admin user).
   # An assertion below keeps this from regressing.
   services.openssh = {
     enable = true;
@@ -54,7 +54,7 @@
         && s.PermitRootLogin != "yes"
       );
     message = ''
-      The live ISO has empty-password accounts (agentos-live, root). sshd
+      The live ISO has empty-password accounts (nestlo-live, root). sshd
       must be disabled or key-only there: set PasswordAuthentication,
       KbdInteractiveAuthentication and PermitEmptyPasswords to false and do
       not allow PermitRootLogin = "yes".
@@ -62,26 +62,26 @@
   }];
 
   # ── Live user ─────────────────────────────────────────────────────
-  users.users.agentos-live = {
+  users.users.nestlo-live = {
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
     initialHashedPassword = "";
   };
-  services.getty.autologinUser = lib.mkForce "agentos-live";
+  services.getty.autologinUser = lib.mkForce "nestlo-live";
   security.sudo.wheelNeedsPassword = false;
 
   # ── Minimal agent tools on the ISO ────────────────────────────────
   environment.systemPackages = with pkgs; [
     # Install tool
-    agentos.installer
+    nestlo.installer
 
-    # AgentOS CLIs (small: shell scripts and a pure-Python package). The
+    # Nestlo CLIs (small: shell scripts and a pure-Python package). The
     # agents themselves are NOT on the ISO: all-agents is over 1 GB, see
     # docs/ISO-SIZE.md. They are installed with the system.
-    agentos.cli
-    agentos.services # agentos-fleet, agentos-market, agentos-gpu, ...
-    agentos.task-cli
-    agentos.schedule-cli
+    nestlo.cli
+    nestlo.services # nestlo-fleet, nestlo-market, nestlo-gpu, ...
+    nestlo.task-cli
+    nestlo.schedule-cli
 
     # Essential
     git
@@ -112,19 +112,19 @@
   programs.bash.loginShellInit = ''
     cat <<'BANNER'
     ╔══════════════════════════════════════════╗
-    ║          AgentOS Live ISO                 ║
+    ║          Nestlo Live ISO                 ║
     ║          An OS for coding agents          ║
     ╚══════════════════════════════════════════╝
 
-    To install:        sudo agentos-install /dev/sda
+    To install:        sudo nestlo-install /dev/sda
 
     For SSH access (keys only), add a public key:
       mkdir -p ~/.ssh && echo "ssh-ed25519 AAAA..." >> ~/.ssh/authorized_keys
     BANNER
   '';
 
-  # ── No AgentOS services on the ISO (just the installer) ───────────
-  agentos = {
+  # ── No Nestlo services on the ISO (just the installer) ───────────
+  nestlo = {
     runtime.enable = lib.mkForce false;
     security.enable = lib.mkForce false;
     observability.enable = lib.mkForce false;

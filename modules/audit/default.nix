@@ -1,28 +1,28 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Audit Module
+# Nestlo Audit Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Tamper-evident audit log (services/agentos_services/audit.py,
+# Tamper-evident audit log (services/nestlo_services/audit.py,
 # docs/audit.md): EU AI Act Art. 12 record-keeping, SOC 2 CC7.2,
 # ISO 27001 A.8.15.
 #
-#   agentos-audit.service   the only writer of /var/lib/agentos-audit, a
-#                           dedicated user (agentos-audit). The gateway,
+#   nestlo-audit.service   the only writer of /var/lib/nestlo-audit, a
+#                           dedicated user (nestlo-audit). The gateway,
 #                           orchestrator, daemon and task runner send events
-#                           over /run/agentos-audit/audit.sock and cannot
+#                           over /run/nestlo-audit/audit.sock and cannot
 #                           open, rewrite or delete the log files.
-#   agentos-audit-keygen    creates the Ed25519 checkpoint-signing key on
+#   nestlo-audit-keygen    creates the Ed25519 checkpoint-signing key on
 #                           first boot (root only); the writer receives it as
 #                           the systemd credential `audit-signing-key`.
 #
-# Members of the group agentos-audit can read the log (`agentos-audit verify`
-# and `tail`); `agentos.audit.readers` defaults to the runtime operators.
+# Members of the group nestlo-audit can read the log (`nestlo-audit verify`
+# and `tail`); `nestlo.audit.readers` defaults to the runtime operators.
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.audit;
-  stateDir = "/var/lib/agentos-audit";
-  credDir = "/run/credentials/agentos-audit.service";
+  cfg = config.nestlo.audit;
+  stateDir = "/var/lib/nestlo-audit";
+  credDir = "/run/credentials/nestlo-audit.service";
   exp = cfg.export;
 
   nonEmpty = lib.mkOption {
@@ -31,7 +31,7 @@ let
   };
 in
 {
-  options.agentos.audit = {
+  options.nestlo.audit = {
     enable = lib.mkEnableOption "the tamper-evident audit log";
 
     retentionDays = lib.mkOption {
@@ -53,7 +53,7 @@ in
         Fail closed: while the audit writer is unreachable the gateway
         answers 503 (audit_unavailable) and the orchestrator refuses to
         submit, approve or cancel tasks. When false the producers buffer
-        events in memory (agentos.audit.bufferEvents) and, if the writer
+        events in memory (nestlo.audit.bufferEvents) and, if the writer
         stays down, drop and count them (the loss is written to the log once
         the writer returns).
       '';
@@ -79,9 +79,9 @@ in
 
     readers = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = config.agentos.runtime.operators;
-      defaultText = lib.literalExpression "config.agentos.runtime.operators";
-      description = "Users added to the group agentos-audit, which may read the log";
+      default = config.nestlo.runtime.operators;
+      defaultText = lib.literalExpression "config.nestlo.runtime.operators";
+      description = "Users added to the group nestlo-audit, which may read the log";
     };
 
     export = {
@@ -138,7 +138,7 @@ in
         };
         sourcetype = lib.mkOption {
           type = lib.types.str;
-          default = "agentos:audit:ocsf";
+          default = "nestlo:audit:ocsf";
         };
       };
 
@@ -165,31 +165,31 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = config.agentos.runtime.enable;
-        message = "agentos.audit needs agentos.runtime.enable (the services that produce audit events)";
+        assertion = config.nestlo.runtime.enable;
+        message = "nestlo.audit needs nestlo.runtime.enable (the services that produce audit events)";
       }
       {
         assertion = !exp.syslog.enable || exp.syslog.host != "";
-        message = "agentos.audit.export.syslog.host must be set";
+        message = "nestlo.audit.export.syslog.host must be set";
       }
       {
         assertion = !exp.splunk.enable || (exp.splunk.url != "" && exp.splunk.tokenFile != null);
-        message = "agentos.audit.export.splunk needs url and tokenFile";
+        message = "nestlo.audit.export.splunk needs url and tokenFile";
       }
       {
         assertion = !exp.otlp.enable || exp.otlp.endpoint != "";
-        message = "agentos.audit.export.otlp.endpoint must be set";
+        message = "nestlo.audit.export.otlp.endpoint must be set";
       }
     ];
 
     warnings = lib.optional (cfg.retentionDays != 0 && cfg.retentionDays < 183)
-      "agentos.audit.retentionDays = ${toString cfg.retentionDays} is below 183 days (six months), the minimum EU AI Act Art. 26(6) asks deployers of high-risk systems to keep logs";
+      "nestlo.audit.retentionDays = ${toString cfg.retentionDays} is below 183 days (six months), the minimum EU AI Act Art. 26(6) asks deployers of high-risk systems to keep logs";
 
     # The services read this to find the socket and decide between buffering and failing closed
-    agentos.services.settings.audit = {
+    nestlo.services.settings.audit = {
       enabled = true;
       dir = stateDir;
-      socket = "/run/agentos-audit/audit.sock";
+      socket = "/run/nestlo-audit/audit.sock";
       inherit (cfg) strict;
       buffer = cfg.bufferEvents;
       retention_days = cfg.retentionDays;
@@ -220,32 +220,32 @@ in
     };
 
     # ─ Users ──────────────────────────────────────────────────────────
-    users.users.agentos-audit = {
+    users.users.nestlo-audit = {
       isSystemUser = true;
-      group = "agentos-audit";
+      group = "nestlo-audit";
       home = stateDir;
-      description = "AgentOS audit log writer";
+      description = "Nestlo audit log writer";
     };
     # Group members can read the log and connect to the socket. The services
-    # (user agentos) are members, so they can send events but, with the log
-    # directory 0750 and owned by agentos-audit, not write files.
-    users.groups.agentos-audit.members = cfg.readers;
-    users.users.agentos.extraGroups = [ "agentos-audit" ];
+    # (user nestlo) are members, so they can send events but, with the log
+    # directory 0750 and owned by nestlo-audit, not write files.
+    users.groups.nestlo-audit.members = cfg.readers;
+    users.users.nestlo.extraGroups = [ "nestlo-audit" ];
 
-    environment.systemPackages = [ pkgs.agentos.services ];
+    environment.systemPackages = [ pkgs.nestlo.services ];
 
     # ─ Signing key, created on first boot ─────────────────────────────
-    systemd.services.agentos-audit-keygen = {
-      description = "Generate the AgentOS audit checkpoint signing key (first boot)";
-      before = [ "agentos-audit.service" ];
-      requiredBy = [ "agentos-audit.service" ];
+    systemd.services.nestlo-audit-keygen = {
+      description = "Generate the Nestlo audit checkpoint signing key (first boot)";
+      before = [ "nestlo-audit.service" ];
+      requiredBy = [ "nestlo-audit.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        StateDirectory = "agentos-audit-key";
+        StateDirectory = "nestlo-audit-key";
         StateDirectoryMode = "0700";
         UMask = "0077";
-        ExecStart = "${pkgs.agentos.services}/bin/agentos-audit keygen --out /var/lib/agentos-audit-key/signing.key";
+        ExecStart = "${pkgs.nestlo.services}/bin/nestlo-audit keygen --out /var/lib/nestlo-audit-key/signing.key";
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectSystem = "strict";
@@ -254,26 +254,26 @@ in
     };
 
     # ─ The writer ─────────────────────────────────────────────────────
-    systemd.services.agentos-audit = {
-      description = "AgentOS audit log writer (hash-chained, signed checkpoints, SIEM export)";
-      after = [ "network.target" "agentos-audit-keygen.service" ];
-      requires = [ "agentos-audit-keygen.service" ];
+    systemd.services.nestlo-audit = {
+      description = "Nestlo audit log writer (hash-chained, signed checkpoints, SIEM export)";
+      after = [ "network.target" "nestlo-audit-keygen.service" ];
+      requires = [ "nestlo-audit-keygen.service" ];
       wantedBy = [ "multi-user.target" ];
-      restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+      restartTriggers = [ config.environment.etc."nestlo/services.toml".source ];
 
       serviceConfig = {
         Type = "simple";
-        User = "agentos-audit";
-        Group = "agentos-audit";
-        ExecStart = "${pkgs.agentos.services}/bin/agentos-audit serve";
+        User = "nestlo-audit";
+        Group = "nestlo-audit";
+        ExecStart = "${pkgs.nestlo.services}/bin/nestlo-audit serve";
         Restart = "on-failure";
         RestartSec = 3;
-        StateDirectory = "agentos-audit";
+        StateDirectory = "nestlo-audit";
         StateDirectoryMode = "0750";
-        RuntimeDirectory = "agentos-audit";
+        RuntimeDirectory = "nestlo-audit";
         RuntimeDirectoryMode = "0750";
         UMask = "0027";
-        LoadCredential = [ "audit-signing-key:/var/lib/agentos-audit-key/signing.key" ]
+        LoadCredential = [ "audit-signing-key:/var/lib/nestlo-audit-key/signing.key" ]
           ++ lib.optional (exp.splunk.enable && exp.splunk.tokenFile != null) "hec-token:${toString exp.splunk.tokenFile}"
           ++ lib.optional (exp.otlp.enable && exp.otlp.tokenFile != null) "otlp-token:${toString exp.otlp.tokenFile}";
 

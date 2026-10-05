@@ -1,4 +1,4 @@
-# VM test of the software factory (agentos.factory).
+# VM test of the software factory (nestlo.factory).
 #
 #   nix build .#checks.x86_64-linux.factory
 #
@@ -6,9 +6,9 @@
 # four roles are fake agents that follow the protocols (planner prints
 # SIZE, ACCEPT and PLAN-READY, reviewer VERDICT: approve, QA
 # CRITERION 1: pass - ... and VERDICT: pass). The publish step pushes to a local bare repository and
-# calls a mock GitHub API. An item is submitted with `agentos-factory`; when
+# calls a mock GitHub API. An item is submitted with `nestlo-factory`; when
 # it is ready, the pull request body must carry the evidence.
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 let
   mockGithub = pkgs.writers.writePython3Bin "mock-github" { flakeIgnore = [ "E501" ]; } ''
@@ -73,11 +73,11 @@ let
   githubToken = "ghp_test_token_must_stay_private";
 in
 pkgs.testers.runNixOSTest {
-  name = "agentos-factory";
+  name = "nestlo-factory";
   globalTimeout = 2400;
 
   nodes.machine = { ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 3072;
     virtualisation.cores = 2;
@@ -89,7 +89,7 @@ pkgs.testers.runNixOSTest {
     users.users.ops.isNormalUser = true;
     security.sudo.wheelNeedsPassword = false;
 
-    agentos = {
+    nestlo = {
       runtime = {
         enable = true;
         operators = [ "admin" "ops" ];
@@ -117,7 +117,7 @@ pkgs.testers.runNixOSTest {
         enable = true;
         autoPR = false;
         publish = {
-          tokenFile = "/etc/agentos-test/github-token";
+          tokenFile = "/etc/nestlo-test/github-token";
           apiUrl = "http://127.0.0.1:9998";
           repos."acme/widgets" = {
             url = "/var/lib/test-remote.git";
@@ -141,7 +141,7 @@ pkgs.testers.runNixOSTest {
       };
     };
 
-    environment.etc."agentos-test/github-token" = {
+    environment.etc."nestlo-test/github-token" = {
       text = githubToken;
       mode = "0400";
     };
@@ -169,26 +169,26 @@ pkgs.testers.runNixOSTest {
         return machine.succeed(f"su - ops -c {json.dumps(cmd)}")
 
     machine.wait_for_unit("multi-user.target")
-    for unit in ["redis-agentos.service", "agentos-daemon.service", "agentos-orchestrator.service",
-                 "agentos-factory.service", "mock-github.service"]:
+    for unit in ["redis-nestlo.service", "nestlo-daemon.service", "nestlo-orchestrator.service",
+                 "nestlo-factory.service", "mock-github.service"]:
         machine.wait_for_unit(unit)
-    machine.wait_until_succeeds("test -S /run/agentos-factory/factory.sock")
+    machine.wait_until_succeeds("test -S /run/nestlo-factory/factory.sock")
     machine.wait_for_open_port(9960)
-    machine.succeed("su - admin -c 'agentos workspace create widgets'")
+    machine.succeed("su - admin -c 'nestlo workspace create widgets'")
     machine.succeed("git init --bare -q -b main /var/lib/test-remote.git")
 
     with subtest("the factory exports its metrics"):
         metrics = machine.succeed("curl -s http://127.0.0.1:9960/metrics")
-        assert "agentos_factory_items" in metrics, metrics
+        assert "nestlo_factory_items" in metrics, metrics
 
     with subtest("an item runs through the line and ends ready with a pull request"):
-        out = ops("agentos-factory submit --line web --title 'Add hello' --criteria 'hello.txt exists and says hello'")
+        out = ops("nestlo-factory submit --line web --title 'Add hello' --criteria 'hello.txt exists and says hello'")
         item = out.split()[0]
         machine.wait_until_succeeds(
-            f"su - ops -c 'agentos-factory export {item}' | jq -e '.state == \"ready\"'",
+            f"su - ops -c 'nestlo-factory export {item}' | jq -e '.state == \"ready\"'",
             timeout=600,
         )
-        done = json.loads(ops(f"agentos-factory export {item}"))
+        done = json.loads(ops(f"nestlo-factory export {item}"))
         print(done)
 
     with subtest("the pull request carries the evidence"):

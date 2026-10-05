@@ -1,6 +1,6 @@
 # Shelley: the mobile-friendly web coding agent of exe.dev (Apache-2.0,
 # https://github.com/boldsoftware/shelley). Packaged from its pinned static
-# release binary (Go, UI embedded). AgentOS Cloud VMs run it on port 9999;
+# release binary (Go, UI embedded). Nestlo Cloud VMs run it on port 9999;
 # it finds the VM's LLM integration through the metadata service and the
 # reflection integration, as on exe.dev (docs/cloud.md).
 { lib, stdenvNoCC, fetchurl }:

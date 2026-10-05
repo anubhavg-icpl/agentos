@@ -1,14 +1,14 @@
-# AgentOS Editors Module
+# Nestlo Editors Module
 # Pre-configured editors with agent-friendly defaults
 { config, pkgs, lib, ... }:
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.editors;
+  cfg = config.nestlo.editors;
 in
 {
-  options.agentos.editors = {
-    enable = lib.mkEnableOption "AgentOS pre-configured editors";
+  options.nestlo.editors = {
+    enable = lib.mkEnableOption "Nestlo pre-configured editors";
   };
 
   config = lib.mkIf cfg.enable {

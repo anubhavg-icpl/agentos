@@ -3,8 +3,8 @@ import os
 
 import pytest
 
-from agentos_services import gpu
-from agentos_services.gpu import GpuError, Registry, discover
+from nestlo_services import gpu
+from nestlo_services.gpu import GpuError, Registry, discover
 
 
 def touch(path, text=""):
@@ -122,14 +122,14 @@ def test_environment(tmp_path):
     assert env["CUDA_VISIBLE_DEVICES"] == "1"
     assert env["NVIDIA_VISIBLE_DEVICES"] == "1"
     assert env["HIP_VISIBLE_DEVICES"] == "0"
-    assert env["AGENTOS_GPUS"] == "1,3"
-    assert gpu.environment([]) == {"AGENTOS_GPUS": ""}
+    assert env["NESTLO_GPUS"] == "1,3"
+    assert gpu.environment([]) == {"NESTLO_GPUS": ""}
 
 
 def test_cli(tmp_path, monkeypatch, capsys):
     fake = fake_machine(tmp_path / "m", nvidia=1)
     monkeypatch.setattr(gpu, "discover", lambda: discover(**fake))
-    monkeypatch.setenv("AGENTOS_GPU_DIR", str(tmp_path / "locks"))
+    monkeypatch.setenv("NESTLO_GPU_DIR", str(tmp_path / "locks"))
     assert gpu.main(["alloc", "agent-x", "any"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["env"]["CUDA_VISIBLE_DEVICES"] == "0"
@@ -146,7 +146,7 @@ def test_cli(tmp_path, monkeypatch, capsys):
 
 def test_cli_no_gpus(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(gpu, "discover", lambda: [])
-    monkeypatch.setenv("AGENTOS_GPU_DIR", str(tmp_path))
+    monkeypatch.setenv("NESTLO_GPU_DIR", str(tmp_path))
     assert gpu.main(["list"]) == 0
     assert "No GPUs" in capsys.readouterr().out
     assert gpu.main(["alloc", "a", "any"]) == 1

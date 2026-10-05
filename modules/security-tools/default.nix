@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Security Tools Module
+# Nestlo Security Tools Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Security analysis and vulnerability scanning tools so agents can
@@ -9,11 +9,11 @@
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.security-tools;
+  cfg = config.nestlo.security-tools;
 in
 {
-  options.agentos.security-tools = {
-    enable = lib.mkEnableOption "AgentOS security analysis tools";
+  options.nestlo.security-tools = {
+    enable = lib.mkEnableOption "Nestlo security analysis tools";
   };
 
   config = lib.mkIf cfg.enable {
@@ -74,7 +74,7 @@ in
       # ════════════════════════════════════════════════════════════════
       # CLI security tool
       # ════════════════════════════════════════════════════════════════
-      (pkgs.writeShellScriptBin "agentos-scan" ''
+      (pkgs.writeShellScriptBin "nestlo-scan" ''
         #!/usr/bin/env bash
         set -euo pipefail
 
@@ -116,7 +116,7 @@ in
             echo -e "''${GREEN}Security scan complete.''${NC}"
             ;;
           *)
-            echo "Usage: agentos-scan <path> [secrets|deps|code|all]"
+            echo "Usage: nestlo-scan <path> [secrets|deps|code|all]"
             ;;
         esac
       '')

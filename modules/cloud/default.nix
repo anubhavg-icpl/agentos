@@ -1,39 +1,39 @@
-# AgentOS Cloud: persistent VMs for people and agents (the exe.dev feature
+# Nestlo Cloud: persistent VMs for people and agents (the exe.dev feature
 # set, self-hosted). docs/cloud.md.
 #
-#   - agentos-cloudd (user agentos-cloud): the control plane: POST /exec,
+#   - nestlo-cloudd (user nestlo-cloud): the control plane: POST /exec,
 #     the proxy auth gate, login (SSH magic links, OIDC), share links,
 #     custom domains, the integrations proxy and metadata service on the VM
 #     bridge, metering
-#   - agentos-cloud-vmd (root): runs VMs as systemd-nspawn machines with
+#   - nestlo-cloud-vmd (root): runs VMs as systemd-nspawn machines with
 #     persistent ext4 disks, user namespaces, pool slices and an isolated
 #     bridge port each
 #   - sshd: `ssh lobby@<host> <command>` (AuthorizedKeysCommand + forced
 #     command), `ssh lobby@<host> ssh <vm>` for a shell in a VM
 #   - Caddy: https://<domain> and https://<vm>.<domain> (and custom domains)
-#     with on-demand certificates, forward_auth to agentos-cloudd
+#     with on-demand certificates, forward_auth to nestlo-cloudd
 #   - dnsmasq on the bridge: VMs resolve the internet and *.int.<domain>
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.cloud;
-  net = config.agentos.networking;
+  cfg = config.nestlo.cloud;
+  net = config.nestlo.networking;
 
   octets = lib.splitString "." (lib.head (lib.splitString "/" cfg.vmNetwork));
   prefixLength = lib.toInt (lib.last (lib.splitString "/" cfg.vmNetwork));
   gatewayIp = lib.concatStringsSep "." (lib.take 3 octets ++ [ "1" ]);
-  bridge = "agentoscl0";
+  bridge = "nestlocl0";
   metadataIp = "169.254.169.254";
   intPort = cfg.integrationsPort;
 
   image = pkgs.callPackage ../../nixos/packages/cloud/image.nix {
-    packages = cfg.image.packages ++ lib.optional cfg.agentUi.enable pkgs.agentos.shelley;
+    packages = cfg.image.packages ++ lib.optional cfg.agentUi.enable pkgs.nestlo.shelley;
   };
   initScript = ../../nixos/packages/cloud/init.sh;
 
   llmEnabled = cfg.llm.enable && net.enable;
   scheme = if cfg.tls.mode == "off" then "http" else "https";
-  lobbyCmd = "${pkgs.agentos.services}/bin/agentos-cloud-lobby";
+  lobbyCmd = "${pkgs.nestlo.services}/bin/nestlo-cloud-lobby";
   web = "127.0.0.1:${toString cfg.webPort}";
 
   userType = lib.types.submodule {
@@ -43,7 +43,7 @@ let
       plan = lib.mkOption {
         type = lib.types.nullOr (lib.types.enum [ "personal" "work" "enterprise" ]);
         default = null;
-        description = "Plan (null: agentos.cloud.defaultPlan)";
+        description = "Plan (null: nestlo.cloud.defaultPlan)";
       };
       keys = lib.mkOption {
         type = lib.types.listOf lib.types.str;
@@ -71,7 +71,7 @@ let
       bearerFile = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
         default = null;
-        description = "File with the token sent as the bearer credential (read by agentos-cloud at request time)";
+        description = "File with the token sent as the bearer credential (read by nestlo-cloud at request time)";
       };
       headerFiles = lib.mkOption {
         type = lib.types.attrsOf lib.types.path;
@@ -88,15 +88,15 @@ let
   };
 
   vmSite = ''
-    handle /__agentos/* {
+    handle /__nestlo/* {
       reverse_proxy ${web}
     }
     handle {
       route {
-        request_header -X-AgentOS-Upstream
-        request_header -X-AgentOS-Email
-        request_header -X-AgentOS-UserID
-        request_header -X-AgentOS-Token-Ctx
+        request_header -X-Nestlo-Upstream
+        request_header -X-Nestlo-Email
+        request_header -X-Nestlo-UserID
+        request_header -X-Nestlo-Token-Ctx
         request_header -X-ExeDev-Email
         request_header -X-ExeDev-UserID
         request_header -X-ExeDev-Token-Ctx
@@ -104,12 +104,12 @@ let
           uri /__auth
           header_up X-Forwarded-Host {host}
           header_up X-Forwarded-Port {http.request.port}
-          copy_headers X-AgentOS-Upstream X-AgentOS-Email X-AgentOS-UserID X-AgentOS-Token-Ctx X-ExeDev-Email X-ExeDev-UserID X-ExeDev-Token-Ctx
+          copy_headers X-Nestlo-Upstream X-Nestlo-Email X-Nestlo-UserID X-Nestlo-Token-Ctx X-ExeDev-Email X-ExeDev-UserID X-ExeDev-Token-Ctx
         }
-        request_header -X-AgentOS-Authorization
+        request_header -X-Nestlo-Authorization
         request_header -X-Exedev-Authorization
-        reverse_proxy {http.request.header.X-AgentOS-Upstream} {
-          header_up -X-AgentOS-Upstream
+        reverse_proxy {http.request.header.X-Nestlo-Upstream} {
+          header_up -X-Nestlo-Upstream
           flush_interval -1
           transport http {
             dial_timeout 10s
@@ -132,8 +132,8 @@ let
   prefix = if cfg.tls.mode == "off" then "http://" else "https://";
 in
 {
-  options.agentos.cloud = {
-    enable = lib.mkEnableOption "AgentOS Cloud: persistent VMs with an HTTPS proxy, sharing and integrations (docs/cloud.md)";
+  options.nestlo.cloud = {
+    enable = lib.mkEnableOption "Nestlo Cloud: persistent VMs with an HTTPS proxy, sharing and integrations (docs/cloud.md)";
 
     domain = lib.mkOption {
       type = lib.types.str;
@@ -147,7 +147,7 @@ in
     sshHost = lib.mkOption {
       type = lib.types.str;
       default = cfg.domain;
-      defaultText = lib.literalExpression "config.agentos.cloud.domain";
+      defaultText = lib.literalExpression "config.nestlo.cloud.domain";
       description = "Host name users ssh to (`ssh lobby@<sshHost>`)";
     };
     lobbyUser = lib.mkOption { type = lib.types.str; default = "lobby"; description = "SSH user of the control plane"; };
@@ -182,7 +182,7 @@ in
     };
     stateDir = lib.mkOption {
       type = lib.types.str;
-      default = "/var/lib/agentos-cloud-vms";
+      default = "/var/lib/nestlo-cloud-vms";
       description = "Where VM disks live (sparse ext4 images)";
     };
     defaultPlan = lib.mkOption {
@@ -194,7 +194,7 @@ in
       type = lib.types.attrsOf (lib.types.attrsOf (lib.types.oneOf [ lib.types.int lib.types.bool ]));
       default = { };
       example = { personal.pool_vms = 10; };
-      description = "Per-plan limit overrides (keys as in services/agentos_services/cloud/plans.py)";
+      description = "Per-plan limit overrides (keys as in services/nestlo_services/cloud/plans.py)";
     };
     defaultDiskGB = lib.mkOption { type = lib.types.ints.positive; default = 20; description = "Disk of a new VM without --disk"; };
     defaultPort = lib.mkOption { type = lib.types.port; default = 80; description = "Port the proxy forwards to without `share port`"; };
@@ -222,11 +222,11 @@ in
         type = lib.types.bool;
         default = true;
         description = ''
-          The `llm` integration: VMs reach the AgentOS model gateway at
+          The `llm` integration: VMs reach the Nestlo model gateway at
           http://llm.int.<domain> (Anthropic /v1/messages, OpenAI
           /v1/chat/completions and /v1/responses, /models.json), metered
           and budgeted per VM, with no provider key in the VM. Needs
-          agentos.networking.enable.
+          nestlo.networking.enable.
         '';
       };
       attach = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ "auto:all" ]; description = "Where the llm integration is attached"; };
@@ -245,10 +245,10 @@ in
         coreutils findutils gnugrep gnused gawk gnutar gzip xz zstd unzip which less file procps psmisc
         iproute2 iputils curl wget openssh rsync git gh jq ripgrep fd tmux htop vim nano
         python3 nodejs uv gnumake gcc podman docker-client
-      ] ++ lib.filter (p: p != null) (map (n: pkgs.agentos.${n} or null) [ "claude-code" "codex" "gemini-cli" "opencode" "goose" ]);
+      ] ++ lib.filter (p: p != null) (map (n: pkgs.nestlo.${n} or null) [ "claude-code" "codex" "gemini-cli" "opencode" "goose" ]);
       defaultText = lib.literalExpression "common developer tools, podman, Claude Code, Codex, Gemini CLI, OpenCode, Goose";
       description = ''
-        Tools of the `agentos` VM image, from the host's Nix store (VMs see it
+        Tools of the `nestlo` VM image, from the host's Nix store (VMs see it
         read-only, so they cost no disk per VM). Agents in VMs use the llm
         integration, so they need no API keys.
       '';
@@ -263,7 +263,7 @@ in
       default = "claude --dangerously-skip-permissions -p";
       description = "What `new --prompt <text>` runs in the new VM (the prompt is the last argument)";
     };
-    webPort = lib.mkOption { type = lib.types.port; default = 9940; description = "Loopback port of agentos-cloudd's web listener"; };
+    webPort = lib.mkOption { type = lib.types.port; default = 9940; description = "Loopback port of nestlo-cloudd's web listener"; };
     metricsPort = lib.mkOption { type = lib.types.port; default = 9941; description = "Loopback Prometheus port"; };
     integrationsPort = lib.mkOption {
       type = lib.types.port;
@@ -277,40 +277,40 @@ in
       assertions = [
         {
           assertion = cfg.tls.mode != "acme" || cfg.tls.email != null;
-          message = "agentos.cloud.tls.mode = \"acme\" needs agentos.cloud.tls.email";
+          message = "nestlo.cloud.tls.mode = \"acme\" needs nestlo.cloud.tls.email";
         }
         {
           assertion = cfg.oidc.issuer == null || (cfg.oidc.clientId != "" && cfg.oidc.clientSecretFile != null);
-          message = "agentos.cloud.oidc needs clientId and clientSecretFile";
+          message = "nestlo.cloud.oidc needs clientId and clientSecretFile";
         }
         {
           assertion = builtins.match "[0-9]+\\.[0-9]+\\.[0-9]+\\.0/(1[6-9]|2[0-4])" cfg.vmNetwork != null;
-          message = "agentos.cloud.vmNetwork must be an IPv4 network a.b.c.0/16 to /24";
+          message = "nestlo.cloud.vmNetwork must be an IPv4 network a.b.c.0/16 to /24";
         }
         {
-          assertion = !(config.agentos.factory.enable or false) || !(lib.elem (config.agentos.factory.metricsPort or 0) [ cfg.webPort cfg.metricsPort ]);
-          message = "agentos.cloud web or metrics port collides with agentos.factory.metricsPort";
+          assertion = !(config.nestlo.factory.enable or false) || !(lib.elem (config.nestlo.factory.metricsPort or 0) [ cfg.webPort cfg.metricsPort ]);
+          message = "nestlo.cloud web or metrics port collides with nestlo.factory.metricsPort";
         }
       ];
       warnings = lib.optional (cfg.llm.enable && !net.enable)
-        "agentos.cloud.llm needs agentos.networking.enable (the model gateway); VMs get no llm integration";
+        "nestlo.cloud.llm needs nestlo.networking.enable (the model gateway); VMs get no llm integration";
 
-      users.groups.agentos-cloud = { };
-      users.users.agentos-cloud = {
+      users.groups.nestlo-cloud = { };
+      users.users.nestlo-cloud = {
         isSystemUser = true;
-        group = "agentos-cloud";
-        home = "/var/lib/agentos-cloud";
-        extraGroups = [ "redis-agentos" ] ++ lib.optional llmEnabled "agentos";
+        group = "nestlo-cloud";
+        home = "/var/lib/nestlo-cloud";
+        extraGroups = [ "redis-nestlo" ] ++ lib.optional llmEnabled "nestlo";
       };
       users.users.${cfg.lobbyUser} = {
         isSystemUser = true;
-        group = "agentos-cloud";
+        group = "nestlo-cloud";
         home = "/var/empty";
         shell = pkgs.bashInteractive;
-        description = "AgentOS Cloud lobby (ssh ${cfg.lobbyUser}@${cfg.sshHost})";
+        description = "Nestlo Cloud lobby (ssh ${cfg.lobbyUser}@${cfg.sshHost})";
       };
 
-      agentos.services.settings.cloud = {
+      nestlo.services.settings.cloud = {
         inherit (cfg) domain region;
         region_display = cfg.regionDisplay;
         ssh_host = cfg.sshHost;
@@ -328,16 +328,16 @@ in
         verify_dns = cfg.verifyDns;
         public_addresses = cfg.publicAddresses;
         extra_ports = cfg.extraPorts;
-        images.agentos = "${image}";
-        default_image = "agentos";
+        images.nestlo = "${image}";
+        default_image = "nestlo";
         users_create_teams = cfg.usersCreateTeams;
         users_invite = cfg.usersInvite;
         web_port = cfg.webPort;
         metrics_port = cfg.metricsPort;
         lobby_command = lobbyCmd;
-        lobby_socket = "/run/agentos-cloud/lobby.sock";
-        secret_key_file = "/var/lib/agentos-cloud/secret.key";
-        pricing_file = "/etc/agentos/pricing.json";
+        lobby_socket = "/run/nestlo-cloud/lobby.sock";
+        secret_key_file = "/var/lib/nestlo-cloud/secret.key";
+        pricing_file = "/etc/nestlo/pricing.json";
         agent_ui_port = 9999;
         users = map (u: { inherit (u) email admin keys; } // lib.optionalAttrs (u.plan != null) { inherit (u) plan; }) cfg.users;
         integrations = map
@@ -348,7 +348,7 @@ in
           } // lib.optionalAttrs (i.target != null) { inherit (i) target; }
             // lib.optionalAttrs (i.bearerFile != null) { bearer_file = toString i.bearerFile; })
           cfg.integrations
-        ++ lib.optional llmEnabled { name = "llm"; type = "llm"; attach = cfg.llm.attach; comment = "AgentOS model gateway"; };
+        ++ lib.optional llmEnabled { name = "llm"; type = "llm"; attach = cfg.llm.attach; comment = "Nestlo model gateway"; };
         oidc = lib.optionalAttrs (cfg.oidc.issuer != null) {
           inherit (cfg.oidc) issuer name;
           client_id = cfg.oidc.clientId;
@@ -357,14 +357,14 @@ in
           create_users = cfg.oidc.createUsers;
         };
         vmd = {
-          socket = "/run/agentos-cloud-vmd/vmd.sock";
-          socket_group = "agentos-cloud";
-          allowed_users = [ "agentos-cloud" ];
+          socket = "/run/nestlo-cloud-vmd/vmd.sock";
+          socket_group = "nestlo-cloud";
+          allowed_users = [ "nestlo-cloud" ];
           state_dir = cfg.stateDir;
           bridge = bridge;
           gateway_ip = gatewayIp;
           prefix_len = prefixLength;
-          images.agentos = "${image}";
+          images.nestlo = "${image}";
           profile = "${image.profile}";
           init = "${initScript}";
           prompt_command = cfg.promptCommand;
@@ -372,24 +372,24 @@ in
         };
       } // lib.optionalAttrs llmEnabled {
         gateway_url = "http://127.0.0.1:${toString net.modelGatewayPort}";
-        gateway_admin_socket = config.agentos.services.settings.gateway.admin_socket;
+        gateway_admin_socket = config.nestlo.services.settings.gateway.admin_socket;
       };
 
       # ─ the VM helper (root) ─────────────────────────────────────────
       boot.kernelModules = [ "loop" "bridge" ];
-      systemd.services.agentos-cloud-vmd = {
-        description = "AgentOS Cloud VM helper";
+      systemd.services.nestlo-cloud-vmd = {
+        description = "Nestlo Cloud VM helper";
         wantedBy = [ "multi-user.target" ];
         after = [ "network-addresses-${bridge}.service" "local-fs.target" ];
         wants = [ "network-addresses-${bridge}.service" ];
-        restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+        restartTriggers = [ config.environment.etc."nestlo/services.toml".source ];
         path = with pkgs; [ systemd util-linux e2fsprogs iproute2 nftables coreutils skopeo umoci gnutar gzip ];
         serviceConfig = {
           Type = "notify";
-          ExecStart = "${pkgs.agentos.services}/bin/agentos-cloud-vmd";
+          ExecStart = "${pkgs.nestlo.services}/bin/nestlo-cloud-vmd";
           Restart = "on-failure";
           RestartSec = 2;
-          RuntimeDirectory = "agentos-cloud-vmd";
+          RuntimeDirectory = "nestlo-cloud-vmd";
           RuntimeDirectoryMode = "0750";
           RuntimeDirectoryPreserve = "yes";
           # VMs are units of their own: restarting the helper leaves them running
@@ -402,25 +402,25 @@ in
       ];
 
       # ─ the control plane ────────────────────────────────────────────
-      systemd.services.agentos-cloud = {
-        description = "AgentOS Cloud control plane";
+      systemd.services.nestlo-cloud = {
+        description = "Nestlo Cloud control plane";
         wantedBy = [ "multi-user.target" ];
-        after = [ "redis-agentos.service" "agentos-cloud-vmd.service" "network-addresses-${bridge}.service" ]
-          ++ lib.optional llmEnabled "agentos-gateway.service";
-        requires = [ "redis-agentos.service" ];
-        wants = [ "agentos-cloud-vmd.service" ];
-        restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+        after = [ "redis-nestlo.service" "nestlo-cloud-vmd.service" "network-addresses-${bridge}.service" ]
+          ++ lib.optional llmEnabled "nestlo-gateway.service";
+        requires = [ "redis-nestlo.service" ];
+        wants = [ "nestlo-cloud-vmd.service" ];
+        restartTriggers = [ config.environment.etc."nestlo/services.toml".source ];
         serviceConfig = {
           Type = "notify";
           NotifyAccess = "all";
-          User = "agentos-cloud";
-          Group = "agentos-cloud";
-          ExecStart = "${pkgs.agentos.services}/bin/agentos-cloudd";
+          User = "nestlo-cloud";
+          Group = "nestlo-cloud";
+          ExecStart = "${pkgs.nestlo.services}/bin/nestlo-cloudd";
           Restart = "on-failure";
           RestartSec = 3;
-          StateDirectory = "agentos-cloud";
+          StateDirectory = "nestlo-cloud";
           StateDirectoryMode = "0700";
-          RuntimeDirectory = "agentos-cloud";
+          RuntimeDirectory = "nestlo-cloud";
           RuntimeDirectoryMode = "0750";
           UMask = "0007";
           CapabilityBoundingSet = "";
@@ -441,7 +441,7 @@ in
       # ─ the lobby over SSH ───────────────────────────────────────────
       # sshd wants the AuthorizedKeysCommand in root-owned directories that
       # no group can write (unlike /nix/store): a copied file in /etc/ssh
-      environment.etc."ssh/agentos-cloud-keys" = {
+      environment.etc."ssh/nestlo-cloud-keys" = {
         mode = "0755";
         text = ''
           #!${pkgs.runtimeShell}
@@ -452,7 +452,7 @@ in
       services.openssh.extraConfig = ''
         Match User ${cfg.lobbyUser}
           AuthorizedKeysFile none
-          AuthorizedKeysCommand /etc/ssh/agentos-cloud-keys %t %k
+          AuthorizedKeysCommand /etc/ssh/nestlo-cloud-keys %t %k
           AuthorizedKeysCommandUser ${cfg.lobbyUser}
           PasswordAuthentication no
           KbdInteractiveAuthentication no
@@ -462,7 +462,7 @@ in
           X11Forwarding no
           PermitTunnel no
           PermitTTY yes
-          SetEnv AGENTOS_CLOUD_LOBBY_SOCKET=/run/agentos-cloud/lobby.sock
+          SetEnv NESTLO_CLOUD_LOBBY_SOCKET=/run/nestlo-cloud/lobby.sock
       '';
 
       # ─ the VM network ───────────────────────────────────────────────
@@ -472,25 +472,25 @@ in
       networking.dhcpcd.denyInterfaces = [ bridge "vb-avm-*" ];
       # Port 80 of the bridge address and of the metadata address go to the
       # integrations proxy (Caddy has port 80 on every other address)
-      systemd.services.agentos-cloud-redirect = {
-        description = "AgentOS Cloud: redirect VM port 80 to the integrations proxy";
+      systemd.services.nestlo-cloud-redirect = {
+        description = "Nestlo Cloud: redirect VM port 80 to the integrations proxy";
         wantedBy = [ "multi-user.target" ];
         after = [ "network-addresses-${bridge}.service" "firewall.service" "nat.service" ];
         wants = [ "network-addresses-${bridge}.service" ];
         path = [ pkgs.iptables ];
         serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
         script = ''
-          iptables -w -t nat -N agentos-cloud-pre 2>/dev/null || iptables -w -t nat -F agentos-cloud-pre
-          iptables -w -t nat -C PREROUTING -i ${bridge} -j agentos-cloud-pre 2>/dev/null \
-            || iptables -w -t nat -I PREROUTING 1 -i ${bridge} -j agentos-cloud-pre
+          iptables -w -t nat -N nestlo-cloud-pre 2>/dev/null || iptables -w -t nat -F nestlo-cloud-pre
+          iptables -w -t nat -C PREROUTING -i ${bridge} -j nestlo-cloud-pre 2>/dev/null \
+            || iptables -w -t nat -I PREROUTING 1 -i ${bridge} -j nestlo-cloud-pre
           for dst in ${gatewayIp} ${metadataIp}; do
-            iptables -w -t nat -A agentos-cloud-pre -d "$dst" -p tcp --dport 80 -j DNAT --to-destination ${gatewayIp}:${toString intPort}
+            iptables -w -t nat -A nestlo-cloud-pre -d "$dst" -p tcp --dport 80 -j DNAT --to-destination ${gatewayIp}:${toString intPort}
           done
         '';
         preStop = ''
-          iptables -w -t nat -D PREROUTING -i ${bridge} -j agentos-cloud-pre 2>/dev/null || true
-          iptables -w -t nat -F agentos-cloud-pre 2>/dev/null || true
-          iptables -w -t nat -X agentos-cloud-pre 2>/dev/null || true
+          iptables -w -t nat -D PREROUTING -i ${bridge} -j nestlo-cloud-pre 2>/dev/null || true
+          iptables -w -t nat -F nestlo-cloud-pre 2>/dev/null || true
+          iptables -w -t nat -X nestlo-cloud-pre 2>/dev/null || true
         '';
       };
       networking.nat = {
@@ -500,22 +500,22 @@ in
       # VMs reach the host only for DNS, the integrations proxy and the
       # metadata service; everything else of the host is closed to them
       networking.firewall.extraCommands = ''
-        iptables -D INPUT -i ${bridge} -j agentos-cloud-in 2>/dev/null || true
-        iptables -F agentos-cloud-in 2>/dev/null || iptables -N agentos-cloud-in
-        iptables -I INPUT 1 -i ${bridge} -j agentos-cloud-in
-        iptables -A agentos-cloud-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-        iptables -A agentos-cloud-in -d ${gatewayIp} -p tcp --dport ${toString intPort} -j ACCEPT
-        iptables -A agentos-cloud-in -d ${gatewayIp} -p udp --dport 53 -j ACCEPT
-        iptables -A agentos-cloud-in -d ${gatewayIp} -p tcp --dport 53 -j ACCEPT
-        iptables -A agentos-cloud-in -p icmp --icmp-type echo-request -j ACCEPT
-        iptables -A agentos-cloud-in -j REJECT
+        iptables -D INPUT -i ${bridge} -j nestlo-cloud-in 2>/dev/null || true
+        iptables -F nestlo-cloud-in 2>/dev/null || iptables -N nestlo-cloud-in
+        iptables -I INPUT 1 -i ${bridge} -j nestlo-cloud-in
+        iptables -A nestlo-cloud-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        iptables -A nestlo-cloud-in -d ${gatewayIp} -p tcp --dport ${toString intPort} -j ACCEPT
+        iptables -A nestlo-cloud-in -d ${gatewayIp} -p udp --dport 53 -j ACCEPT
+        iptables -A nestlo-cloud-in -d ${gatewayIp} -p tcp --dport 53 -j ACCEPT
+        iptables -A nestlo-cloud-in -p icmp --icmp-type echo-request -j ACCEPT
+        iptables -A nestlo-cloud-in -j REJECT
         ip6tables -D INPUT -i ${bridge} -j DROP 2>/dev/null || true
         ip6tables -I INPUT 1 -i ${bridge} -j DROP
       '';
       networking.firewall.extraStopCommands = ''
-        iptables -D INPUT -i ${bridge} -j agentos-cloud-in 2>/dev/null || true
-        iptables -F agentos-cloud-in 2>/dev/null || true
-        iptables -X agentos-cloud-in 2>/dev/null || true
+        iptables -D INPUT -i ${bridge} -j nestlo-cloud-in 2>/dev/null || true
+        iptables -F nestlo-cloud-in 2>/dev/null || true
+        iptables -X nestlo-cloud-in 2>/dev/null || true
         ip6tables -D INPUT -i ${bridge} -j DROP 2>/dev/null || true
       '';
       networking.firewall.allowedTCPPorts = lib.optionals cfg.openFirewall ([ 80 443 ] ++ cfg.extraPorts);
@@ -523,8 +523,8 @@ in
       environment.systemPackages = [ pkgs.nftables ];
 
       # VMs resolve through the host; integration hosts point at the bridge
-      systemd.services.agentos-cloud-dns = {
-        description = "AgentOS Cloud resolver for VMs";
+      systemd.services.nestlo-cloud-dns = {
+        description = "Nestlo Cloud resolver for VMs";
         wantedBy = [ "multi-user.target" ];
         after = [ "network-addresses-${bridge}.service" ];
         wants = [ "network-addresses-${bridge}.service" ];
@@ -549,7 +549,7 @@ in
         email = cfg.tls.email;
         globalConfig = lib.optionalString (cfg.tls.mode != "off") ''
           on_demand_tls {
-            ask http://${web}/__agentos/tls-ask
+            ask http://${web}/__nestlo/tls-ask
           }
         '' + lib.optionalString (cfg.tls.mode == "off") ''
           auto_https off
@@ -564,9 +564,9 @@ in
       };
     }
 
-    (lib.mkIf config.agentos.observability.enable {
+    (lib.mkIf config.nestlo.observability.enable {
       services.prometheus.scrapeConfigs = [{
-        job_name = "agentos-cloud";
+        job_name = "nestlo-cloud";
         static_configs = [{ targets = [ "127.0.0.1:${toString cfg.metricsPort}" ]; }];
       }];
     })
