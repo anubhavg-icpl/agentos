@@ -18,7 +18,9 @@ pkgs.testers.runNixOSTest {
   name = "nestlo-agent-identity";
   globalTimeout = 900;
 
-  nodes.machine = { ... }: {
+  nodes.machine = { pkgs, ... }: {
+    # openssl reads the SVID's SAN below
+    environment.systemPackages = [ pkgs.openssl ];
     imports = nestloModules;
 
     virtualisation.memorySize = 2048;
