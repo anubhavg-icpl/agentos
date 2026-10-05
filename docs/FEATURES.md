@@ -332,6 +332,18 @@ See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skill
 
 See [herdr.md](herdr.md). VM test `herdr`; unit tests `services/tests/test_herdr_*.py`.
 
+## AgentOS Cloud (`modules/cloud`)
+
+`agentos.cloud` provides the exe.dev feature set on the host.
+
+- Persistent VMs: systemd-nspawn machines with an ext4 disk each, user-namespaced root, pool slices (shared vCPU and memory) and standalone VMs, OCI images or the `agentos` image (the host's Nix store read-only: agents, dev tools, podman, Shelley).
+- The lobby over SSH (`ssh lobby@<host> <command>`) and the HTTPS API (`POST /exec`, SSH-signed `agentos0.` tokens with command allowlists, expiry and context; `exe0.`/`exe1.` accepted).
+- A private HTTPS proxy per VM (Caddy, on-demand TLS): sharing with users or the team (web or root access), share links, public sites, any port, custom domains, login by SSH magic link or OIDC, identity headers, VM tokens.
+- Integrations injecting secrets at the edge: http-proxy, GitHub (git, repo allowlist, read-only), LLM (the model gateway per VM, exe.dev's protocol), peer; reflection integration and metadata service.
+- Teams, invites, plan quotas with metering, audit events, Prometheus metrics.
+
+See [cloud.md](cloud.md). VM test `cloud`; unit tests `services/tests/test_cloud.py`.
+
 ---
 
 ## MCP Server Registry (36 servers)

@@ -270,6 +270,8 @@ rec {
   schedule-cli = pkgs.callPackage ../nixos/packages/schedule-cli.nix { };
   # OCI runtime: containers and Firecracker microVMs from one image
   pullrun = pkgs.callPackage ../nixos/packages/pullrun.nix { };
+  # exe.dev's web coding agent; runs in AgentOS Cloud VMs (docs/cloud.md)
+  shelley = pkgs.callPackage ../nixos/packages/shelley.nix { };
   # agent-fleet: in-browser chat and fleet hub (static site, wllama vendored),
   # and the CLI that publishes them to Hugging Face Spaces
   agent-fleet-web = pkgs.callPackage ../nixos/packages/agent-fleet-web.nix { };

@@ -30,6 +30,9 @@ agentos-triggers = "agentos_services.triggers:main"
 agentos-factoryd = "agentos_services.factory:main"
 agentos-factory = "agentos_services.factory_cli:main"
 agentos-factory-scope = "agentos_services.scopecheck:main"
+agentos-cloudd = "agentos_services.cloud.server:main"
+agentos-cloud-vmd = "agentos_services.cloud.vmd:main"
+agentos-cloud-lobby = "agentos_services.cloud.lobby:main"
 
 [tool.setuptools.packages.find]
 include = ["agentos_services*"]

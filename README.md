@@ -318,6 +318,22 @@ Full reference: [docs/herdr.md](docs/herdr.md)
 
 ---
 
+## AgentOS Cloud
+
+`agentos.cloud` makes the host a self-hosted [exe.dev](https://exe.dev): persistent VMs with their own disks for people and agents, managed over SSH and an HTTPS API, each behind a private HTTPS proxy with sharing, share links and custom domains. Integrations put secrets at the network edge instead of in the VM (any HTTP API, GitHub repositories, the model gateway, other VMs), and Shelley, exe.dev's web agent, runs in every VM. The commands, tokens, headers, metadata and reflection endpoints match exe.dev's, so its scripts and tools work unchanged.
+
+```bash
+ssh lobby@cloud.example.com new --name web --cpu 4 --memory 8GB
+ssh -t lobby@cloud.example.com ssh web          # a shell in the VM
+ssh lobby@cloud.example.com share set-public web   # https://web.cloud.example.com/
+ssh lobby@cloud.example.com integrations add github --name gh --repository acme/web --bearer ghp_... --attach vm:web
+curl -X POST https://cloud.example.com/exec -H "Authorization: Bearer $TOKEN" -d 'ls'
+```
+
+Full reference: [docs/cloud.md](docs/cloud.md)
+
+---
+
 ## MCP Server Registry
 
 <div align="center">

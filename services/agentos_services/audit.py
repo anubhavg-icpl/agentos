@@ -79,6 +79,15 @@ EVENT_TYPES = frozenset({
     "publish.merge",        # auto-merge outcome (merged, skipped, error)
     "factory.item.created", "factory.item.state", "factory.item.decision", "factory.item.publish",
     "factory.line.pause",
+    # AgentOS Cloud (cloud/commands.py): who changed which VM, share, key or integration
+    "cloud.vm.create", "cloud.vm.delete", "cloud.vm.restart", "cloud.vm.stop", "cloud.vm.rename",
+    "cloud.vm.copy", "cloud.vm.resize", "cloud.vm.transfer", "cloud.vm.attach", "cloud.vm.tunnel",
+    "cloud.share.add", "cloud.share.remove", "cloud.share.link", "cloud.share.link.used", "cloud.share.port",
+    "cloud.share.visibility", "cloud.domain.add", "cloud.domain.remove", "cloud.key.add", "cloud.key.remove",
+    "cloud.token.create", "cloud.integration.add", "cloud.integration.edit", "cloud.integration.remove",
+    "cloud.integration.attach", "cloud.team.create", "cloud.team.member", "cloud.team.disable",
+    "cloud.invite.create", "cloud.invite.redeem", "cloud.billing.capacity", "cloud.user.create",
+    "cloud.user.disable",
     "audit.dropped",        # client-side loss counter
 })
 WRITER_TYPES = frozenset({CHECKPOINT, "audit.retention", "audit.start"})

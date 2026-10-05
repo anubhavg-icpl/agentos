@@ -2,7 +2,7 @@
 # (agentos-daemon), orchestrator (agentos-orchestrator, with its root helper
 # agentos-task-runner) and scheduler (agentos-scheduler). Source in
 # services/; the test suite runs at build time.
-{ lib, python3Packages, git, systemd }:
+{ lib, python3Packages, git, systemd, openssh }:
 
 python3Packages.buildPythonApplication {
   pname = "agentos-services";
@@ -19,6 +19,7 @@ python3Packages.buildPythonApplication {
     python3Packages.fakeredis
     git # task runner tests drive real repositories and worktrees
     systemd # systemd-analyze, for the calendar tests
+    openssh # ssh-keygen: cloud API tokens are checked against OpenSSH's own signatures
   ];
 
   pythonImportsCheck = [ "agentos_services" ];

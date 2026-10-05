@@ -47,6 +47,7 @@
     ./editors
     ./desktop
     ./herdr
+    ./cloud
 
     # Automation
     ./scheduler
