@@ -285,6 +285,9 @@ rec {
   # memory (nestlo.beacon, docs/beacon.md); beacon CLI, beacon-hooks and a
   # local-only beacon-otelcol, all built from source
   agent-beacon = pkgs.callPackage ../nixos/packages/agent-beacon.nix { };
+  # TUIOS: terminal multiplexer and window manager for coding agents (agent
+  # state, inbox, fan-out, SSH and web access; nestlo.tuios, docs/tuios.md)
+  tuios = pkgs.callPackage ../nixos/packages/tuios.nix { };
   # NVIDIA OpenShell: policy-enforced agent sandboxes (CLI, gateway, supervisor, prover)
   openshell = pkgs.callPackage ../nixos/packages/openshell.nix { };
   # agent-fleet: in-browser chat and fleet hub (static site, wllama vendored),
