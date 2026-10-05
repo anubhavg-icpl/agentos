@@ -53,9 +53,11 @@ let
     selectors = map selectorOf selectors;
     x509_svid_ttl = if x509Ttl == null then cfg.x509SvidTtl else x509Ttl;
     jwt_svid_ttl = if jwtTtl == null then cfg.jwtSvidTtl else jwtTtl;
-    # Marks the entries this module owns; `nestlo-identity register` uses
-    # the hint "nestlo-dyn", which the reconcile step leaves alone.
-    hint = "nestlo";
+    # Marks the entries this module owns ("nestlo:" prefix; `nestlo-identity
+    # register` uses "nestlo-dyn:", which the reconcile step leaves alone).
+    # Unique per entry: a workload that matches several entries (the agent
+    # user and a per-agent unit) gets only one SVID per hint from SPIRE.
+    hint = "nestlo:${path}";
   } // lib.optionalAttrs (dnsNames != [ ]) { dns_names = dnsNames; };
 
   # The nestlo-agent user as a whole, whatever unit it runs in
@@ -250,13 +252,13 @@ let
       s=(-socketPath ${serverSock})
       stamp=${stateDir}/entries.sha256
       sum=$(sha256sum ${entriesFile} | cut -d' ' -f1)
-      have=$(${spireServer} entry show "''${s[@]}" -output json | jq '[.entries[]? | select(.hint=="nestlo")] | length')
+      have=$(${spireServer} entry show "''${s[@]}" -output json | jq '[.entries[]? | select((.hint // "") | startswith("nestlo:"))] | length')
       want=$(jq '.entries | length' ${entriesFile})
       if [ "$(cat "$stamp" 2>/dev/null || true)" = "$sum" ] && [ "$have" = "$want" ]; then
         echo "registration entries up to date ($want)"
         exit 0
       fi
-      for id in $(${spireServer} entry show "''${s[@]}" -output json | jq -r '.entries[]? | select(.hint=="nestlo") | .id'); do
+      for id in $(${spireServer} entry show "''${s[@]}" -output json | jq -r '.entries[]? | select((.hint // "") | startswith("nestlo:")) | .id'); do
         ${spireServer} entry delete "''${s[@]}" -entryID "$id" >/dev/null
       done
       if [ "$want" != 0 ]; then
@@ -295,12 +297,12 @@ let
           id=''${1:?agent id}; unit=''${2:-nestlo-agent-$id.service}; user=''${3:-${agentUser}}
           ${spireServer} entry create "''${s[@]}" -parentID ${nodeId} -spiffeID "spiffe://${td}/agent/$id" \
             -selector "unix:user:$user" -selector "systemd:id:$unit" \
-            -x509SVIDTTL ${toString cfg.x509SvidTtl} -jwtSVIDTTL ${toString cfg.jwtSvidTtl} -hint nestlo-dyn
+            -x509SVIDTTL ${toString cfg.x509SvidTtl} -jwtSVIDTTL ${toString cfg.jwtSvidTtl} -hint "nestlo-dyn:agent/$id"
           ;;
         unregister)
           id=''${1:?agent id}
           for e in $(${spireServer} entry show "''${s[@]}" -spiffeID "spiffe://${td}/agent/$id" -output json \
-                     | jq -r '.entries[]? | select(.hint=="nestlo-dyn") | .id'); do
+                     | jq -r '.entries[]? | select((.hint // "") | startswith("nestlo-dyn:")) | .id'); do
             ${spireServer} entry delete "''${s[@]}" -entryID "$e"
           done
           ;;
