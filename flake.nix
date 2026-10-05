@@ -148,6 +148,12 @@
             host = hostFor system "agentos";
             agentPkgs = self.packages.${system};
           };
+          # Eval-only: agentos.policy assertions fire on an invalid policy
+          # and a valid one compiles; rbac defaults (tests/policy-eval.nix).
+          policy-eval = import ./tests/policy-eval.nix {
+            inherit pkgs;
+            host = hostFor system "agentos";
+          };
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           # Boots a VM with the AgentOS service stack and drives an agent

@@ -113,13 +113,14 @@ SUBMIT_FIELDS = {
     "agent", "workspace", "prompt", "budget_usd", "timeout_sec",
     "depends_on", "after", "swarm", "group", "isolate", "origin",
     "gate", "max_retries", "backoff_sec", "verify", "judge", "priority",
-    "concurrency_key", "dedupe_key", "publish",
+    "concurrency_key", "dedupe_key", "publish", "model",
 }
 _PLACEHOLDER = re.compile(r"\{(prompt|workspace|task_id)\}")
 _PREV = re.compile(r"\{prev_result\}")
 RESERVED_ORIGIN = "openclaw"
 NODE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
 _NODEREF = re.compile(r"\{nodes\.([A-Za-z0-9][A-Za-z0-9_-]{0,31})\.result\}")
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}")
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@#-]{0,99}")
 
 
@@ -228,6 +229,10 @@ def validate_fields(body, runtime, opts, check_workspace=True, partial=False, no
         if value is not None and (not isinstance(value, str) or not _KEY.fullmatch(value)):
             raise ValidationError("invalid %s" % name)
         out[name] = value
+    model = body.get("model")
+    if model is not None and (not isinstance(model, str) or not _MODEL.fullmatch(model)):
+        raise ValidationError("invalid model")
+    out["model"] = model
     out["verify"] = validate_verify(body.get("verify"))
     out["publish"] = validate_publish(body.get("publish"))
 

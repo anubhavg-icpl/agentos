@@ -44,6 +44,8 @@ import threading
 import time
 
 from . import config as configmod
+from . import policy as policymod
+from . import rbac as rbacmod
 from . import tasks as T
 from . import unixapi
 from .store import Store, connect
@@ -109,6 +111,8 @@ class Orchestrator:
         self.agents_running = agents_running or (lambda exclude: count_running_agents(self.state_dir, exclude))
         self.lock = threading.RLock()
         self._seq = 0
+        self.policy = policymod.Policy.from_config(cfg)
+        self.rbac = rbacmod.Rbac(cfg)
 
     def runtime(self):
         return self._runtime if self._runtime is not None else T.load_runtime(self.opts["runtime_file"])
@@ -121,6 +125,27 @@ class Orchestrator:
         """The origin the OpenClaw bridge stamps is reserved for the bridge's own user."""
         if origin == T.RESERVED_ORIGIN and (not peer or peer_identity(peer)[0] != self.opts["bridge_user"]):
             raise ApiError(403, "origin %r is reserved for %s" % (origin, self.opts["bridge_user"]))
+
+    def _apply_policy(self, fields, rt, count=1, reserve=None, judge=False):
+        """Resolve and enforce the policy of a task; sets fields["policy"].
+        `reserve` ({entry name: usd}) carries the budget committed earlier in
+        the same request. Refusals are 403 errors that name the rule."""
+        if not self.policy.enabled:
+            return
+        name, eff = self.policy.resolve(policymod.candidates(fields, rt.get("workspace_root")))
+        reserve = reserve if reserve is not None else {}
+        spent = 0.0
+        if eff.get("daily_budget_usd") is not None and not judge:
+            spent = policymod.day_spent(self.tasks.list(limit=1000), name, self.clock())
+        try:
+            rec = policymod.enforce(eff, name, self.policy.version, fields, rt, spent_today=spent,
+                                    reserved=reserve.get(name, 0.0), count=count, judge=judge)
+        except policymod.PolicyError as exc:
+            raise ApiError(403, str(exc))
+        if not judge:
+            reserve[name] = reserve.get(name, 0.0) + (fields.get("budget_usd") or 0.0) * count
+            fields["policy"] = rec
+        return rec
 
     def _new_task(self, fields, group, now, submitter, **extra):
         # The sequence number keeps FIFO order for tasks queued in the same instant
@@ -165,6 +190,11 @@ class Orchestrator:
         now = self.clock()
         created = []
         with self.lock:
+            self._apply_policy(fields, rt, count=swarm)
+            if judge:
+                jf = dict(fields, **judge)
+                self._apply_policy(jf, rt, judge=True)
+                judge["budget_usd"] = jf["budget_usd"]
             for _ in range(swarm):
                 task = self._new_task(fields, group, now, submitter)
                 stored = self.tasks.create(task)
@@ -239,6 +269,7 @@ class Orchestrator:
 
         ids = {n: T.new_id("task", self.clock) for n in order}
         records = []
+        reserve = {}
         for n in order:
             spec = {k: v for k, v in nodes[n].items() if k not in ("depends_on", "when")}
             spec["depends_on"] = [ids[d] for d in deps[n]]
@@ -253,6 +284,11 @@ class Orchestrator:
             except T.ValidationError as exc:
                 raise T.ValidationError("node %s: %s" % (n, exc))
             self._check_origin(fields.get("origin"), peer)
+            with self.lock:
+                try:
+                    self._apply_policy(fields, rt, reserve=reserve)
+                except ApiError as exc:
+                    raise ApiError(exc.status, "node %s: %s" % (n, exc.message))
             records.append((n, fields, None if when is None else when.strip()))
 
         submitter = peer_identity(peer)[0] if peer else None
@@ -267,12 +303,20 @@ class Orchestrator:
         return group, created
 
     # ── control ────────────────────────────────────────────────────────
-    def cancel(self, ident):
-        """Cancel one task, or every unfinished task of a group."""
+    def cancel(self, ident, caller=None):
+        """Cancel one task, or every unfinished task of a group. With RBAC,
+        `caller` (an identity from Rbac.identity) may only cancel its own
+        tasks unless it is an admin."""
         task = self.tasks.get(ident)
         ids = [ident] if task else self.tasks.group_ids(ident)
         if not ids:
             raise ApiError(404, "no such task or group: %s" % ident)
+        if caller is not None:
+            for task_id in ids:
+                current = self.tasks.get(task_id)
+                if current and current["status"] not in T.TERMINAL and not self.rbac.may_cancel(caller, current):
+                    raise ApiError(403, "rbac: %s may cancel only their own tasks; %s was submitted by %s (role required: admin)" % (
+                        caller["name"], task_id, current.get("submitted_by") or "unknown"))
         cancelled = []
         for task_id in ids:
             with self.lock:
@@ -325,6 +369,9 @@ class Orchestrator:
             current = self.tasks.get(task_id)
             if current is None:
                 raise ApiError(404, "no such task: %s" % task_id)
+            if self.rbac.separate_approver and current.get("submitted_by") == name:
+                raise ApiError(403, "rbac: separate_approver is set; %s submitted %s and cannot %s it" % (
+                    name, task_id, "approve" if approve else "reject"))
             updated = self.tasks.update(task_id, mutate)
             if not won:
                 raise ApiError(409, "task %s is not awaiting approval (%s)" % (task_id, updated["status"]))
@@ -435,11 +482,20 @@ class Orchestrator:
             slots = self._free_slots(running)
             busy = {t["workspace"] for t in running if not t.get("isolate")}
             keys = {t["concurrency_key"] for t in running if t.get("concurrency_key")}
+            # Policy max_parallel: a concurrency key with a limit above one
+            pol_running = {}
+            for t in running:
+                pk = (t.get("policy") or {}).get("name")
+                if pk and (t["policy"].get("max_parallel") or 0) > 0:
+                    pol_running[pk] = pol_running.get(pk, 0) + 1
             for task in ready:
                 if slots <= 0:
                     break
                 key = task.get("concurrency_key")
                 if key and key in keys:
+                    continue
+                pol = task.get("policy") or {}
+                if pol.get("max_parallel") and pol_running.get(pol["name"], 0) >= pol["max_parallel"]:
                     continue
                 if not task.get("isolate"):
                     # Non-isolated tasks share the working tree: one at a time
@@ -448,6 +504,8 @@ class Orchestrator:
                     busy.add(task["workspace"])
                 if key:
                     keys.add(key)
+                if pol.get("max_parallel"):
+                    pol_running[pol["name"]] = pol_running.get(pol["name"], 0) + 1
                 if self._dispatch(task):
                     slots -= 1
 
@@ -527,6 +585,13 @@ class Orchestrator:
                         winner_error=meta.get("winner_error"))
         return view
 
+    def _need(self, peer, action):
+        """The caller's identity if their roles allow `action`, else a 403."""
+        try:
+            return self.rbac.require(peer, action)
+        except rbacmod.Denied as exc:
+            raise ApiError(403, "rbac: " + exc.message)
+
     def app(self, method, parts, query, body):
         peer = unixapi.peer_credentials()
         if method == "GET" and parts == ["health"]:
@@ -538,14 +603,23 @@ class Orchestrator:
                 "awaiting_approval": sum(1 for t in active if t["status"] == T.AWAITING),
                 "max_workers": int(self.opts["max_workers"]),
             }
+        if method == "GET" and parts == ["whoami"]:
+            ident = self.rbac.identity(peer)
+            return 200, dict(ident, rbac=self.rbac.enabled, separate_approver=self.rbac.separate_approver)
+        if method == "GET" and parts == ["policy"]:
+            self._need(peer, "read")
+            return 200, self.policy.show((query.get("repo") or [None])[0])
         if parts[:1] == ["tasks"]:
             if method == "POST" and len(parts) == 1:
+                self._need(peer, "submit")
                 try:
                     created, deduped = self.submit_ex(body, peer)
                 except T.ValidationError as exc:
                     raise ApiError(400, str(exc))
                 return (200 if deduped else 201), {"tasks": created, "group": created[0].get("group"),
                                                    "deduplicated": deduped}
+            if method == "GET" and len(parts) in (1, 2):
+                self._need(peer, "read")
             if method == "GET" and len(parts) == 1:
                 limit = int((query.get("limit") or ["100"])[0])
                 listed = self.tasks.list((query.get("status") or [None])[0], (query.get("group") or [None])[0],
@@ -557,8 +631,9 @@ class Orchestrator:
                     raise ApiError(404, "no such task: %s" % parts[1])
                 return 200, task
             if method == "POST" and len(parts) == 3 and parts[2] == "cancel":
-                return 200, {"tasks": self.cancel(parts[1])}
+                return 200, {"tasks": self.cancel(parts[1], self._need(peer, "cancel"))}
             if method == "POST" and len(parts) == 3 and parts[2] in ("approve", "reject"):
+                self._need(peer, "decide")
                 try:
                     changed = self.decide(parts[1], parts[2] == "approve", peer,
                                           (body or {}).get("note") if isinstance(body, dict) else None)
@@ -566,6 +641,7 @@ class Orchestrator:
                     raise ApiError(400, str(exc))
                 return 200, {"tasks": changed}
         if method == "POST" and parts == ["workflows"]:
+            self._need(peer, "submit")
             try:
                 group, created = self.submit_workflow(body, peer)
             except T.ValidationError as exc:
@@ -573,6 +649,7 @@ class Orchestrator:
             return 201, {"group": group, "tasks": list(created.values()),
                          "nodes": {n: t["id"] for n, t in created.items()}}
         if method == "GET" and len(parts) == 2 and parts[0] in ("groups", "workflows"):
+            self._need(peer, "read")
             return 200, self.group_view(parts[1])
         raise ApiError(404, "unknown endpoint")
 

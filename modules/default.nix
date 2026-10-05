@@ -22,6 +22,7 @@
     # Agent intelligence
     ./context
     ./orchestration
+    ./policy
     ./openclaw
 
     # Tool ecosystem
