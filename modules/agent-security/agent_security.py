@@ -109,7 +109,7 @@ def link_latest(directory, target, name="latest.json"):
     try:
         if os.path.lexists(link):
             os.unlink(link)
-        os.symlink(os.path.basename(target), link)
+        os.symlink(os.path.relpath(target, directory), link)
     except OSError:
         pass
 
@@ -241,7 +241,8 @@ def run_promptfoo(cfg, kind, extra, config_file, out_dir, label):
     summary.update({"kind": kind, "agent": pf["agentId"], "exitCode": rc, "report": out, "config": config_file,
                     "target": pf["target"]["model"]})
     write_json(os.path.join(out_dir, "summary.json"), summary)
-    link_latest(os.path.dirname(out_dir), os.path.join(os.path.basename(out_dir), "summary.json"),
+    # reports/latest-<kind>.json -> <kind>/<time>/summary.json
+    link_latest(os.path.dirname(os.path.dirname(out_dir)), os.path.join(out_dir, "summary.json"),
                 "latest-%s.json" % kind)
     total = summary.get("total", {})
     text = "%s of %s: %s passed, %s failed, %s errors" % (
