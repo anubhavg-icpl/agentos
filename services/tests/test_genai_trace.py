@@ -71,6 +71,19 @@ ENTRY = {
 }
 
 
+def test_request_model_is_the_model_asked_for(sink):
+    # the gateway logs request_model when the response names a dated model
+    t = make(sink)
+    assert t.record(dict(ENTRY, request_model="claude-test"))
+    assert t.flush()
+    t.close()
+    (span,) = sink.spans()
+    a = attrs(span)
+    assert span["name"] == "chat claude-test"
+    assert a["gen_ai.request.model"] == "claude-test"
+    assert a["gen_ai.response.model"] == "claude-test-20260101"
+
+
 def make(sink, **cfg):
     return gt.Exporter(dict(endpoint=sink.url, flush_interval_sec=0.05, **cfg), providers=PROVIDERS)
 

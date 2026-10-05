@@ -982,6 +982,8 @@ class Gateway:
                 "status": resp.status, "model": model,
                 "duration_ms": int((self.clock() - started) * 1000),
             }
+            if request_model and request_model != model:
+                entry["request_model"] = request_model      # model asked for (response has the dated name)
             if client_gone:
                 entry["client_disconnected"] = True
             if getattr(req, "dlp_found", None):

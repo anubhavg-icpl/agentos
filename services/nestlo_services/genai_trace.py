@@ -224,7 +224,8 @@ class Exporter(Tracer):
         # entry["provider"] is already the provider that answered (after routing and fallback)
         provider = entry.get("provider") or entry.get("fallback_provider") or entry.get("routed_provider")
         # The model the gateway asked the provider for: after routing, the routed one
-        req_model = entry.get("routed_model") or entry.get("original_model") or entry.get("model")
+        req_model = (entry.get("request_model") or entry.get("routed_model")
+                     or entry.get("original_model") or entry.get("model"))
         resp_model = entry.get("model")
         attrs = [_attr("gen_ai.operation.name", op)]
         if provider:
