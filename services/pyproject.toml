@@ -14,6 +14,7 @@ dependencies = ["redis>=5", "cryptography>=41"]
 nestlo-audit = "nestlo_services.audit:main"
 nestlo-model-gateway = "nestlo_services.gateway:main"
 nestlo-daemon = "nestlo_services.daemon:main"
+nestlo-a2a = "nestlo_services.a2a:main"
 nestlo-dashboard = "nestlo_services.dashboard:main"
 nestlo-herdr = "nestlo_services.herdr_bridge:main"
 nestlo-herdr-plugins = "nestlo_services.herdr_plugins:main"

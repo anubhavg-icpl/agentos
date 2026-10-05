@@ -212,6 +212,10 @@
           local-ai-backends = import ./tests/local-ai-backends.nix { inherit pkgs nestloModules; };
           # Tetragon policies for agents: a decoy secret read raises an alert
           agent-runtime-security = import ./tests/agent-runtime-security.nix { inherit pkgs nestloModules; };
+          # A2A server: agent card, auth, message/send creates an orchestrator task
+          a2a = import ./tests/a2a.nix { inherit pkgs nestloModules; };
+          # Agent Beacon: collector, per-user capture, relay, retention, memory, MCP, skills.
+          beacon = import ./tests/beacon.nix { inherit pkgs nestloModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs nestloModules; };
           # Local inference backend registered as a gateway provider.

@@ -54,4 +54,5 @@ in
   open-design = callPack ./packs/open-design.nix;
   herdr = callPack ./packs/herdr.nix;
   openshell = callPack ./packs/openshell.nix;
+  beacon = callPack ./packs/beacon.nix;
 }

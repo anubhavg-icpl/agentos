@@ -40,6 +40,10 @@
     ./local-ai/localai.nix
     ./local-ai/vllm.nix
     ./agent-runtime-security
+    ./agentgateway
+    ./a2a
+    ./toolhive
+    ./beacon
     ./openshell
 
     # Safety & control

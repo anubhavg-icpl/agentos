@@ -237,4 +237,14 @@
     rev = "e7fdd6beef98f7f92d86271a169fdd4d3be44cf3";
     hash = "sha256-GY3f0C7kfaeKXPVuzVcCyZ+BcfmhuBLj1caPOnv0wK8=";
   };
+
+  # Agent Beacon: the memory skills of its agent-skills/ plugin (recall,
+  # distill, promote, lenses). The same commit nestlo.beacon builds the
+  # beacon CLI from (nixos/packages/agent-beacon.nix).
+  beacon = fetchFromGitHub {
+    owner = "Asymptote-Labs";
+    repo = "agent-beacon";
+    rev = "82a6fba58e5d51f55fadc12ccdde8ce7b286eaa4";
+    hash = "sha256-PtEObrdWZ9qCH04X8xEKp8hIIKKR9azODSW37tZUUMs=";
+  };
 }

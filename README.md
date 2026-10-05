@@ -92,7 +92,9 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 - [Sandboxes](docs/containers.md) and containers
 - [Metering gateway](docs/gateway-features.md): budgets, loop detection, cost routing, replay
 - [Egress allowlist](docs/FEATURES.md), AppArmor
-- [GPU scheduling](docs/gpu.md), [local models](docs/local-ai.md)
+- [GPU scheduling](docs/gpu.md), [local models](docs/local-ai.md): Ollama, llama.cpp, [LocalAI and vLLM](docs/local-ai-backends.md)
+- [Agent security](docs/agent-security.md): red-team, MCP and skill scan, PR review
+- [Runtime security](docs/agent-runtime-security.md): Tetragon eBPF policies for agent processes
 
 </td>
 <td valign="top" width="33%">
@@ -105,6 +107,8 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 - [36 MCP servers](docs/FEATURES.md), [herdr](docs/herdr.md) workspaces
 - [Agent Orca](docs/orca.md): Kubernetes operator for agents on k3s
 - [OpenShell](docs/openshell.md): NVIDIA's sandboxed agent runtime
+- [A2A and ACP](docs/a2a.md): agents as A2A servers, editors over ACP
+- [agentgateway](docs/agentgateway.md) and [ToolHive](docs/toolhive.md): per-agent MCP authorization, MCP servers in containers
 
 </td>
 <td valign="top" width="33%">
@@ -113,6 +117,9 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 - [Nestlo Cloud](docs/cloud.md): VMs, HTTPS, sharing, teams
 - [Audit log](docs/audit.md) and [DLP](docs/dlp.md)
 - [Provenance](docs/provenance.md), [policy and RBAC](docs/policy.md)
+- [Identity and secrets](docs/agent-identity.md): SPIRE, Cedar, [OpenBao](docs/openbao.md)
+- [LLM observability](docs/llm-observability.md): GenAI traces, Langfuse, OpenLIT
+- [Beacon](docs/beacon.md): session replay and reviewed memory
 - [Dashboard](docs/dashboard.md), Prometheus, Grafana, alerts
 - [Backups, safe upgrades](docs/operations.md), SBOM
 
@@ -162,14 +169,13 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 | orca | Agent Orca: Kubernetes operator for AI agents on single-node k3s, models through the gateway | `aoctl`, `kubectl` |
 | openshell | NVIDIA OpenShell: policy-governed agent sandboxes, gateway, prover | `openshell`, `openshell-prover` |
 
-† Planned service, not implemented yet ([status](docs/STATUS.md)).
 | cloud | Nestlo Cloud: persistent VMs over SSH and HTTPS, private HTTPS proxy, sharing, custom domains, integrations, teams | `ssh lobby@<host> new` |
 | triggers | GitHub webhooks to tasks, factory items and pull requests | `nestlo-triggers` |
 | fleet | Remote agent fleets over SSH | `nestlo fleet` |
 | marketplace | Reviewed agent and skill index | `nestlo market` |
 | dashboard | Web dashboard for agents, tasks and spend | `nestlo-dashboard` |
 | gpu | GPU scheduling for local inference | automatic |
-| local-ai | Ollama and Open WebUI on the host | automatic |
+| local-ai | Ollama or llama.cpp and Open WebUI on the host; LocalAI and vLLM backends (`nestlo.localAI.localai`, `nestlo.localAI.vllm`) | automatic |
 | agent-stack | agent-fleet apps (n8n, Flowise, Langflow, ...) through the gateway | automatic |
 | agent-fleet-web | In-browser llama.cpp chat and fleet hub | automatic |
 | openclaw | Chat front end (Telegram, Slack) for the orchestrator | automatic |
@@ -177,6 +183,17 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 | desktop | Desktop edition (i3 with gaps, sway, Hyprland) | automatic |
 | backup | restic backups and a restore drill | `nestlo-restore` |
 | upgrade | Auto-upgrades that roll back on a failed health gate | automatic |
+| agent-security | promptfoo red-team and eval, MCP server and skill admission scan, PR-Agent review, all through the gateway (`nestlo.agentSecurity`) | `nestlo-redteam`, `nestlo-eval`, `nestlo-agent-scan`, `nestlo-pr-review` |
+| agent-runtime-security | Tetragon eBPF policies and alerts for agent processes, observe by default (`nestlo.agentRuntimeSecurity`) | automatic |
+| agent-identity | SPIFFE/SPIRE workload identity for agents and services (`nestlo.agentIdentity`) and Cedar authorization (`nestlo.cedar`) | `nestlo-svid`, `nestlo-identity`, `nestlo-authz` |
+| openbao | OpenBao secrets backend, per-agent secrets by SPIFFE login (`nestlo.openbao`) | `nestlo-bao`, `nestlo-openbao-get` |
+| llm-observability | OpenTelemetry GenAI traces from the gateway, optional Langfuse and OpenLIT stacks (`nestlo.llmObservability`) | automatic |
+| beacon | Agent Beacon: local session capture, replay and reviewed memory (`nestlo.beacon`) | `beacon`, `nestlo-beacon` |
+| agentgateway | Single MCP endpoint with per-agent tool authorization, LLM route into the gateway (`nestlo.agentgateway`) | `nestlo-agentgateway-mcp-config` |
+| toolhive | MCP servers in Podman containers with permission profiles (`nestlo.toolhive`) | `thv` |
+| a2a | A2A server for Nestlo agents and the ACP launcher for editors (`nestlo.a2a`) | `nestlo-acp` |
+
+† Planned service, not implemented yet ([status](docs/STATUS.md)).
 
 </details>
 
@@ -364,11 +381,13 @@ Everything above is implemented in [`services/`](services/) (Python) and [`modul
 | Topic | Read |
 |:---|:---|
 | What works today | [STATUS](docs/STATUS.md) · [ROADMAP](docs/ROADMAP.md) · [CHANGELOG](CHANGELOG.md) |
-| Agents and sandboxes | [AGENTS](docs/AGENTS.md) · [containers](docs/containers.md) · [gpu](docs/gpu.md) · [local AI](docs/local-ai.md) |
+| Agents and sandboxes | [AGENTS](docs/AGENTS.md) · [containers](docs/containers.md) · [gpu](docs/gpu.md) · [local AI](docs/local-ai.md) · [LocalAI and vLLM](docs/local-ai-backends.md) · [runtime security](docs/agent-runtime-security.md) |
 | The model gateway | [gateway features](docs/gateway-features.md) · [DLP](docs/dlp.md) |
 | Getting work done | [orchestration](docs/orchestration.md) · [triggers](docs/triggers.md) · [factory](docs/factory.md) · [skills](docs/skills.md) · [herdr](docs/herdr.md) · [Agent Orca](docs/orca.md) · [OpenShell](docs/openshell.md) |
 | Nestlo Cloud | [cloud](docs/cloud.md) |
-| Governance | [audit](docs/audit.md) · [provenance](docs/provenance.md) · [policy and RBAC](docs/policy.md) |
+| Governance | [audit](docs/audit.md) · [provenance](docs/provenance.md) · [policy and RBAC](docs/policy.md) · [agent security](docs/agent-security.md) · [identity and Cedar](docs/agent-identity.md) · [OpenBao](docs/openbao.md) |
+| Observability | [LLM observability](docs/llm-observability.md) · [Beacon](docs/beacon.md) |
+| Protocols and tools | [A2A and ACP](docs/a2a.md) · [agentgateway](docs/agentgateway.md) · [ToolHive](docs/toolhive.md) |
 | Operating it | [operations](docs/operations.md) · [runbooks](docs/runbooks/) · [dashboard](docs/dashboard.md) · [fleet](docs/fleet.md) · [marketplace](docs/marketplace.md) |
 | More | [desktop](docs/desktop.md) · [ARM64](docs/aarch64.md) · [OpenClaw](docs/openclaw.md) · [agent stack](docs/agent-stack.md) · [Pullrun](docs/pullrun.md) · [all features](docs/FEATURES.md) |
 | Security | [SECURITY](SECURITY.md) |

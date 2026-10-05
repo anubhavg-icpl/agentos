@@ -263,6 +263,19 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 | Orchestration | orchestration | `nestlo-task` | ✅ |
 | Scheduler | scheduler | `nestlo-schedule` | ✅ |
 | 20 coding agents | agents | `nestlo agents` | ✅ |
+| Agent Orca (Kubernetes operator on k3s) | orca | `aoctl` | ✅ (VM test) |
+| NVIDIA OpenShell sandboxes | openshell | `openshell` | ✅ (VM test) |
+| Nestlo Cloud | cloud | `ssh lobby@<host>` | ✅ (VM test) |
+| Agent security (promptfoo, agent-scan, PR-Agent) | agent-security | `nestlo-redteam`, `nestlo-agent-scan`, `nestlo-pr-review` | ✅ (VM test) |
+| Runtime security (Tetragon) | agent-runtime-security | (automatic) | ✅ (VM test) |
+| Agent identity and Cedar | agent-identity | `nestlo-svid`, `nestlo-authz` | ✅ (VM test) |
+| OpenBao | openbao | `nestlo-bao` | ✅ (VM test) |
+| LLM observability | llm-observability | (automatic) | ✅ (VM test) |
+| Beacon | beacon | `beacon`, `nestlo-beacon` | ✅ (VM test) |
+| LocalAI and vLLM | local-ai | (automatic) | ✅ (VM test) |
+| A2A server, ACP launcher | a2a | `nestlo-acp` | ✅ (VM test) |
+| agentgateway | agentgateway | `nestlo-agentgateway-mcp-config` | Package unbuilt, test not in checks |
+| ToolHive | toolhive | `thv` | Config only, no VM test |
 
 ---
 
@@ -355,6 +368,77 @@ See [orca.md](orca.md). VM test `orca`.
 - Policies declared in Nix (checked at evaluation, rendered to `/etc/openshell/policies/`, optionally the gateway-global policy), upstream and custom provider profiles, provider instances from secret files, gateway OCSF log and OTLP export.
 
 See [openshell.md](openshell.md). VM test `openshell`.
+
+## Security & identity
+
+### Agent security (`modules/agent-security`)
+
+`nestlo.agentSecurity` tests and gates the AI side of the host; model calls go through the Nestlo model gateway and runs are audited (`security.redteam`, `security.agent_scan`, `security.pr_review`).
+
+- `nestlo-redteam` / `nestlo-eval`: [promptfoo](https://github.com/promptfoo/promptfoo) red-team and eval suites against a model behind the gateway, as agent `redteam` with its own budget; hosted attack generation and telemetry off; optional weekly timer.
+- `nestlo-agent-scan`: local rules over Nestlo's MCP server lists and the skill bundle (hidden unicode, instruction overrides, exfiltration, tool shadowing, toxic flows, inline secrets, unpinned packages) in a unit without network; Snyk agent-scan inspect and remote analysis are opt-in.
+- `nestlo-pr-review`: [PR-Agent](https://github.com/qodo-ai/pr-agent) through the gateway as agent `pr-review`, optionally on the `agent/*` pull requests the publisher opens.
+
+See [agent-security.md](agent-security.md). VM test `agent-security`.
+
+### Agent runtime security (`modules/agent-runtime-security`)
+
+`nestlo.agentRuntimeSecurity` runs [Tetragon](https://tetragon.io) (eBPF) with policies for agent users: credential reads (including the providers' key files), writes to protected paths, raw sockets, ptrace, kernel modules and egress that bypasses the gateway. A forwarder keeps the events of agent users, writes alerts, sends `runtime.security` audit events and Prometheus counters. Observe by default; killing is opt-in.
+
+See [agent-runtime-security.md](agent-runtime-security.md). VM test `agent-runtime-security`.
+
+### Agent identity and authorization (`modules/agent-identity`)
+
+- `nestlo.agentIdentity`: SPIFFE/SPIRE on loopback (x509pop node attestation, Workload API); SPIFFE IDs declared in Nix for the agent user, per-agent units and Nestlo services; `nestlo-svid` and `nestlo-identity` CLIs; JWT bundle export.
+- `nestlo.cedar`: Cedar schema, policies and entities rendered and validated at build time; `nestlo-authz check` reports allow or deny with the deciding policy.
+
+See [agent-identity.md](agent-identity.md). VM test `agent-identity`.
+
+### OpenBao (`modules/openbao`)
+
+`nestlo.openbao` runs OpenBao with TLS on loopback, an init and unseal helper, KV v2 for agents, JWT login by SPIFFE identity with a policy per agent, a file audit device and a `/run/secrets` sync for the secrets manager. CLIs `nestlo-bao`, `nestlo-openbao-get`.
+
+See [openbao.md](openbao.md). VM test `openbao`.
+
+## Observability & Local Models
+
+### LLM observability (`modules/llm-observability`)
+
+`nestlo.llmObservability` makes the model gateway emit one OpenTelemetry GenAI span per request (provider, model, usage including cache tokens, error type, plus agent, cost and routing; no prompt or completion text). Exporter to the Nestlo collector, Langfuse, OpenLIT or any OTLP endpoint; Langfuse and OpenLIT are opt-in loopback podman stacks with pinned digests and secrets generated at runtime. Tracing (`[tracing]` in the gateway config) is off by default.
+
+See [llm-observability.md](llm-observability.md). VM test `llm-observability`; unit tests `services/tests/test_genai_trace.py`.
+
+### Beacon (`modules/beacon`)
+
+`nestlo.beacon` runs [Agent Beacon](https://github.com/Asymptote-Labs/agent-beacon), local only: a collector (`beacon-collector`, OTLP on loopback) writes one JSONL log of sessions, prompts, tool calls, file edits and token usage from many agent harnesses; `beacon traces`, `beacon scan` and `beacon token-usage` replay, check and cost it; reviewed memory is served back to agents over MCP and a skill pack. `nestlo-beacon status|log|repair|archive`, optional read-only dashboard, retention and archive.
+
+See [beacon.md](beacon.md). VM test `beacon`.
+
+### LocalAI and vLLM (`modules/local-ai`)
+
+`nestlo.localAI.localai` (container by default) and `nestlo.localAI.vllm` (per-model units with explicit GPUs) run next to Ollama or llama.cpp: loopback servers with a generated API key that only the gateway holds, registered as $0 `openai-compatible` providers so agents keep budgets, DLP and audit.
+
+See [local-ai-backends.md](local-ai-backends.md). VM test `local-ai-backends`.
+
+## Protocols & Tools
+
+### A2A and ACP (`modules/a2a`)
+
+`nestlo.a2a` serves Nestlo agents as A2A (Agent2Agent) agents: Agent Cards, bearer tokens per client with per-agent scoping, a fixed workspace and budget per agent, optional operator approval of each task. `nestlo-acp <agent>` starts an installed agent in its ACP mode for editors, with model calls through the gateway.
+
+See [a2a.md](a2a.md). VM test `a2a`; unit tests `services/tests/test_a2a.py`.
+
+### agentgateway (`modules/agentgateway`)
+
+`nestlo.agentgateway` runs [agentgateway](https://github.com/agentgateway/agentgateway) on loopback as one MCP endpoint in front of Nestlo's MCP servers, with a per-agent API key and tool allow-list, plus an LLM route that forwards only to the Nestlo model gateway as agent `agentgateway`. The package is not built yet (placeholder `cargoHash`) and `tests/agentgateway.nix` is not in the flake checks; see the doc.
+
+See [agentgateway.md](agentgateway.md).
+
+### ToolHive (`modules/toolhive`)
+
+`nestlo.toolhive` runs selected MCP servers with [ToolHive](https://github.com/stacklok/toolhive) in Podman containers with a permission profile (mounts, outbound hosts and ports), registers them with the MCP registry and, with `nestlo.agentgateway`, exposes them through the gateway.
+
+See [toolhive.md](toolhive.md).
 
 ## Nestlo Cloud (`modules/cloud`)
 

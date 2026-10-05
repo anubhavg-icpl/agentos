@@ -279,6 +279,12 @@ rec {
   # used by nestlo.agentSecurity (docs/agent-security.md)
   agent-scan = pkgs.callPackage ../nixos/packages/agent-scan.nix { };
   pr-agent = pkgs.callPackage ../nixos/packages/pr-agent.nix { };
+  # agentgateway: MCP/A2A/LLM proxy with per-agent authz (nestlo.agentgateway)
+  agentgateway = pkgs.callPackage ../nixos/packages/agentgateway.nix { };
+  # Agent Beacon: session capture across agent harnesses, replay and reviewed
+  # memory (nestlo.beacon, docs/beacon.md); beacon CLI, beacon-hooks and a
+  # local-only beacon-otelcol, all built from source
+  agent-beacon = pkgs.callPackage ../nixos/packages/agent-beacon.nix { };
   # NVIDIA OpenShell: policy-enforced agent sandboxes (CLI, gateway, supervisor, prover)
   openshell = pkgs.callPackage ../nixos/packages/openshell.nix { };
   # agent-fleet: in-browser chat and fleet hub (static site, wllama vendored),
