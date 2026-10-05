@@ -105,6 +105,7 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 - [Software factory](docs/factory.md): plan, build, review, QA
 - [Skill packs](docs/skills.md) for every agent CLI
 - [36 MCP servers](docs/FEATURES.md), [herdr](docs/herdr.md) workspaces
+- [TUIOS](docs/tuios.md): terminal multiplexer with agent state, inbox and fan-out
 - [Agent Orca](docs/orca.md): Kubernetes operator for agents on k3s
 - [OpenShell](docs/openshell.md): NVIDIA's sandboxed agent runtime
 - [A2A and ACP](docs/a2a.md): agents as A2A servers, editors over ACP
@@ -166,6 +167,7 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 | vibe-integration | 853 modes, 5340 skills from VIBE | `nestlo-vibe` |
 | skills | Skill packs linked into every agent CLI | `nestlo-skills` |
 | herdr | Persistent agent workspaces, status bridge, plugin marketplace | `nestlo-herdr`, `nestlo-herdr-plugins` |
+| tuios | TUIOS: persistent agent workspaces with agent state, inbox, fan-out, SSH and web access, audit and metrics bridge | `nestlo-tuios`, `tuios` |
 | orca | Agent Orca: Kubernetes operator for AI agents on single-node k3s, models through the gateway | `aoctl`, `kubectl` |
 | openshell | NVIDIA OpenShell: policy-governed agent sandboxes, gateway, prover | `openshell`, `openshell-prover` |
 
@@ -383,7 +385,7 @@ Everything above is implemented in [`services/`](services/) (Python) and [`modul
 | What works today | [STATUS](docs/STATUS.md) · [ROADMAP](docs/ROADMAP.md) · [CHANGELOG](CHANGELOG.md) |
 | Agents and sandboxes | [AGENTS](docs/AGENTS.md) · [containers](docs/containers.md) · [gpu](docs/gpu.md) · [local AI](docs/local-ai.md) · [LocalAI and vLLM](docs/local-ai-backends.md) · [runtime security](docs/agent-runtime-security.md) |
 | The model gateway | [gateway features](docs/gateway-features.md) · [DLP](docs/dlp.md) |
-| Getting work done | [orchestration](docs/orchestration.md) · [triggers](docs/triggers.md) · [factory](docs/factory.md) · [skills](docs/skills.md) · [herdr](docs/herdr.md) · [Agent Orca](docs/orca.md) · [OpenShell](docs/openshell.md) |
+| Getting work done | [orchestration](docs/orchestration.md) · [triggers](docs/triggers.md) · [factory](docs/factory.md) · [skills](docs/skills.md) · [herdr](docs/herdr.md) · [TUIOS](docs/tuios.md) · [Agent Orca](docs/orca.md) · [OpenShell](docs/openshell.md) |
 | Nestlo Cloud | [cloud](docs/cloud.md) |
 | Governance | [audit](docs/audit.md) · [provenance](docs/provenance.md) · [policy and RBAC](docs/policy.md) · [agent security](docs/agent-security.md) · [identity and Cedar](docs/agent-identity.md) · [OpenBao](docs/openbao.md) |
 | Observability | [LLM observability](docs/llm-observability.md) · [Beacon](docs/beacon.md) |

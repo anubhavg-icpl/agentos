@@ -195,6 +195,8 @@
           # herdr: agent-user server, status bridge and metrics, Nestlo and
           # declared plugins linked.
           herdr = import ./tests/herdr.nix { inherit pkgs nestloModules; };
+          # TUIOS: per-user daemons, layouts, bridge (audit, metrics, notifications), SSH and web access.
+          tuios = import ./tests/tuios.nix { inherit pkgs nestloModules; };
           # OpenShell gateway (mTLS, podman driver), CLI, declared policies, Nestlo
           # model gateway agent for sandbox inference.
           openshell = import ./tests/openshell.nix { inherit pkgs nestloModules; };

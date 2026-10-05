@@ -265,6 +265,7 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 | 20 coding agents | agents | `nestlo agents` | ✅ |
 | Agent Orca (Kubernetes operator on k3s) | orca | `aoctl` | ✅ (VM test) |
 | NVIDIA OpenShell sandboxes | openshell | `openshell` | ✅ (VM test) |
+| TUIOS (agent terminal multiplexer, bridge, SSH/web access) | tuios | `nestlo-tuios`, `tuios` | ✅ (VM test) |
 | Nestlo Cloud | cloud | `ssh lobby@<host>` | ✅ (VM test) |
 | Agent security (promptfoo, agent-scan, PR-Agent) | agent-security | `nestlo-redteam`, `nestlo-agent-scan`, `nestlo-pr-review` | ✅ (VM test) |
 | Runtime security (Tetragon) | agent-runtime-security | (automatic) | ✅ (VM test) |
@@ -344,6 +345,19 @@ See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skill
 - Skill pack `herdr`, `packages.<system>.herdr`, desktop launcher entry.
 
 See [herdr.md](herdr.md). VM test `herdr`; unit tests `services/tests/test_herdr_*.py`.
+
+---
+
+## TUIOS (`modules/tuios`)
+
+`nestlo.tuios` integrates [TUIOS](https://github.com/Gaurav-Gosain/tuios), a terminal multiplexer and window manager with agent state, an inbox, fan-out in git worktrees, a JSON protocol and event stream, an MCP server, an SSH server and a web terminal.
+
+- A daemon per user (`nestlo-tuios-<user>`), sandboxed for the agent user, never restarted by a rebuild; `nestlo-tuios [--user U]` runs tuios against it.
+- Declarative config (`settings`, strict pane grants, `hooks`), headless `layouts`, opt-in agent `integrations` and read-only `mcp`.
+- Bridge per user: `terminal.tuios` audit events, a notification when an agent waits for input, loopback metrics `nestlo_tuios_*`.
+- Opt-in `ssh` (public keys only) and `web` (password, TLS off loopback): both give a full shell as their user.
+
+See [tuios.md](tuios.md). VM test `tuios`; unit tests `services/tests/test_tuios_bridge.py`.
 
 ## Agent Orca (`modules/orca`)
 

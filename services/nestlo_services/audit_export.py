@@ -55,6 +55,7 @@ ACTIVITY = {
     "agent.kill": (4, "Agent kill"),
     "agent.exit": (4, "Agent exit"),
     "publish.pr": (1, "Publish pull request"),
+    "terminal.tuios": (99, "Terminal event"),
     "audit.checkpoint": (99, "Audit checkpoint"),
     "audit.retention": (99, "Audit retention"),
     "audit.start": (99, "Audit start"),

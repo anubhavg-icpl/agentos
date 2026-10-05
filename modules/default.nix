@@ -60,6 +60,7 @@
     ./editors
     ./desktop
     ./herdr
+    ./tuios
     ./cloud
 
     # Automation
