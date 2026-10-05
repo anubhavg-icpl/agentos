@@ -9,9 +9,10 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 | Test | Command | Covers |
 |:---|:---|:---|
 | Evaluation of every output | `nix flake check --no-build --all-systems` | Host, VM image, ISO, packages, checks on x86_64 and aarch64 |
-| Service unit tests (253) | `nix build .#services` | Gateway proxying (JSON + SSE), key injection, pricing, budgets, alerts, rate limit, circuit breaker, admin socket; daemon reaping, auto-shutdown, notifications, metrics |
+| Service unit tests (675) | `nix build .#services` | Gateway proxying (JSON + SSE), key injection, pricing, budgets, alerts, rate limit, circuit breaker, admin socket; daemon reaping, auto-shutdown, notifications, metrics |
 | VM tests | `nix build .#checks.x86_64-linux.<name>` for `gateway-features`, `orchestration`, `container`, `platform`, `desktop` | See each feature's doc; only `e2e` runs in CI today |
 | End-to-end VM test | `nix build .#checks.x86_64-linux.e2e` | Boots a VM and drives a real agent run: spawn → sandbox → gateway → priced spend → budget exceeded → daemon stops the agent → webhook; plus sandbox, control-plane isolation and egress checks |
+| Backup and restore | `nix build .#checks.x86_64-linux.backup` | restic backup of state, Redis and secrets; delete; `agentos-restore` (needs KVM; CI builds the driver only) |
 | Shell linting | `nix build .#cli .#installer` | `agentos` and `agentos-install` pass shellcheck |
 
 `.github/workflows/ci.yml` runs the evaluation, the unit tests, shell linting and the `e2e` VM test on every push and pull request.
@@ -29,6 +30,9 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 | Key injection | Working | Agents see `agentos-managed`; the real key stays in a file readable by the gateway. |
 | Notifications | Working | Slack, Discord, generic webhook; URLs read from secret files. |
 | Egress allowlist | Working | Host-wide; the agent user additionally cannot reach provider APIs except via the gateway. |
+| Health, alerts, SLO | Working | `/healthz`, `/readyz`, `Type=notify` and watchdog; Prometheus alert rules and burn-rate alerts; Alertmanager optional. See [operations.md](operations.md). |
+| Backup and restore | Working, VM test not run in CI | `agentos.backup`, `agentos-restore`. |
+| Upgrades with rollback | Working, not VM-tested | `agentos.upgrade`. |
 | Metrics | Working | Daemon exports per-agent spend, tokens and requests; Prometheus scrapes it. |
 | AppArmor, auditd, kernel hardening | Working | |
 | btrfs layout, snapshots, rollback | Working | disko layout with a `@workspaces` subvolume; btrbk hourly snapshots; `agentos rollback <snapshot> <workspace>`. |

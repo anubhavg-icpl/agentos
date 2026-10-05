@@ -249,6 +249,16 @@ agentos-breaker reset <id>  # close an open circuit
 <sub><i>Grafana on localhost:2342 (<code>ssh -L 2342:localhost:2342 admin@agentos</code>). Agent-level metrics arrive with the daemon.</i></sub>
 </div>
 
+### Operations
+
+| Feature | Description |
+|:---|:---|
+| **Health and readiness** | Every service answers `/healthz` and `/readyz`; units are `Type=notify` with a watchdog |
+| **Alerting and SLO** | Prometheus rules for service, gateway, budget, circuit, loop, queue, disk and Redis, plus a 99.5% gateway SLO with burn-rate alerts; optional Alertmanager (`agentos.observability.alertmanager`) |
+| **Backup and restore** | `agentos.backup` (restic) saves state, Redis, audit and secrets; `agentos-restore` and a tested drill |
+| **Safe upgrades** | `agentos.upgrade` wraps `system.autoUpgrade` and rolls back when the health gate fails |
+| **Supply chain** | Release ISO with provenance, cosign signature, SHA256SUMS and CycloneDX SBOM (`nix run .#sbom`); see [docs/operations.md](docs/operations.md) |
+
 ---
 
 ## VIBE Integration
@@ -459,6 +469,7 @@ agentos/
 │   ├── git-automation/             #   Branch/commit/PR helpers
 │   ├── language-toolchains/        #   20+ language runtimes
 │   ├── databases/                  #   Postgres, Redis, SQLite, DuckDB
+│   ├── backup/ upgrade/            #   restic backups, upgrades with rollback
 │   └── ...                         #   17 more modules
 ├── agents/                         # 20 coding agent packages
 ├── nixos/
@@ -485,6 +496,9 @@ agentos/
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
 | [docs/desktop.md](docs/desktop.md) / [docs/aarch64.md](docs/aarch64.md) | Desktop edition and ARM64 |
+| [docs/operations.md](docs/operations.md) | Health endpoints, SLOs and alerts, backup and restore drill, upgrades with automatic rollback, release verification |
+| [docs/runbooks/](docs/runbooks/) | One runbook per Prometheus alert |
+| [SECURITY.md](SECURITY.md) | Vulnerability disclosure policy |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: add modules, agents, and more |
 

@@ -95,6 +95,8 @@ DEFAULTS = {
         "metrics_listen": "127.0.0.1",
         "metrics_port": 9950,
         "reap_interval_sec": 5,
+        # Filesystem whose usage agentos_state_disk_used_ratio reports
+        "disk_path": "/var/lib/agentos",
     },
     "gpu": {
         # One file per exclusively held GPU, containing the holder's agent id

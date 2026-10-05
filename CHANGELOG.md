@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Operations** (docs/operations.md, docs/runbooks/):
+  - `/healthz` and `/readyz` on the gateway (TCP and admin socket), daemon, dashboard and orchestrator; `Type=notify` units with `sd_notify` READY and a watchdog fed from each service's main loop (stdlib only, `agentos_services/health.py`).
+  - Prometheus alert rules (`agentos.observability.alerts`) for service down, gateway 5xx, budget, open circuit, loop detection, queue age, disk and Redis, plus a 99.5% gateway availability SLO with multi-window burn-rate alerts; each alert links a runbook. Optional Alertmanager (`agentos.observability.alertmanager`, webhook or email, off by default).
+  - New metrics: gateway `/metrics` (responses by status, loop detections, circuit opens), daemon `agentos_redis_up`, `agentos_circuit_open`, `agentos_orchestrator_queue_oldest_age_seconds`, `agentos_state_disk_used_ratio`.
+  - `agentos.backup` (restic): state, Redis (BGSAVE first), audit and stack directories, sops secrets; `agentos-restore`; VM test `backup`.
+  - `agentos.upgrade`: `system.autoUpgrade` with a post-upgrade health gate that rolls back with `nixos-rebuild switch --rollback` and alerts.
+  - `SECURITY.md`, `nix run .#sbom` (CycloneDX via sbomnix) and ready-to-copy supply-chain workflows in `ci/proposed-workflows/` (provenance, cosign, SHA256SUMS, SBOM attestation, vulnix, Scorecard, weekly flake.lock update).
 - **Event triggers and issue-to-PR** (`agentos.triggers`, `agentos-triggers`, docs/triggers.md): signed GitHub webhooks (issues, comments, check runs, review comments) start tasks by declarative rules; a `publish` step pushes `agent/<task-id>` and opens a PR with a token the agent never sees. `agentos.git-automation.autoPR` now publishes finished tasks of configured repositories. VM test `triggers`.
 - **Per-agent gateway tokens.** `agentos spawn` generates a token and registers its hash through the admin socket; agents call `/agent/<id>:<token>/<provider>/`. An agent can no longer spend under another agent's id, get a fresh budget by inventing ids, or impersonate others on the message bus. Tokens are revoked when the agent is reaped.
 - **Container isolation** (`agentos spawn --isolation container`): own root filesystem, PID/IPC/UTS namespaces and a network namespace on the `agentos0` bridge that can only reach the gateway.
@@ -23,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Installer**: SSH key validation, typed device confirmation, `--encrypt` (LUKS2). Desktop VM image gets a random first-boot password; the live ISO enforces key-only SSH.
 
 ### Changed
+- The gateway, daemon, orchestrator and dashboard units are `Type=notify` with `WatchdogSec`; the host's `system.autoUpgrade` settings are now defaults that `agentos.upgrade` overrides.
 - The unbuilt MCP gateway, MCP registry service, provisioner and memory manager stubs and `agentos.plannedServices` were removed.
 - Unmanaged `/<provider>/` requests are only accepted on the gateway's admin socket.
 - The orchestration and scheduler modules were rewritten; `agentos.orchestration.mode`, `resultStrategy` and several `agentos.scheduler.*` options were removed (setting them fails with a pointer to the replacement).
