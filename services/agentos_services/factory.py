@@ -921,7 +921,8 @@ class Factory:
 
     def done_publish(self, item, step, task, result, tail):
         pub = result.get("publish") or {}
-        url = pub.get("pr_url")
+        # The runner records the URL in the publish block and at the top level
+        url = pub.get("pr_url") or result.get("pr_url")
         if not url or pub.get("status") in ("failed", "error"):
             return self.retry_or_block(item, step, "no pull request was opened (%s)" % (pub.get("error") or pub.get("status")))
         item["pr_url"] = url if isinstance(url, str) else str(url)
