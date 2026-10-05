@@ -9,4 +9,5 @@ let
 in
 {
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;
+  reticle = callPack ./packs/reticle.nix;
 }
