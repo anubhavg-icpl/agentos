@@ -275,6 +275,10 @@ rec {
   # Agent Orca: Kubernetes operator for AI agents (nestlo.orca, docs/orca.md);
   # aoctl, the operator, model-router, mcp-ingester and ui-proxy, plus images
   agent-orca = pkgs.callPackage ../nixos/packages/agent-orca.nix { };
+  # Snyk agent-scan (MCP and skill scanner) and PR-Agent (pinned uvx launcher),
+  # used by nestlo.agentSecurity (docs/agent-security.md)
+  agent-scan = pkgs.callPackage ../nixos/packages/agent-scan.nix { };
+  pr-agent = pkgs.callPackage ../nixos/packages/pr-agent.nix { };
   # NVIDIA OpenShell: policy-enforced agent sandboxes (CLI, gateway, supervisor, prover)
   openshell = pkgs.callPackage ../nixos/packages/openshell.nix { };
   # agent-fleet: in-browser chat and fleet hub (static site, wllama vendored),

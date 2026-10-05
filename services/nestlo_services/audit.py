@@ -88,6 +88,7 @@ EVENT_TYPES = frozenset({
     "cloud.integration.attach", "cloud.team.create", "cloud.team.member", "cloud.team.disable",
     "cloud.invite.create", "cloud.invite.redeem", "cloud.billing.capacity", "cloud.user.create",
     "cloud.user.disable",
+    "security.redteam", "security.agent_scan", "security.pr_review",   # nestlo.agentSecurity runs
     "audit.dropped",        # client-side loss counter
 })
 WRITER_TYPES = frozenset({CHECKPOINT, "audit.retention", "audit.start"})

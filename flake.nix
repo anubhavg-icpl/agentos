@@ -200,6 +200,8 @@
           openshell = import ./tests/openshell.nix { inherit pkgs nestloModules; };
           # Agent Orca: k3s, chart, ModelProviders through the gateway, UI
           orca = import ./tests/orca.nix { inherit pkgs nestloModules; };
+          # promptfoo red-team, MCP/skill admission scan, PR-Agent, through the gateway
+          agent-security = import ./tests/agent-security.nix { inherit pkgs nestloModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs nestloModules; };
           # Local inference backend registered as a gateway provider.

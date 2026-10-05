@@ -33,6 +33,7 @@
     ./mcp-servers
     ./pullrun
     ./orca
+    ./agent-security
     ./openshell
 
     # Safety & control
