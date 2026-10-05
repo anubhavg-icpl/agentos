@@ -143,9 +143,9 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("nestlo-model-gateway.service")
 
     with subtest("the chart is deployed and the operator becomes ready"):
-        machine.wait_until_succeeds(KC + "get deployment -n agent-orca-system agent-orca", timeout=2400)
+        machine.wait_until_succeeds(KC + "get deployment -n agent-orca-system agent-orca-operator", timeout=2400)
         machine.wait_until_succeeds(
-            KC + "rollout status -n agent-orca-system deployment/agent-orca --timeout=30s", timeout=2400)
+            KC + "rollout status -n agent-orca-system deployment/agent-orca-operator --timeout=30s", timeout=2400)
         crds = kubectl("get crd -o name")
         for crd in ["agents", "agentruns", "agentworkflows", "modelproviders", "modelselectors", "tools"]:
             assert f"{crd}.agentorca.agentorca.io" in crds, crds
