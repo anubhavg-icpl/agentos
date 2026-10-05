@@ -316,7 +316,7 @@ let
         ${cli} policy set --global --policy ${policyFiles.${cfg.globalPolicy}} --yes >/dev/null
       ''}
       ${lib.optionalString cfg.observability.ocsf.sandboxJson ''
-        ${cli} settings set --global --key ocsf_json_enabled --value true >/dev/null
+        ${cli} settings set --global --key ocsf_json_enabled --value true --yes >/dev/null
       ''}
     '';
   };
@@ -842,7 +842,16 @@ in
 
     systemd.tmpfiles.rules =
       [ "d ${stateDir} 0750 ${svcUser} ${svcUser} -" ]
-      ++ lib.concatMap userLinks cliUsers;
+      ++ lib.concatMap userLinks cliUsers
+      # the setup unit runs as the service user with XDG_CONFIG_HOME below
+      # stateDir and needs the client bundle where the CLI looks for it
+      ++ [
+        "d ${xdgConfig} 0750 ${svcUser} ${svcUser} -"
+        "d ${xdgConfig}/openshell 0750 ${svcUser} ${svcUser} -"
+        "d ${xdgConfig}/openshell/gateways 0750 ${svcUser} ${svcUser} -"
+        "d ${xdgConfig}/openshell/gateways/${gatewayName} 0750 ${svcUser} ${svcUser} -"
+        "L+ ${xdgConfig}/openshell/gateways/${gatewayName}/mtls - - - - ${clientDir}"
+      ];
 
     systemd.services.nestlo-openshell-gateway = {
       description = "OpenShell gateway (sandbox control plane)";

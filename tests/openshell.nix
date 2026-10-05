@@ -111,7 +111,7 @@ pkgs.testers.runNixOSTest {
         machine.fail("curl -fsS http://127.0.0.1:17670/")
         out = as_user("alice", "openshell status")
         print(out)
-        assert "17670" in out, out
+        assert "17670" in out and "Connected" in out, out
         as_user("alice", "openshell sandbox list")
         status, out = machine.execute("runuser -u bob -- env HOME=/home/bob openshell status 2>&1")
         assert status != 0, out
@@ -121,7 +121,7 @@ pkgs.testers.runNixOSTest {
         assert "github_api" in policy and "path: /usr/bin/curl" in policy, policy
         machine.succeed("test -s /etc/openshell/policies/restrictive.yaml")
         machine.succeed("grep -q 'OPENSHELL_SANDBOX_POLICY=.*github-readonly.yaml' /etc/set-environment")
-        out = as_user("alice", "openshell policy get --global")
+        out = as_user("alice", "openshell policy get --global --full")
         print(out)
         assert "github_api" in out and "api.github.com" in out, out
 

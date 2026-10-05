@@ -2,8 +2,9 @@
 #
 #   nix build .#checks.x86_64-linux.orca
 #
-# Boots k3s with the Nix-built images only (no registry: CoreDNS and the
-# chart's Redis are left out, so nothing is pulled), then checks that the
+# Boots k3s with the Nix-built images and the k3s airgap archive only (no
+# registry: the Helm controller job and CoreDNS come from the archive; the
+# chart's Redis is left out), then checks that the
 # Helm controller deploys the agent-orca chart and the operator becomes
 # ready, that the setup unit registers agent `orca` with the model gateway
 # and creates ModelProviders and the default ModelSelector that point at the
@@ -88,7 +89,7 @@ pkgs.testers.runNixOSTest {
         budgetUsd = 5;
         redis.enable = false;
         models.claude-sonnet = { provider = "anthropic"; model = "claude-test"; };
-        k3s.disable = [ "coredns" "traefik" "servicelb" "metrics-server" "local-storage" ];
+        k3s.disable = [ "traefik" "servicelb" "metrics-server" "local-storage" ];
       };
     };
 
@@ -153,7 +154,7 @@ pkgs.testers.runNixOSTest {
         for ns in ["agent-orca-system", "default"]:
             mp = json.loads(kubectl(f"get modelprovider -n {ns} claude-sonnet -o json"))
             base = mp["spec"]["baseURL"]
-            assert base.startswith("http://10.89.3.1:"), base
+            assert base.startswith("http://10.222.0.1:"), base
             assert "/agent/orca:" in base and base.endswith("/anthropic/v1"), base
             assert mp["spec"]["litellmModel"] == "claude-test", mp
             sel = json.loads(kubectl(f"get modelselector -n {ns} default -o json"))
@@ -183,7 +184,7 @@ pkgs.testers.runNixOSTest {
         # the mock LLM listens on 127.0.0.1 only; probe a host port that is
         # open on every address instead: the API server's 6443 is allowed,
         # kubelet's 10250 is not
-        phase, out = pod_curl("probe", ["-sS", "-m", "5", "-k", "-o", "/dev/null", "https://10.89.3.1:10250/"])
+        phase, out = pod_curl("probe", ["-sS", "-m", "5", "-k", "-o", "/dev/null", "https://10.222.0.1:10250/"])
         print(phase, out)
         assert phase == "Failed", out
 

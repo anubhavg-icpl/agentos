@@ -193,7 +193,7 @@ let
         type = lib.types.str;
         example = "openai";
         description = ''
-          Nestlo gateway provider (a `nestlo.services.settings.providers`
+          Nestlo model gateway provider (a `nestlo.services.settings.providers`
           entry) that serves the model. Orca speaks Chat Completions, so the
           provider must offer `v1/chat/completions`: OpenAI and
           OpenAI-compatible providers do, and so does `anthropic`
@@ -322,19 +322,20 @@ in
       };
       disable = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        default = [ "traefik" "servicelb" "metrics-server" "local-storage" ];
+        default = [ "traefik" "servicelb" "metrics-server" ];
         description = ''
-          Packaged k3s components left out. CoreDNS stays: the operator and
-          the UI find their services by name. k3s pulls its own images
-          (CoreDNS) from the internet unless you add `pkgs.k3s.airgap-images`
-          to `services.k3s.images`.
+          Packaged k3s components left out. CoreDNS stays (the operator and
+          the UI find their services by name) and so does local-storage (the
+          chart's Redis claims a volume). The images of k3s itself (Helm
+          controller job, CoreDNS, local-path provisioner) come from the k3s
+          package's airgap archive, so nothing is pulled.
         '';
       };
     };
 
     network.gatewayAddress = lib.mkOption {
       type = lib.types.str;
-      default = "10.89.3.1";
+      default = "10.222.0.1";
       description = ''
         Host address (on lo) where pods reach the model gateway. From the
         cluster network the host accepts the gateway port there, the API
@@ -371,7 +372,10 @@ in
       enable = true;
       role = "server";
       disable = cfg.k3s.disable;
-      images = [ pauseImage redisImage ] ++ lib.attrValues orca.images;
+      # airgap-images carries klipper-helm, which the Helm controller runs to
+      # install the chart, plus CoreDNS and the local-path provisioner
+      images = [ config.services.k3s.package.airgap-images pauseImage redisImage ]
+        ++ lib.attrValues orca.images;
       extraFlags = [
         "--pause-image=nestlo.local/pause:${tag}"
         "--cluster-cidr=${cfg.k3s.clusterCidr}"

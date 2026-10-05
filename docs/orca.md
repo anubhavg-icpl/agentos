@@ -51,8 +51,8 @@ build.
 | `k3s.clusterCidr` | `10.220.0.0/16` | Pod range (k3s' default `10.42.0.0/16` overlaps the `nestlo0` network) |
 | `k3s.serviceCidr` | `10.221.0.0/16` | Service range |
 | `k3s.clusterDns` | `10.221.0.10` | Cluster DNS address, inside `serviceCidr` |
-| `k3s.disable` | `traefik`, `servicelb`, `metrics-server`, `local-storage` | k3s components left out. CoreDNS stays |
-| `network.gatewayAddress` | `10.89.3.1` | Host address, on `lo`, where pods reach the model gateway |
+| `k3s.disable` | `traefik`, `servicelb`, `metrics-server` | k3s components left out. CoreDNS and local-storage stay (services are found by name; the chart's Redis claims a volume) |
+| `network.gatewayAddress` | `10.222.0.1` | Host address, on `lo`, where pods reach the model gateway |
 | `ports.ui` | `9980` | Loopback port of the web UI |
 | `ports.acp` | `9981` | Loopback port of the ACP API (agent discovery and runs) |
 | `ports.tasks` | `9982` | Loopback port of the external task API |
@@ -61,7 +61,7 @@ build.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `provider` | required | Nestlo gateway provider (a `nestlo.services.settings.providers` entry) that serves the model. Orca speaks Chat Completions, so the provider must offer `v1/chat/completions`: OpenAI and OpenAI-compatible providers do, and so does `anthropic` (its OpenAI-compatible endpoint) |
+| `provider` | required | Nestlo model gateway provider (a `nestlo.services.settings.providers` entry) that serves the model. Orca speaks Chat Completions, so the provider must offer `v1/chat/completions`: OpenAI and OpenAI-compatible providers do, and so does `anthropic` (its OpenAI-compatible endpoint) |
 | `model` | required | Model name as the provider knows it, sent unchanged |
 | `capabilities` | `[ ]` | Tags for orca's rule-based router: `reasoning`, `code`, `vision`, `fast`, `long-context`, `cheap` |
 | `latencyProfile` | `medium` | `fast`, `medium` or `slow` |
@@ -72,8 +72,9 @@ build.
 **k3s.** `services.k3s` runs as a server with `--cluster-cidr`,
 `--service-cidr` and `--cluster-dns` from the options above, `--pause-image`
 set to a Nix-built image, and a kubeconfig readable by root only
-(`/etc/rancher/k3s/k3s.yaml`, mode 0600). Traefik, servicelb, metrics-server
-and local-storage are disabled. `KUBECONFIG` is set for login sessions and
+(`/etc/rancher/k3s/k3s.yaml`, mode 0600). Traefik, servicelb and
+metrics-server are disabled. The k3s package's airgap image archive is loaded
+as well (Helm controller job, CoreDNS, local-path provisioner). `KUBECONFIG` is set for login sessions and
 `kubectl` is installed, so operators use `sudo -i` or root.
 `networking.dhcpcd.denyInterfaces` keeps dhcpcd away from `cni0`,
 `flannel.1` and `veth*`.
@@ -106,7 +107,7 @@ failure):
    them all.
 
 A ModelProvider's `baseURL` is
-`http://10.89.3.1:<gateway port>/agent/orca:<token>/<provider>/v1`. The
+`http://10.222.0.1:<gateway port>/agent/orca:<token>/<provider>/v1`. The
 gateway swaps the placeholder for the provider's real key, so the cluster
 holds none. The resources carry the label `app.kubernetes.io/managed-by:
 nestlo` and are re-applied on every start of the unit, so edit `models`, not
@@ -209,9 +210,8 @@ it is on loopback only.
   needs a separate CloudNativePG cluster. Checkpoints and spend use Redis.
   Add it through `chartValues` if you run one.
 - **Hindsight** (long-term memory service): `hindsight.enabled = false`.
-- **Offline CoreDNS.** k3s pulls its CoreDNS (and helper) images from the
-  internet at first start. For an air-gapped machine add
-  `pkgs.k3s.airgap-images` to `services.k3s.images`.
+- **k3s' own images.** They come from `pkgs.k3s.airgap-images`, which the
+  module adds to `services.k3s.images`, so an air-gapped machine works.
 - **Agent and tool images.** They are pulled by k3s from wherever their
   `ociRef` points, unless you load them yourself.
 - **Multi-node clusters, ingress, TLS, OIDC.** One node, loopback only.

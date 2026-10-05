@@ -158,10 +158,10 @@ readable by the `openshell` user only) and a daily budget, and
 `nestlo-openshell-setup.service` imports the profile `nestlo-gateway` and
 creates the provider `nestlo` holding that token.
 
-Attach the provider to a sandbox and point the client at the Nestlo gateway
+Attach the provider to a sandbox and point the client at the Nestlo model gateway
 with the placeholder variable. The sandbox only ever sees the placeholder in
 `NESTLO_GATEWAY_TOKEN`; the sandbox proxy substitutes the token in the URL
-path, and the Nestlo gateway adds the real provider key and applies budget,
+path, and the Nestlo model gateway adds the real provider key and applies budget,
 DLP, loop detection and audit.
 
 ```bash
@@ -179,7 +179,7 @@ provider names follow your configuration; `8080` is the default
 Spend appears in the gateway as agent `openshell`.
 
 `gatewayHost` defaults to `host.openshell.internal`. With the podman driver
-that is the host's loopback, where the Nestlo gateway listens. With the docker
+that is the host's loopback, where the Nestlo model gateway listens. With the docker
 driver it is the bridge address, which the Nestlo gateway does not listen on
 by default; the module warns, and you set `inference.gatewayHost` to an
 address it serves.
