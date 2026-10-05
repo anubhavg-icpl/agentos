@@ -156,6 +156,9 @@ def main(argv=None):
         gid = 0
     os.chown(path, 0, gid)
     os.chmod(path, 0o660)
+    # systemd creates the runtime directory as root:root; open it to the group too
+    os.chown(os.path.dirname(path), 0, gid)
+    os.chmod(os.path.dirname(path), 0o750)
     healthmod.sd_notify("READY=1")
     log.info("listening on %s", path)
     try:

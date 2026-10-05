@@ -399,7 +399,6 @@ in
       systemd.tmpfiles.rules = [
         "d ${cfg.stateDir} 0700 root root -"
         "d ${cfg.stateDir}/vms 0700 root root -"
-        "z /run/agentos-cloud-vmd 0750 root agentos-cloud -"
       ];
 
       # ─ the control plane ────────────────────────────────────────────
