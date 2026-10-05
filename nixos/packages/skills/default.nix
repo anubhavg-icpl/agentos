@@ -11,4 +11,6 @@ in
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;
   karpathy-guidelines = callPack ./packs/karpathy-guidelines.nix;
   karpathy-claude-skills = callPack ./packs/karpathy-claude-skills.nix;
+  chisle = callPack ./packs/chisle.nix;
+  anti-slop = callPack ./packs/anti-slop.nix;
 }
