@@ -665,6 +665,12 @@ class Orchestrator:
         except rbacmod.Denied as exc:
             raise ApiError(403, "rbac: " + exc.message)
 
+    def _need_merge_right(self, peer, body):
+        """publish.merge merges a pull request without a human: asking for it
+        needs the decide role on top of submit."""
+        if _asks_merge(body):
+            self._need(peer, "decide")
+
     def app(self, method, parts, query, body):
         peer = unixapi.peer_credentials()
         if method == "GET" and len(parts) == 1 and parts[0] in healthmod.HEALTH_PATHS:
@@ -687,6 +693,7 @@ class Orchestrator:
         if parts[:1] == ["tasks"]:
             if method == "POST" and len(parts) == 1:
                 self._need(peer, "submit")
+                self._need_merge_right(peer, body)
                 try:
                     created, deduped = self.submit_ex(body, peer)
                 except T.ValidationError as exc:
@@ -717,6 +724,7 @@ class Orchestrator:
                 return 200, {"tasks": changed}
         if method == "POST" and parts == ["workflows"]:
             self._need(peer, "submit")
+            self._need_merge_right(peer, body)
             try:
                 group, created = self.submit_workflow(body, peer)
             except T.ValidationError as exc:
@@ -727,6 +735,20 @@ class Orchestrator:
             self._need(peer, "read")
             return 200, self.group_view(parts[1])
         raise ApiError(404, "unknown endpoint")
+
+
+def _asks_merge(obj, depth=0):
+    """Whether a request body anywhere carries a publish block with merge."""
+    if depth > 8:
+        return False
+    if isinstance(obj, dict):
+        pub = obj.get("publish")
+        if isinstance(pub, dict) and pub.get("merge") is not None:
+            return True
+        return any(_asks_merge(v, depth + 1) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_asks_merge(v, depth + 1) for v in obj)
+    return False
 
 
 def main(argv=None):

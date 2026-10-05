@@ -197,6 +197,20 @@ def cmd_attach(args):
     os.execvp(argv[0], argv)
 
 
+def notify_argv(notify_json, notify_cmd):
+    """The notifier's argv: --notify-json keeps every argument intact,
+    --notify-cmd is split on whitespace."""
+    if notify_json:
+        try:
+            argv = json.loads(notify_json)
+        except ValueError:
+            argv = None
+        if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
+            raise SystemExit("--notify-json must be a non-empty JSON list of strings")
+        return argv
+    return notify_cmd.split() if notify_cmd else None
+
+
 class Monitor:
     """Polls one user's herdr; tells the notifier when an agent has been
     blocked for `grace` seconds (once per blocked episode)."""
@@ -281,7 +295,7 @@ def cmd_monitor(args):
     cfg = load_config()
     me = current_user()
     spec = user_spec(cfg, me)
-    notify = args.notify_cmd.split() if args.notify_cmd else None
+    notify = notify_argv(args.notify_json, args.notify_cmd)
     mon = Monitor(spec, herdr_binary(cfg), notify, args.grace)
     mon.poll()
     server = ThreadingHTTPServer((args.listen, args.port), make_handler(mon))
@@ -311,7 +325,8 @@ def main(argv=None):
     mo.add_argument("--port", type=int, required=True)
     mo.add_argument("--interval", type=float, default=10)
     mo.add_argument("--grace", type=float, default=15, help="seconds blocked before notifying")
-    mo.add_argument("--notify-cmd", help="command that gets the message as its last argument")
+    mo.add_argument("--notify-cmd", help="command that gets the message as its last argument (split on spaces)")
+    mo.add_argument("--notify-json", help="the notify command as a JSON list of arguments (kept intact)")
     at = sub.add_parser("attach", help="attach to a user's herdr")
     at.add_argument("--user")
     at.add_argument("herdr_args", nargs="*")

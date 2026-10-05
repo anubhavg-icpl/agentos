@@ -170,7 +170,7 @@ agentos.factory = {
 |---|---|---|
 | `repo` | required | `owner/name`; must be in `agentos.git-automation.publish.repos` |
 | `workspace` | required | Workspace holding a checkout |
-| `mode` | `supervised` | `supervised` (PR for a human), `approval-first` (every plan is approved first), `dark` (auto-merge) |
+| `mode` | `supervised` | `supervised` (PR for a human), `approval-first` (every item is approved before planning; plan approval follows `planApproval`), `dark` (auto-merge) |
 | `maxInFlight` | 2 | Items worked on at once |
 | `maxOpenPRs` | 5 | No new item starts while this many PRs of the line are open |
 | `maxFixRounds` | 3 | Review/QA fix iterations before the item is blocked |

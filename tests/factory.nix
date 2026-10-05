@@ -4,13 +4,10 @@
 #
 # Boots a VM with the orchestrator, the factory and one supervised line whose
 # four roles are fake agents that follow the protocols (planner prints
-# PLAN-READY, reviewer VERDICT: approve, QA CRITERION 1: pass and
-# VERDICT: pass). The publish step pushes to a local bare repository and
+# SIZE, ACCEPT and PLAN-READY, reviewer VERDICT: approve, QA
+# CRITERION 1: pass - ... and VERDICT: pass). The publish step pushes to a local bare repository and
 # calls a mock GitHub API. An item is submitted with `agentos-factory`; when
 # it is ready, the pull request body must carry the evidence.
-#
-# NOTE: written against the interface agreed with the service builder
-# (`agentos-factory submit|export`, item states).
 { pkgs, agentosModules }:
 
 let
@@ -55,8 +52,8 @@ let
   fakePlanner = fake "planner" ''
     echo "role=planner prompt=[$1]"
     echo "Plan: add hello.txt containing the greeting."
-    echo "Acceptance criteria:"
-    echo "1. hello.txt exists and says hello"
+    echo "SIZE: small"
+    echo "ACCEPT: hello.txt exists and says hello"
     echo "PLAN-READY"
   '';
   fakeBuilder = fake "builder" ''
@@ -69,7 +66,7 @@ let
   '';
   fakeQa = fake "qa" ''
     echo "role=qa prompt=[$1]"
-    echo "CRITERION 1: pass (hello.txt exists)"
+    echo "CRITERION 1: pass - hello.txt exists"
     echo "VERDICT: pass"
   '';
 
@@ -113,6 +110,9 @@ pkgs.testers.runNixOSTest {
           fqa = [ "fake-qa" "{prompt}" ];
         };
       };
+      # Factory tasks always carry a budget, which the task runner meters
+      # through the model gateway
+      networking.enable = true;
       git-automation = {
         enable = true;
         autoPR = false;
@@ -182,7 +182,7 @@ pkgs.testers.runNixOSTest {
         assert "agentos_factory_items" in metrics, metrics
 
     with subtest("an item runs through the line and ends ready with a pull request"):
-        out = ops("agentos-factory submit --line web --title 'Add hello' --body 'Add hello.txt with a greeting.'")
+        out = ops("agentos-factory submit --line web --title 'Add hello' --criteria 'hello.txt exists and says hello'")
         item = out.split()[0]
         machine.wait_until_succeeds(
             f"su - ops -c 'agentos-factory export {item}' | jq -e '.state == \"ready\"'",

@@ -534,7 +534,16 @@ class Tool:
         return bool(rec and rec.get("ref") == cand["ref"])
 
     def install_one(self, st, cand, managed_by, plugins):
-        """Install a candidate unless it is already there at that ref. Returns a status word."""
+        """Install a candidate unless it is already there at that ref. Returns a status word.
+
+        A plugin that is installed but has no state record was installed by
+        hand; it is never claimed, reinstalled or (later) uninstalled."""
+        if cand["src"] not in st["plugins"] and \
+                find_installed(plugins, cand["owner"], cand["repo"], cand["subdir"]) is not None:
+            if managed_by == "declarative":
+                raise PluginError("installed by hand, not managed by AgentOS; left alone "
+                                  "(remove it with `herdr plugin uninstall` to let the declaration manage it)")
+            return "installed by hand, left alone"
         if self.is_current(st, cand, plugins):
             rec = st["plugins"].setdefault(cand["src"], {})
             if not rec:
@@ -710,7 +719,11 @@ class Tool:
             rc = 0
             for src, rec in targets:
                 try:
-                    new = self.candidates(src)[0]
+                    # a root source lists every manifest in the repository;
+                    # take the one this record tracks
+                    new = next((c for c in self.candidates(src) if c["src"] == src), None)
+                    if new is None:
+                        raise PluginError(f"no {MANIFEST} for {src} on the default branch any more")
                 except PluginError as e:
                     print(f"{src}: {e}")
                     rc = 1

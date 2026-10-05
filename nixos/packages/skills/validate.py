@@ -46,11 +46,20 @@ def check(pack, skill_dir):
     name = meta.get("name")
     if not isinstance(name, str) or not name.strip():
         fail(where, "front matter has no name")
+    body_lines = text[m.end():].count("\n")
     if name != want:
-        # Rewrite only the top-level name line of the front matter
-        head, n = re.subn(r"(?m)^name:.*$", "name: " + want, m.group(1), count=1)
+        # Rewrite the top-level name key, including indented continuation
+        # lines of a multi-line value, then parse the result again
+        head, n = re.subn(r"(?m)^name:.*(?:\r?\n[ \t]+.*)*$", "name: " + want, m.group(1), count=1)
         if n != 1:
             fail(where, "cannot rewrite name %r to %r" % (name, want))
+        try:
+            again = yaml.safe_load(head) or {}
+        except yaml.YAMLError as exc:
+            fail(where, "rewritten front matter is not valid YAML: %s" % exc)
+        if not isinstance(again, dict) or again.get("name") != want or \
+                {k: v for k, v in again.items() if k != "name"} != {k: v for k, v in meta.items() if k != "name"}:
+            fail(where, "rewriting name %r to %r changed the front matter" % (name, want))
         text = text[:m.start(1)] + head + text[m.end(1):]
         open(path, "w", encoding="utf-8").write(text)
         print("skill %s: name %r installed as %r" % (where, name, want))
@@ -61,7 +70,6 @@ def check(pack, skill_dir):
     if len(desc) > 1024:
         fail(where, "description is %d characters (max 1024)" % len(desc))
 
-    body_lines = text[m.end():].count("\n")
     if body_lines > 500:
         print("skill %s: note: body is %d lines (spec recommends under 500)" % (where, body_lines))
 

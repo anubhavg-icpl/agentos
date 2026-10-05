@@ -86,8 +86,9 @@ let
         default = "supervised";
         description = ''
           `supervised`: the line ends in a pull request a human merges.
-          `approval-first`: like supervised, but every plan waits for an
-          operator's approval before anything is built.
+          `approval-first`: like supervised, but every new item waits for an
+          operator's approval before planning starts. Whether the plan
+          also waits is set by `planApproval`.
           `dark`: after verify, review and QA pass, the pull request is
           merged without a human. Needs `allowAutoMerge` on the repository
           under agentos.git-automation.publish.repos, a non-empty `verify`,

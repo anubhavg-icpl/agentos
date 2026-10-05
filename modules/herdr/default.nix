@@ -150,8 +150,8 @@ let
         "--grace"
         (toString cfg.monitor.blockedGraceSeconds)
       ] ++ lib.optionals notifyEnabled [
-        "--notify-cmd"
-        (lib.concatStringsSep " " cfg.monitor.notifyCommand)
+        "--notify-json"
+        (builtins.toJSON cfg.monitor.notifyCommand)
       ]);
       Restart = "on-failure";
       RestartSec = 5;

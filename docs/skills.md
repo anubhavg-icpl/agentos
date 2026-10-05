@@ -538,7 +538,7 @@ affected pack's tools unused.
    (`validate.py`): the name is 1-64 characters of a-z, 0-9 and single
    hyphens and equals the directory name, and the description is present and
    at most 1024 characters.
-4. `python3 nixos/packages/skills/collisions.py` lists name clashes between
+5. `python3 nixos/packages/skills/collisions.py` lists name clashes between
    all packs (it must report none) and identical `SKILL.md` text installed
    twice.
 
