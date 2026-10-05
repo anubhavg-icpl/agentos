@@ -138,13 +138,13 @@ pkgs.testers.runNixOSTest {
     with subtest("cedar policies were validated at build time and nestlo-authz decides"):
         machine.succeed("test -s /etc/nestlo/cedar/policies.cedar -a -s /etc/nestlo/cedar/schema.cedarschema")
         authz = "nestlo-authz check"
-        assert "ALLOW" in machine.succeed(f"{authz} --principal claude --action clone --resource Repo:github.com/nestlo/agentos")
+        assert "ALLOW" in machine.succeed(f"{authz} --principal claude --action clone --resource Repo:github.com/nestlo/nestlo")
         # push to the default branch is forbidden whatever permits
-        out = machine.fail(f"{authz} --principal claude --action push --resource Repo:github.com/nestlo/agentos --context '{{\"branch\":\"main\"}}'")
+        out = machine.fail(f"{authz} --principal claude --action push --resource Repo:github.com/nestlo/nestlo --context '{{\"branch\":\"main\"}}'")
         assert "DENY" in out and "no-default-branch-push" in out, out
-        machine.succeed(f"{authz} --principal claude --action push --resource Repo:github.com/nestlo/agentos --context '{{\"branch\":\"fix-1\"}}'")
+        machine.succeed(f"{authz} --principal claude --action push --resource Repo:github.com/nestlo/nestlo --context '{{\"branch\":\"fix-1\"}}'")
         # untrusted tier: no push, no secrets (forbid wins)
-        machine.fail(f"{authz} --principal intruder --action push --resource Repo:github.com/nestlo/agentos --context '{{\"branch\":\"x\"}}'")
+        machine.fail(f"{authz} --principal intruder --action push --resource Repo:github.com/nestlo/nestlo --context '{{\"branch\":\"x\"}}'")
         machine.fail(f"{authz} --principal intruder --action read_secret --resource Secret:github-token")
         machine.succeed(f"{authz} --principal claude --action read_secret --resource Secret:github-token")
         # tools and providers by set membership
@@ -157,7 +157,7 @@ pkgs.testers.runNixOSTest {
         assert rc == 1, rc
         rc, _ = machine.execute(f"{authz} --principal claude --action clone --resource Repo:x --context '[1]'")
         assert rc == 1, rc
-        js = json.loads(machine.succeed(f"{authz} --json --principal claude --action clone --resource Repo:github.com/nestlo/agentos"))
+        js = json.loads(machine.succeed(f"{authz} --json --principal claude --action clone --resource Repo:github.com/nestlo/nestlo"))
         assert js["decision"] == "allow" and js["reasons"] == ["coding-clone"], js
   '';
 }

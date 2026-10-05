@@ -210,9 +210,9 @@ which `nestlo-authz` reports.
 
 ```
 $ nestlo-authz check --principal claude --action push \
-      --resource Repo:github.com/nestlo/agentos --context '{"branch":"main"}'
+      --resource Repo:github.com/nestlo/nestlo --context '{"branch":"main"}'
 DENY (no-default-branch-push)
-$ nestlo-authz check --json --principal claude --action clone --resource Repo:github.com/nestlo/agentos
+$ nestlo-authz check --json --principal claude --action clone --resource Repo:github.com/nestlo/nestlo
 {"decision":"allow","principal":"Agent::\"claude\"", ..., "reasons":["coding-clone"]}
 ```
 
@@ -267,10 +267,10 @@ binary as "feature off" only when the switch is off, never as "allow".
   attestor and `k8s` workload attestor would do it (a `spire-agent`
   DaemonSet or a second agent on the node, an `orca/<agent>` identity per
   service account); it is a documented follow-up, not implemented.
-- JWT-SVIDs are bearer tokens. Keep `jwtSvidTtl` short and use the gateway
-  audience only for the gateway.
+- JWT-SVIDs are bearer tokens. Keep `jwtSvidTtl` short and use the Nestlo model gateway
+  audience only for the Nestlo model gateway.
 - `nestlo-authz` fails closed on errors but nothing calls it yet: wiring it
-  into `policy.py` and the gateway is the integration above.
+  into `policy.py` and the Nestlo model gateway is the integration above.
 - The VM test `agent-identity` (`nix build .#checks.x86_64-linux.agent-identity`)
   covers SPIRE health, node attestation, the registered entries, X.509 and
   JWT SVIDs for a user, for a spawned unit and for a runtime-registered

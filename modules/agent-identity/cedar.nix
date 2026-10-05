@@ -194,7 +194,7 @@ let
   };
 
   defaultEntities = [
-    { uid = { type = "Repo"; id = "github.com/nestlo/agentos"; }; attrs = { }; parents = [{ type = "RepoSet"; id = "internal"; }]; }
+    { uid = { type = "Repo"; id = "github.com/nestlo/nestlo"; }; attrs = { }; parents = [{ type = "RepoSet"; id = "internal"; }]; }
     { uid = { type = "Tool"; id = "git"; }; attrs = { }; parents = [{ type = "ToolSet"; id = "safe"; }]; }
     { uid = { type = "Tool"; id = "read-file"; }; attrs = { }; parents = [{ type = "ToolSet"; id = "safe"; }]; }
     { uid = { type = "Tool"; id = "bash"; }; attrs = { }; parents = [{ type = "ToolSet"; id = "shell"; }]; }

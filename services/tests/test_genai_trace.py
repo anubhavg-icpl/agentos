@@ -90,7 +90,7 @@ def test_genai_attributes(sink):
     assert a["gen_ai.usage.input_tokens"] == 160          # includes cached tokens
     assert a["gen_ai.usage.output_tokens"] == 20
     assert a["gen_ai.usage.cache_read.input_tokens"] == 50
-    assert a["gen_ai.usage.cache_write.input_tokens"] == 10
+    assert a["gen_ai.usage.cache_creation.input_tokens"] == 10
     assert a["server.address"] == "api.anthropic.com"
     assert a["nestlo.agent.id"] == "alice"
     assert a["nestlo.cost_usd"] == 0.0123

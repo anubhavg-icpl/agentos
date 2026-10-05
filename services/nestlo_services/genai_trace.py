@@ -22,7 +22,7 @@ there from the main semantic-conventions repo; status: Development):
                   gen_ai.request.model
   recommended     gen_ai.response.model, gen_ai.usage.input_tokens,
                   gen_ai.usage.output_tokens, gen_ai.usage.cache_read.input_tokens,
-                  gen_ai.usage.cache_write.input_tokens, server.address
+                  gen_ai.usage.cache_creation.input_tokens, server.address
 `gen_ai.usage.input_tokens` includes cached tokens by the convention, while
 the gateway's usage counters exclude them (usage.py); the sum is exported.
 `gen_ai.system` is deprecated in favour of gen_ai.provider.name and only
@@ -249,7 +249,7 @@ class Exporter(Tracer):
             if read:
                 attrs.append(_attr("gen_ai.usage.cache_read.input_tokens", read))
             if wrote:
-                attrs.append(_attr("gen_ai.usage.cache_write.input_tokens", wrote))
+                attrs.append(_attr("gen_ai.usage.cache_creation.input_tokens", wrote))
         failed = bool(error) or (isinstance(status, int) and status >= 400)
         if failed:
             attrs.append(_attr("error.type", str(error or status)))
@@ -258,7 +258,7 @@ class Exporter(Tracer):
         if entry.get("method"):
             attrs.append(_attr("http.request.method", entry["method"]))
         if entry.get("path"):
-            attrs.append(_attr("url.path", entry["path"]))
+            attrs.append(_attr("url.path", str(entry["path"]).split("?", 1)[0]))
         if entry.get("agent"):
             attrs.append(_attr("nestlo.agent.id", entry["agent"]))
         if "cost_usd" in entry:
@@ -412,6 +412,6 @@ def from_config(cfg):
         return Tracer()
     try:
         return Exporter(t, providers=cfg.get("providers"))
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         log.error("tracing disabled: %s", exc)
         return Tracer()

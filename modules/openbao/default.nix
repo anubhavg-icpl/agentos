@@ -35,6 +35,7 @@ let
   initDir = "${stateDir}/init";
   rootTokenFile = "${initDir}/root-token";
   syncTokenFile = "${initDir}/sync-token";
+  jwksTokenFile = "${initDir}/jwks-token";
   addr = "https://${cfg.address}:${toString cfg.port}";
   caFile = "${pubDir}/ca.pem";
   bao = "${cfg.package}/bin/bao";
@@ -57,6 +58,10 @@ let
   '';
 
   agentFiles = lib.mapAttrs (name: a: pkgs.writeText "nestlo-openbao-policy-${name}.hcl" (agentPolicy name a)) cfg.agents;
+
+  jwksPolicy = pkgs.writeText "nestlo-openbao-policy-jwks.hcl" ''
+    path "auth/${jwtMount}/config" { capabilities = ["read", "update"] }
+  '';
 
   syncPolicy = pkgs.writeText "nestlo-openbao-policy-sync.hcl" ''
     path "${cfg.kvMount}/data/secrets-manager/*" { capabilities = ["read"] }
@@ -100,8 +105,13 @@ let
     excludeShellChecks = [ "SC2016" ];
     text = ''
       ${clientEnv}
-      BAO_TOKEN=$(cat ${rootTokenFile})
-      export BAO_TOKEN
+      # The setup unit passes the root token; the timer uses the narrow token
+      # that setup creates (it survives keepRootToken = false)
+      if [ -z "''${BAO_TOKEN:-}" ]; then
+        BAO_TOKEN=$(cat ${jwksTokenFile})
+        export BAO_TOKEN
+        ${bao} token renew >/dev/null || true
+      fi
       # The public JWT authorities of the SPIRE trust bundle, as PEM keys
       keys=$(${svid} jwks-pem)
       if [ "$(jq length <<<"$keys")" = 0 ]; then
@@ -173,6 +183,11 @@ let
           ${bao} auth enable -path=${jwtMount} jwt >/dev/null
         fi
         ${jwksScript}/bin/nestlo-openbao-jwks
+        ${bao} policy write nestlo-jwks-refresh ${jwksPolicy} >/dev/null
+        if [ ! -s ${jwksTokenFile} ] || ! BAO_TOKEN=$(cat ${jwksTokenFile}) ${bao} token lookup >/dev/null 2>&1; then
+          ${bao} token create -orphan -policy=nestlo-jwks-refresh -period=768h -display-name=nestlo-jwks-refresh \
+            -field=token > ${jwksTokenFile}
+        fi
 
         declared=${lib.escapeShellArg (builtins.toJSON (map (n: "agent-${n}") (lib.attrNames cfg.agents)))}
         ${lib.concatStrings (lib.mapAttrsToList (name: a: ''

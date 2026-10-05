@@ -111,7 +111,10 @@ cheapest to strongest:
    run. Agents then see `503` until an operator unseals.
 4. `keepRootToken = false`: the root token is revoked after the first
    configuration. Changing roles or policies later then needs
-   `bao operator generate-root`. Combine with 2 or 3.
+   `bao operator generate-root`. The SPIRE key refresh keeps working: setup
+   creates a narrow periodic token (`init/jwks-token`, policy
+   `nestlo-jwks-refresh`, may only update `auth/spire/config`) for it. Combine
+   with 2 or 3.
 5. A real seal: OpenBao supports transit, PKCS#11 and cloud KMS seals
    (`services.openbao.settings.seal`). Not wired here.
 
@@ -157,7 +160,7 @@ would need a new event type there). Logs are in the journal (`openbao`,
 
 **Gateway.** The model gateway holds the provider keys today
 (`nestlo.networking`). Provider keys could live in OpenBao and be rendered
-for the gateway through the secrets-manager route above.
+for the Nestlo model gateway through the secrets-manager route above.
 
 ## Operations
 

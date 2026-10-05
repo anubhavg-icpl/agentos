@@ -1,7 +1,7 @@
 # LLM observability
 
 `nestlo.llmObservability` makes the Nestlo model gateway emit standard
-OpenTelemetry GenAI traces. Every request the gateway handles becomes one span
+OpenTelemetry GenAI traces. Every request the Nestlo model gateway handles becomes one span
 with the attributes the
 [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai)
 define, plus Nestlo's own (agent, cost, routing). Any OTLP backend can show
@@ -36,76 +36,45 @@ The UI is on `http://127.0.0.1:3300` (tunnel with SSH). The admin login is
 `langfuse.adminEmail` and the password `ADMIN_PASSWORD` in
 `/var/lib/nestlo-langfuse/secrets/secrets.env` (root only).
 
-## Gateway patch required
+## How the Nestlo model gateway emits spans
 
-The exporter is driven by two small changes to `gateway.py` and `config.py`
-that are not part of this module. Without them the module still evaluates and
-writes `[tracing]` to `services.toml`, but nothing is exported.
-
-`services/nestlo_services/gateway.py`:
-
-```python
-from . import genai_trace                       # with the other imports
-
-# in Gateway.__init__, before self.dlp = ...
-        self.tracer = genai_trace.from_config(cfg)
-
-# in Gateway.write_log: build the entry first, trace it, then the log_dir check
-    def write_log(self, agent, entry):
-        entry = dict(entry, ts=round(self.clock(), 3), agent=agent)
-        self.tracer.record(entry)           # GenAI span; non-blocking, never raises
-        if not self.log_dir:
-            return
-        line = json.dumps(entry, sort_keys=True) + "\n"
-        ...
-```
+The exporter is built into the Nestlo model gateway
+(`services/nestlo_services/genai_trace.py`). `Gateway.__init__` creates
+`self.tracer = genai_trace.from_config(cfg)` from the `[tracing]` section of
+`services.toml` (written by this module), and `Gateway.write_log` hands every
+log entry to `self.tracer.record(entry)`. That call is non-blocking and never
+raises; export happens on a background thread.
 
 `write_log` is the one place every outcome passes through: forwarded calls
 (with provider, model, usage, cost, route fields), replays, and refused calls
 (budget, rate limit, circuit breaker) of authenticated agents.
 
-`services/nestlo_services/config.py`, a new section in `DEFAULTS`:
-
-```python
-    "tracing": {
-        "enabled": False,
-        "endpoint": "http://127.0.0.1:4318/v1/traces",
-        "headers": {},
-        "headers_file": "",
-        "ca_file": "",
-        "service_name": "nestlo-model-gateway",
-        "timeout_sec": 5,
-        "queue": 2048,
-        "batch": 128,
-        "flush_interval_sec": 2,
-        "sample_ratio": 1.0,
-        "legacy_system_attribute": False,
-    },
-```
-
-`services/tests/test_genai_trace.py` has a gateway test that is skipped until
-`Gateway.tracer` exists. `tests/llm-observability.nix` is written against the
-patched gateway.
+The `[tracing]` defaults live in `services/nestlo_services/config.py`
+(`DEFAULTS["tracing"]`): `enabled = false`, `endpoint`, `headers`,
+`headers_file`, `ca_file`, `service_name = "nestlo-model-gateway"`,
+`timeout_sec`, `queue`, `batch`, `flush_interval_sec`, `sample_ratio`,
+`legacy_system_attribute`. The module sets `enabled = true` and the endpoint
+for the chosen backend.
 
 ## What a span contains
 
 Span name `chat claude-sonnet-4-6` (`{gen_ai.operation.name} {gen_ai.request.model}`),
-kind CLIENT, one per request, with the gateway as the client of the provider.
+kind CLIENT, one per request, with the Nestlo model gateway as the client of the provider.
 
 | Attribute | Value |
 |-----------|-------|
 | `gen_ai.operation.name` | `chat` (Messages, Chat Completions, Responses), `embeddings`, `text_completion`, `generate_content` (Gemini), from the request path. Other paths (model lists, token counting) produce no span |
-| `gen_ai.provider.name` | `anthropic`, `openai`, `azure.ai.openai`, `gcp.gemini`; for `openai-compatible` providers the gateway's provider name |
-| `gen_ai.request.model` | The model the gateway asked the provider for (after cost-based routing) |
+| `gen_ai.provider.name` | `anthropic`, `openai`, `azure.ai.openai`, `gcp.gemini`; for `openai-compatible` providers the Nestlo model gateway's provider name |
+| `gen_ai.request.model` | The model the Nestlo model gateway asked the provider for (after cost-based routing) |
 | `gen_ai.response.model` | The model the response names |
-| `gen_ai.usage.input_tokens` | Input tokens including cached ones, as the convention says (the gateway's own counter excludes them, so the three kinds are summed) |
+| `gen_ai.usage.input_tokens` | Input tokens including cached ones, as the convention says (the Nestlo model gateway's own counter excludes them, so the three kinds are summed) |
 | `gen_ai.usage.output_tokens` | Output tokens |
-| `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens` | When non-zero |
-| `error.type` | The gateway's error type (`budget_exceeded`, ...) or the HTTP status, when the call failed. The span status is then ERROR |
+| `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens` | When non-zero |
+| `error.type` | The Nestlo model gateway's error type (`budget_exceeded`, ...) or the HTTP status, when the call failed. The span status is then ERROR |
 | `server.address` | Host of the provider's base URL |
 | `http.request.method`, `http.response.status_code`, `url.path` | The proxied request (the agent token is redacted) |
 | `nestlo.agent.id` | Gateway agent id |
-| `nestlo.cost_usd`, `nestlo.cost.priced` | Cost the gateway charged, and whether the model had a price |
+| `nestlo.cost_usd`, `nestlo.cost.priced` | Cost the Nestlo model gateway charged, and whether the model had a price |
 | `nestlo.route.original_model`, `.routed_model`, `.reason`, `.routed_provider`, `.fallback_provider`, `.fallbacks_failed` | Cost-based routing and fallback decisions |
 | `nestlo.replayed`, `nestlo.client_disconnected`, `nestlo.usage_estimated`, `nestlo.dlp.types`, `nestlo.dlp.response` | Gateway events on the request |
 | `gen_ai.system` | Only with `legacySystemAttribute` (deprecated by the conventions) |
@@ -113,10 +82,10 @@ kind CLIENT, one per request, with the gateway as the client of the provider.
 Resource: `service.name = nestlo-model-gateway`, `service.namespace = nestlo`.
 
 Prompts, completions and system instructions (the conventions' opt-in
-`gen_ai.input.messages` and friends) are never exported: the gateway does not
+`gen_ai.input.messages` and friends) are never exported: the Nestlo model gateway does not
 put them in the log entry and the exporter has no switch for them. The trade-off
 is that Langfuse and OpenLIT show cost, latency, tokens and routing but not
-conversation text. Use the gateway's recorder (`docs/gateway-features.md`) when
+conversation text. Use the Nestlo model gateway's recorder (`docs/gateway-features.md`) when
 you need bodies.
 
 Semantic-convention status: the GenAI conventions are at Development
@@ -135,7 +104,7 @@ names above were checked against the `semantic-conventions-genai` repository on
   and read timeout of `timeoutSec`, with no retry. Tracing is best effort, not an
   audit trail; the tamper-evident record of requests is `nestlo.audit`.
 - A malformed config (bad URL, headers over plain http to a non-loopback host)
-  disables tracing and logs an error; it does not stop the gateway.
+  disables tracing and logs an error; it does not stop the Nestlo model gateway.
 - The exporter is a daemon thread: on shutdown, spans queued in the last two
   seconds can be lost.
 
@@ -165,7 +134,7 @@ names above were checked against the `semantic-conventions-genai` repository on
 
 The collector path reuses `nestlo.observability`, which already forwards traces to
 Tempo (Grafana explore). Its OTLP/HTTP receiver listens on all interfaces
-(`0.0.0.0:4318`, see modules/observability); the gateway uses
+(`0.0.0.0:4318`, see modules/observability); the Nestlo model gateway uses
 `127.0.0.1:4318`.
 
 ## The Langfuse stack
@@ -221,8 +190,8 @@ sign-up in the UI.
   endpoint accepts the JSON encoding (its documentation says HTTP/JSON and
   protobuf are supported, gRPC is not), and that OpenLIT's collector accepts
   these spans. The exporter and its attribute mapping are unit tested against a
-  local OTLP sink, and `tests/llm-observability.nix` covers the gateway end to
-  end with a sink (needs the gateway patch).
+  local OTLP sink, and `tests/llm-observability.nix` covers the Nestlo model gateway end to
+  end with a sink.
 - OpenLIT's compose file uses ClickHouse 24.4.1; this module uses the 25.12
   image that the Langfuse stack pins (the 24.4.1 digest could not be resolved
   offline).
@@ -230,13 +199,13 @@ sign-up in the UI.
 - The containers are rootful podman, with `no-new-privileges`, memory limits
   and, for the app containers and MinIO, all capabilities dropped. They are
   reachable only through the loopback port and the private podman network.
-- One span per request, not per conversation or agent run: the gateway does not
+- One span per request, not per conversation or agent run: the Nestlo model gateway does not
   see sessions. Spans from one agent share `nestlo.agent.id`, not a trace.
 - Streaming spans cover the whole response; time to first token is not
   recorded.
 - Trace context towards agents is not propagated. The exporter does accept a
-  W3C `traceparent` in the log entry (`entry["traceparent"]`), and the gateway
+  W3C `traceparent` in the log entry (`entry["traceparent"]`), and the Nestlo model gateway
   could set it from an incoming `traceparent` request header so an agent
-  that already traces its work gets the gateway span as a child; that is not
+  that already traces its work gets the Nestlo model gateway span as a child; that is not
   wired. Propagating a context the other way, to agents, would mean a response
-  header (`traceparent` of the gateway span) set in `send_head`, also not done.
+  header (`traceparent` of the Nestlo model gateway span) set in `send_head`, also not done.

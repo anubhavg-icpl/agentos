@@ -78,7 +78,7 @@ let
       set +a
       g() { podman exec nestlo-langfuse-s3 /bin/garage -c /etc/garage.toml "$@"; }
       for _ in $(seq 1 60); do g status >/dev/null 2>&1 && break; sleep 2; done
-      if ! g bucket list 2>/dev/null | grep -q langfuse; then
+      if ! g bucket list 2>/dev/null | grep langfuse >/dev/null; then
         node=$(g node id -q | cut -d@ -f1)
         g layout assign -z dc1 -c 1G "$node"
         g layout apply --version 1

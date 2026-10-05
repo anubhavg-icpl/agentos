@@ -2,9 +2,8 @@
 #
 #   nix build .#checks.x86_64-linux.llm-observability
 #
-# NEEDS THE GATEWAY PATCH from docs/llm-observability.md (Gateway.tracer and
-# the tracer.record() call in Gateway.write_log, and the [tracing] defaults in
-# config.py). This test was written against that patch.
+# The Nestlo model gateway has the exporter built in (Gateway.tracer, the
+# tracer.record() call in Gateway.write_log, [tracing] defaults in config.py).
 #
 # A mock Anthropic upstream answers with token usage, and a local OTLP sink (a
 # Python HTTP server in the VM) stands in for the backend. The test sends a
