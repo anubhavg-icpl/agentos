@@ -100,3 +100,59 @@ When `desktop` is in `features`:
 - `/v1/desktop` bridges binary WebSocket frames to the local wayvnc (RFB) at
   `127.0.0.1:5900`.
 - The app opens `/desktop/?t=<token>` in a WebView that accepts only the pinned certificate.
+
+## One QR: install the app, then pair
+
+`nestlo-mobile pair` prints a single QR code that works whether or not the app is
+installed. It encodes a plain web URL (any phone camera opens it in the browser),
+with the pairing parameters in the URL **fragment**. A fragment is never sent to
+a server and never written to a server log:
+
+```
+http://<entry host>:7080/pair#v=1&name=<n>&port=7443&fp=<fp>&code=<code>&host=<h1>&host=<h2>...
+```
+
+or `<publicUrl>/pair#...` when `nestlo.mobile.publicUrl` is set (for example an
+HTTPS name behind a reverse proxy).
+
+- **Onboarding listener:** plain HTTP, default port **7080** (`onboarding.port`).
+  It serves only static, unauthenticated, cache-free pages:
+  - `GET /pair`: the landing page (black and white, Nothing style). Its inline
+    script reads `location.hash` and offers two buttons:
+    - **OPEN NESTLO**: `intent://pair?<same params>#Intent;scheme=nestlo;package=dev.nestlo.app;S.browser_fallback_url=<url-encoded /app>;end`.
+      Chrome opens the app when it is installed; otherwise it follows the fallback.
+      The page tries this automatically once on load.
+    - **GET THE APP**: `/app`.
+  - `GET /app`: a page with a link to the APK, its SHA-256, and the steps to allow
+    "install unknown apps". The link points to `/app/nestlo.apk` when the machine
+    has a local APK (`onboarding.apk`); otherwise it points to
+    `https://github.com/anubhavg-icpl/nestlo/releases/latest/download/nestlo-android.apk`.
+  - `GET /app/nestlo.apk`: served with `application/vnd.android.package-archive`,
+    only when `onboarding.apk` is set.
+  - After installing, the user taps **OPEN NESTLO** again (or rescans), and the app
+    receives `nestlo://pair?...`.
+- **The app accepts all three forms:**
+  - `nestlo://pair?...` (deep link);
+  - `http(s)://<anything>/pair#...` (scanned in-app or opened through an App Link);
+  - a pasted link of either form.
+
+  The parameters are the same in query or fragment form.
+- **Hosts, in order:**
+  1. `domain` (when set);
+  2. `advertisedHosts`;
+  3. every private (RFC 1918 / ULA) address;
+  4. the public IP (only when `discoverPublicIp = true`; looked up once per
+     `pair` from `https://api.ipify.org`), or a fixed `publicHost`;
+  5. the host name;
+  6. `localhost` (for `adb reverse tcp:7443 tcp:7443` and emulators).
+
+  The **entry host**, the one in the URL authority, is the first of `domain`,
+  `publicHost`, the first private address.
+- **Trust:** the onboarding page is plain HTTP, so on an untrusted network it could
+  be tampered with. The pinned fingerprint and the code still come from the QR
+  itself, and the app pins `fp` from the QR it decoded. When pairing over the
+  internet, use `publicUrl` with HTTPS, or a VPN (Tailscale/WireGuard). `7443`
+  (the API) and `7080` (onboarding) are opened in the firewall only when
+  `openFirewall = true`.
+- **Android package id:** `dev.nestlo.app`. **Release asset:** `nestlo-android.apk`
+  (stable name), plus `nestlo-<tag>.apk`.
