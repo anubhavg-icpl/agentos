@@ -1,408 +1,126 @@
 <div align="center">
 
-<img src="assets/hero.webp" alt="AgentOS — An OS for AI Coding Agents" width="100%">
+<img src="assets/nestlo-banner.svg" alt="Nestlo: the open-source home for AI coding agents" width="100%">
 
 <br/>
 
-<h1>AgentOS</h1>
-
-<p><strong>The operating system built for AI coding agents.</strong></p>
-
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License"></a>
-  <a href="modules/"><img src="https://img.shields.io/badge/Modules-27-blue?style=flat-square" alt="Modules"></a>
-  <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/Agents-20-green?style=flat-square" alt="Agents"></a>
-  <a href="docs/FEATURES.md"><img src="https://img.shields.io/badge/MCP%20Servers-35-purple?style=flat-square" alt="MCP"></a>
-  <a href="https://github.com/anubhavg-icpl/vibe"><img src="https://img.shields.io/badge/VIBE%20Skills-5340-orange?style=flat-square" alt="VIBE"></a>
-  <a href="https://nixos.org"><img src="https://img.shields.io/badge/Platform-NixOS-7E2F8E?style=flat-square" alt="NixOS"></a>
+  <a href="https://github.com/anubhavg-icpl/agentos/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/anubhavg-icpl/agentos/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/anubhavg-icpl/agentos/releases"><img src="https://img.shields.io/github/v/release/anubhavg-icpl/agentos?style=flat-square&color=2BB5A0" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-F2A541?style=flat-square" alt="MIT License"></a>
+  <a href="https://nixos.org"><img src="https://img.shields.io/badge/NixOS-26.05-5277C3?style=flat-square&logo=nixos&logoColor=white" alt="NixOS 26.05"></a>
+  <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/agents-20-2BB5A0?style=flat-square" alt="20 agents"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-C8873A?style=flat-square" alt="PRs welcome"></a>
+  <a href="https://github.com/anubhavg-icpl/agentos/stargazers"><img src="https://img.shields.io/github/stars/anubhavg-icpl/agentos?style=flat-square&color=F4EFE6" alt="Stars"></a>
 </p>
 
 <p>
-  <a href="#getting-started"><b>Getting Started</b></a> ·
-  <a href="#agents"><b>Agents</b></a> ·
-  <a href="#features"><b>Features</b></a> ·
+  <a href="#quickstart"><b>Quickstart</b></a> ·
+  <a href="#whats-inside"><b>What's inside</b></a> ·
+  <a href="#nestlo-cloud"><b>Nestlo Cloud</b></a> ·
   <a href="#architecture"><b>Architecture</b></a> ·
   <a href="#documentation"><b>Docs</b></a> ·
   <a href="#contributing"><b>Contributing</b></a>
 </p>
 
----
-
 </div>
 
-## Overview
-
-AgentOS is a minimal, NixOS-based operating system where the primary users are **AI coding agents**, not humans. It ships with 20 coding agents pre-installed, 36 MCP tool servers configured, 20+ language toolchains, the VIBE skills library installed on first boot, and a hardened, observable base system.
+**Nestlo is an operating system for AI coding agents.** It runs Claude Code, Codex, Gemini CLI and 17 more agents on your own hardware, each in a sandbox with a spending cap, behind a gateway that meters every model call. It also gives people and agents persistent cloud VMs with HTTPS, sharing and secret-free integrations, in the style of exe.dev. It is built on NixOS, so the whole system is declared in one file and rebuilds the same way every time.
 
 > [!NOTE]
-> **Status (v0.3.0).** The core loop works and is covered by an end-to-end VM test (`nix build .#checks.x86_64-linux.e2e`):
-> 1. An agent runs sandboxed.
-> 2. Every LLM call goes through a metering gateway.
-> 3. The budget is enforced.
-> 4. The agent is stopped when it runs out.
-> 5. You get notified.
->
-> Multi-agent orchestration, the scheduler and container isolation are still planned. [docs/STATUS.md](docs/STATUS.md) lists exactly what works and how it is tested.
+> **AgentOS is now Nestlo.** The project was renamed in October 2026. NixOS options (`agentos.*`), commands (`agentos ...`) and unit names keep the old prefix for now so that existing configurations keep working; they will move in a later release with compatibility aliases.
 
-<div align="center">
-<table>
-<tr>
-<td align="center"><h3>20</h3><p>Coding Agents</p></td>
-<td align="center"><h3>5,340</h3><p>VIBE Skills</p></td>
-<td align="center"><h3>35</h3><p>MCP Servers</p></td>
-<td align="center"><h3>27</h3><p>NixOS Modules</p></td>
-<td align="center"><h3>20+</h3><p>Language Runtimes</p></td>
-</tr>
-</table>
-</div>
+## Why Nestlo
 
----
+Run a coding agent on a normal machine and it gets your shell, your files, your network and your credit card, with no fence around any of them. Nestlo puts the fence in the operating system:
 
-## The Problem
+- **🪺 A sandbox per agent.** Each agent runs as an unprivileged user in its own systemd sandbox (or container) with memory, CPU and process limits. It can write only to its workspace.
+- **💸 A budget per agent.** Every LLM call goes through a metering gateway that prices it, enforces daily budgets, detects loops and stops the agent when it runs out. API keys never enter the sandbox.
+- **🔒 Default-deny egress.** Only allowlisted domains resolve; agents reach model providers only through the gateway.
+- **🧾 Evidence for everything.** A hash-chained, signed audit log, signed provenance on agent commits, DLP on prompts, policy-as-code and four-eyes approval.
+- **☁️ VMs for people and agents.** Nestlo Cloud gives every user persistent VMs with their own disks, a private HTTPS URL, sharing, custom domains and integrations that inject secrets at the network edge.
+- **🏭 Work, not just chat.** An orchestrator, a scheduler, GitHub triggers and a software factory turn issues into reviewed pull requests.
 
-Run an AI coding agent on a normal machine and you're giving it your shell, your filesystem, and your network with no fence around any of it. There's no spending cap, so a runaway agent can burn real money before anyone notices. Commits happen by hand or not at all. Tool access means installing things yourself, one MCP server at a time. And when something goes wrong, there's no trace of what the agent actually did.
+## Quickstart
 
-AgentOS puts a fence around each of those problems, on a NixOS base that rebuilds identically every time:
+**Prerequisites:** [Nix](https://nixos.org/download) with flakes enabled, on x86_64-linux or aarch64-linux.
 
-- **Sandbox.** Each agent runs as an unprivileged user in its own systemd sandbox, with memory, CPU and process limits. It can write only to its workspace, and it has no sudo.
-- **Metering gateway.** Every LLM call goes through a gateway that prices it, enforces per-agent and global daily budgets, rate-limits the agent, and stops it when it runs out.
-- **Credentials.** API keys stay in the gateway; agents only ever see a placeholder.
-- **Egress.** Outbound traffic is default-deny: only allowlisted domains resolve, and agents cannot reach model providers except through the gateway.
-- **Audit trail.** Every session gets its own git branch, and btrfs snapshots let you roll a workspace back.
-- **Tooling and monitoring.** 36 MCP servers come pre-wired, and per-agent spend flows into Prometheus and Grafana.
-
----
-
-## Getting Started
-
-**Prerequisites:** [Nix](https://nixos.org) with flakes enabled, on x86_64-linux.
+**Option 1: try it in a VM**
 
 ```bash
-# 1a. Build the installer ISO (also attached to each GitHub release) and write it to a USB stick
-nix build .#iso-image
+git clone https://github.com/anubhavg-icpl/agentos.git nestlo && cd nestlo
+nix build .#vm-image                          # a QEMU/KVM disk image
+cp result/*.qcow2 nestlo.qcow2 && chmod u+w nestlo.qcow2
+qemu-system-x86_64 -m 8192 -enable-kvm -bios OVMF.fd -drive file=nestlo.qcow2,if=virtio
+```
+
+**Option 2: install it on a machine**
+
+```bash
+nix build .#iso-image                         # also attached to every GitHub release
 sudo dd if=result/iso/agentos-*.iso of=/dev/sdX bs=4M status=progress
+# boot the stick, then (erases the disk; only SSH keys can log in):
+sudo agentos-install /dev/nvme0n1 --ssh-key "ssh-ed25519 AAAA... you@laptop"
+```
 
-# 1b. Boot it, then install (erases the disk). The installed system only
-#     allows SSH key login for `admin`, so pass your public key:
-sudo agentos-install /dev/nvme0n1 --ssh-key "ssh-ed25519 AAAA... you@host"
+**Your first agent, with a $5/day budget**
 
-# 2. Or try it in a VM instead
-nix build .#vm-image
-cp result/*.qcow2 agentos.qcow2 && chmod u+w agentos.qcow2
-qemu-system-x86_64 -m 8192 -enable-kvm -bios OVMF.fd -drive file=agentos.qcow2,if=virtio
-#    (add your key to users.users.admin.openssh.authorizedKeys.keys first)
-
-# 3. SSH in and give the gateway your API key (sops, see docs/FEATURES.md)
-ssh admin@agentos
-
-# 4. Run an agent in a sandbox with a $5/day budget
+```bash
+ssh admin@nestlo
 agentos workspace create api --from https://github.com/me/api.git
 agentos spawn claude --workspace api --budget 5
-agentos list            # agents, status, spend today
-agentos logs <id>       # every model call with tokens and cost
-agentos agents          # all 20 agents
+agentos list              # agents, status, spend today
+agentos logs <id>         # every model call with tokens and cost
 ```
 
-<div align="center">
-<img src="assets/boot-screen.webp" alt="AgentOS Boot Screen" width="88%">
-
-<sub><i>AgentOS boots into a minimal terminal. SSH in and start coding.</i></sub>
-</div>
-
----
-
-## Agents
-
-<div align="center">
-<img src="assets/agents-grid.webp" alt="Pre-installed AI Coding Agents" width="92%">
-</div>
-
-<br/>
-
-20 coding agents ship pre-installed, and each gets the same base tools (git, ripgrep, fd, gh). Sixteen are built from nixpkgs and pinned by `flake.lock`. Four that nixpkgs doesn't package yet are pinned npm/PyPI launchers, which download the agent on first run.
-
-| Command | Agent | Provider | Source |
-|:---|:---|:---|:---|
-| `claude` | Claude Code | Anthropic | nixpkgs |
-| `codex` | Codex CLI | OpenAI | nixpkgs |
-| `aider` | Aider | Open Source | nixpkgs |
-| `gemini` | Gemini CLI | Google | nixpkgs |
-| `qwen` | Qwen Code | Alibaba | nixpkgs |
-| `amp` | Amp | Sourcegraph | nixpkgs |
-| `goose` | Goose | Block | nixpkgs |
-| `opencode` | OpenCode | SST | nixpkgs |
-| `crush` | Crush | Charm | nixpkgs |
-| `cursor-agent` | Cursor CLI | Cursor | nixpkgs |
-| `copilot` | GitHub Copilot CLI | GitHub | nixpkgs |
-| `kilocode` | Kilo Code CLI | Kilo | nixpkgs |
-| `vibe` | Mistral Vibe | Mistral | nixpkgs |
-| `kiro-cli` | Kiro CLI | AWS | nixpkgs |
-| `codebuff` | Codebuff | Codebuff | nixpkgs |
-| `pi` | Pi coding agent | pi-mono | nixpkgs |
-| `droid` | Factory Droid | Factory AI | npm launcher |
-| `cline` | Cline | Open Source | npm launcher |
-| `cn` | Continue CLI | Open Source | npm launcher |
-| `interpreter` | Open Interpreter | Open Source | PyPI launcher |
-
-<details>
-<summary><b>Run agents (click to expand)</b></summary>
+**Your first cloud VM** (with [Nestlo Cloud](#nestlo-cloud) enabled)
 
 ```bash
-# Sandboxed and metered (as agentos-agent, through the gateway)
-agentos spawn claude --workspace api --budget 5
-agentos spawn aider --workspace api -- --model sonnet   # args after -- go to the agent
-agentos kill <id>
-
-# Direct, as yourself (no sandbox, no metering)
-claude
-codex "fix the bug"
+ssh lobby@cloud.example.com new --name web
+ssh -t lobby@cloud.example.com ssh web        # a shell in the VM
+open https://web.cloud.example.com/           # its private HTTPS URL
 ```
 
-</details>
+## What's inside
 
-Full reference: [docs/AGENTS.md](docs/AGENTS.md)
-
----
-
-## Features
-
-<div align="center">
 <table>
 <tr>
 <td valign="top" width="33%">
 
-**Infrastructure**
-- Container runtime (containerd)
-- btrfs snapshots + dedup
-- Metering model gateway
-- AppArmor + egress allowlist
-- Prometheus + Tempo + Grafana
+**Run agents safely**
+- [20 agents](docs/AGENTS.md) pre-installed
+- [Sandboxes](docs/containers.md) and containers
+- [Metering gateway](docs/gateway-features.md): budgets, loop detection, cost routing, replay
+- [Egress allowlist](docs/FEATURES.md), AppArmor
+- [GPU scheduling](docs/gpu.md), [local models](docs/local-ai.md)
 
 </td>
 <td valign="top" width="33%">
 
-**Agent Intelligence**
-- Vector memory (Qdrant)
-- Multi-agent orchestration †
-- 36 MCP tool servers
-- VIBE: 5,340 skills
-- Cron task scheduler †
+**Get work done**
+- [Orchestrator and scheduler](docs/orchestration.md): tasks, DAGs, swarms
+- [GitHub triggers](docs/triggers.md): issue to pull request
+- [Software factory](docs/factory.md): plan, build, review, QA
+- [Skill packs](docs/skills.md) for every agent CLI
+- [36 MCP servers](docs/FEATURES.md), [herdr](docs/herdr.md) workspaces
 
 </td>
 <td valign="top" width="33%">
 
-**Safety & Control**
-- Budget caps + auto-shutdown
-- Rate limit + circuit breaker
-- sops-nix secrets
-- Git helpers
-- Slack/Discord/webhook alerts
+**Run it like production**
+- [Nestlo Cloud](docs/cloud.md): VMs, HTTPS, sharing, teams
+- [Audit log](docs/audit.md) and [DLP](docs/dlp.md)
+- [Provenance](docs/provenance.md), [policy and RBAC](docs/policy.md)
+- [Dashboard](docs/dashboard.md), Prometheus, Grafana, alerts
+- [Backups, safe upgrades](docs/operations.md), SBOM
 
 </td>
 </tr>
 </table>
 
-<sub>† Planned: configured, but the service isn't built yet. See <a href="docs/STATUS.md">docs/STATUS.md</a>.</sub>
-</div>
-
-### Budget Control & Safety
-
-<div align="center">
-<img src="assets/security-shield.webp" alt="Budget Controller and Security Shield" width="92%">
-</div>
-
-<br/>
-
-| Safety Feature | What It Does |
-|:---|:---|
-| **Budget caps** | Per-agent daily/session spending limits (default: $50/day) |
-| **Auto-shutdown** | Agents that exceed budget are killed automatically |
-| **Rate limiting** | Max LLM calls per agent per minute |
-| **Circuit breaker** | N consecutive upstream failures pause the agent for a cooldown |
-| **Resource limits** | Memory, CPU and process limits per agent sandbox |
-| **Egress firewall** | Default-deny network; only whitelisted domains allowed |
-
-Budgets are enforced in the model gateway, and the gateway meters every sandboxed agent's calls. The firewall doesn't let the agent user reach model providers any other way. A request over budget gets HTTP 402 before it reaches the provider, and the agent daemon then stops the agent's unit. Loop detection is still planned.
-
-```bash
-agentos-budget status       # spend per agent today, limits, requests
-agentos-budget set <id> 25  # daily budget for one agent
-agentos-budget history      # 7-day cost breakdown
-agentos-breaker reset <id>  # close an open circuit
-```
-
-### Multi-Agent Orchestration
-
-<div align="center">
-<img src="assets/swarm.webp" alt="Multi-Agent Collaboration" width="92%">
-
-<sub><i>Agents run as queued tasks, pipelines and swarms through <code>agentos-task</code>, and on schedules through <code>agentos-schedule</code> (<a href="docs/orchestration.md">docs</a>).</i></sub>
-</div>
-
-<br/>
-
-### Observability Dashboard
-
-<div align="center">
-<img src="assets/dashboard.webp" alt="AgentOS Monitoring Dashboard" width="92%">
-
-<sub><i>Grafana on localhost:2342 (<code>ssh -L 2342:localhost:2342 admin@agentos</code>). Agent-level metrics arrive with the daemon.</i></sub>
-</div>
-
-### Operations
-
-| Feature | Description |
-|:---|:---|
-| **Health and readiness** | The gateway, daemon, orchestrator and dashboard answer `/healthz` and `/readyz`; their units are `Type=notify` with a watchdog |
-| **Alerting and SLO** | Prometheus rules for service, gateway, budget, circuit, loop, queue, disk and Redis, plus a 99.5% gateway SLO with burn-rate alerts; optional Alertmanager (`agentos.observability.alertmanager`) |
-| **Backup and restore** | `agentos.backup` (restic) saves state, Redis, audit and secrets; `agentos-restore` with a documented drill and a VM test (`checks.<system>.backup`, needs KVM) |
-| **Safe upgrades** | `agentos.upgrade` wraps `system.autoUpgrade` and rolls back when the health gate fails |
-| **Supply chain** | CycloneDX SBOM (`nix run .#sbom`); release provenance, cosign signature and SHA256SUMS once the workflows in `ci/proposed-workflows/` are installed; see [docs/operations.md](docs/operations.md) |
-
----
-
-## VIBE Integration
-
-<div align="center">
-<img src="assets/vibe-integration.webp" alt="VIBE Library Integration" width="92%">
-</div>
-
-<br/>
-
-On first boot, AgentOS installs the [VIBE library](https://github.com/anubhavg-icpl/vibe) into the supported agent CLIs. It is fetched from GitHub with `npx` at that point; pin `agentos.vibe-integration.repoUrl` to a tag for repeatable installs.
-
-| VIBE Asset | Count |
-|:---|:---|
-| Expert modes | **853** (52 categories) |
-| Skills | **5,340** |
-| Subagents | **200** |
-| Slash commands | **112** |
-| Plugins | **120** |
-| Rules | **111** |
-| System prompts | **759** |
-| Recipes | **18** |
-
-```bash
-agentos-vibe install       # Install into all agents
-agentos-vibe categories    # Browse 52 categories
-vibe search "rag"          # Search the library
-```
-
----
-
-## Agent Skills
-
-`agentos.skills` installs skill packs pinned to upstream commits: Reticle, Chisle (opt-in), UI Skills, Ouroboros, Caliper, Anti-Slop, img2threejs, FWC SwiftUI, and the Karpathy guidelines and skills. Every skill is checked against the Agent Skills spec at build time. The packs link their skills into the skills directory of every agent CLI for the agent user and any users you list: `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, `~/.gemini/skills`, `~/.config/opencode/skills` and more. Each pack's tools go on the PATH and its MCP servers into the MCP registry. Enable or disable packs and targets per option; skills you wrote yourself are never overwritten. Twenty-two more packs bring in popular community collections (Superpowers, gstack, Anthropic's open skills, Matt Pocock's skills, Everything Claude Code, the scientific skills, ui-ux-pro-max, Impeccable, Hyperframes, Composio's app automations and more); they are all opt-in, only redistributable skills are included, and `agentos.skills.collections = [ "community" ]` or `enableAll = true` switches them on (evaluation warns above 300 skills because each costs about 100 tokens of context).
-
-```bash
-agentos-skills list        # packs, skills, tools, MCP servers, licenses
-agentos-skills doctor      # which links exist or are broken, per user and CLI
-```
-
-Full reference: [docs/skills.md](docs/skills.md)
-
----
-
-## herdr
-
-`agentos.herdr` adds [herdr](https://herdr.dev), persistent terminal workspaces whose panes show whether an agent is working, blocked or idle. The agent user gets a sandboxed headless herdr server that operators attach to; `agentos-herdr status` and loopback Prometheus metrics report panes per state, and a blocked agent can raise an `agentos.notifications` message. An AgentOS plugin shows orchestrator tasks, factory items and budgets inside herdr and approves or cancels gated tasks. Plugins are declared with pinned commits (`agentos.herdr.plugins`) or managed with `agentos-herdr-plugins`: browse the marketplace, review exactly which commands a plugin runs, install pinned, update with a manifest diff. herdr does not sandbox plugins; installing the whole marketplace (`marketplace.installAll`) is off by default.
-
-```bash
-agentos-herdr status                       # panes and agents per user
-sudo agentos-herdr attach                  # the agent user's herdr
-agentos-herdr-plugins catalog              # marketplace: stars, licence, head commit
-agentos-herdr-plugins show owner/repo      # every command the plugin will run
-```
-
-Full reference: [docs/herdr.md](docs/herdr.md)
-
----
-
-## AgentOS Cloud
-
-`agentos.cloud` makes the host a self-hosted [exe.dev](https://exe.dev): persistent VMs with their own disks for people and agents, managed over SSH and an HTTPS API, each behind a private HTTPS proxy with sharing, share links and custom domains. Integrations put secrets at the network edge instead of in the VM (any HTTP API, GitHub repositories, the model gateway, other VMs), and Shelley, exe.dev's web agent, runs in every VM. The commands, tokens, headers, metadata and reflection endpoints match exe.dev's, so its scripts and tools work unchanged.
-
-```bash
-ssh lobby@cloud.example.com new --name web --cpu 4 --memory 8GB
-ssh -t lobby@cloud.example.com ssh web          # a shell in the VM
-ssh lobby@cloud.example.com share set-public web   # https://web.cloud.example.com/
-ssh lobby@cloud.example.com integrations add github --name gh --repository acme/web --bearer ghp_... --attach vm:web
-curl -X POST https://cloud.example.com/exec -H "Authorization: Bearer $TOKEN" -d 'ls'
-```
-
-Full reference: [docs/cloud.md](docs/cloud.md)
-
----
-
-## MCP Server Registry
-
-<div align="center">
-<img src="assets/mcp-network.webp" alt="MCP Servers" width="92%">
-</div>
-
-<br/>
-
-36 Model Context Protocol servers, pre-configured across 8 categories. Each one points at a real npm (`npx -y`) or PyPI (`uvx`) package and is downloaded the first time it starts.
-
-| Category | Count | Servers |
-|:---|:---:|:---|
-| **Core** | 7 | filesystem, git, memory, fetch, sequential-thinking, time, everything |
-| **Database** | 7 | postgres, sqlite, mysql, redis, mongo, duckdb, clickhouse |
-| **Cloud** (opt-in) | 4 | aws, azure, cloudflare, supabase |
-| **Integration** | 7 | github, gitlab, linear, slack, notion, sentry, pagerduty |
-| **Browser** | 3 | puppeteer, playwright, browserbase |
-| **AI/ML** | 1 | huggingface |
-| **DevOps** | 2 | docker, kubernetes |
-| **Data/Search** | 4 | brave-search, tavily, exa, perplexity |
-
-```bash
-agentos-mcp list            # List all servers
-agentos-mcp enable puppeteer # Enable a server
-agentos-mcp stats           # Registry statistics
-```
-
----
-
-## Architecture
-
-<div align="center">
-<img src="assets/architecture.webp" alt="AgentOS Architecture" width="95%">
-</div>
-
-<br/>
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         AgentOS Host                                 │
-│                    (NixOS minimal + 27 modules)                     │
-│                                                                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐               │
-│  │ Agent A  │ │ Agent B  │ │ Agent C  │ │ Agent D  │  (containerd) │
-│  │ claude   │ │ codex    │ │ droid    │ │ aider    │               │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘               │
-│       │            │            │            │                       │
-│  ┌────┴────────────┴────────────┴────────────┴────────────────┐     │
-│  │              AgentOS Daemon + Orchestrator                 │     │
-│  └────┬──────────┬──────────┬──────────┬──────────────────────┘     │
-│       │          │          │          │                             │
-│  ┌────┴───┐ ┌────┴───┐ ┌────┴───┐ ┌────┴──────────┐                │
-│  │ Model  │ │  MCP   │ │ Budget │ │ Observability │                │
-│  │Gateway │ │ 36 srv │ │ Ctrl.  │ │ (OTel+P+Graf) │                │
-│  └────────┘ └────────┘ └────────┘ └───────────────┘                │
-│                                                                      │
-│  VIBE: 5340 skills · 853 modes · 200 agents · 759 system prompts   │
-│  20+ languages · 6 databases · btrfs snapshots · Qdrant · sops      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-The daemon, model gateway, budget and circuit-breaker boxes are implemented (`services/`). Agents run in systemd sandboxes rather than containers, and the orchestrator is still planned.
-
----
-
-## Full Feature Matrix
-
 <details>
-<summary><b>All 27 modules (click to expand)</b></summary>
+<summary><b>All modules</b></summary>
+
 
 | Module | Description | CLI Command |
 |:---|:---|:---|
@@ -441,14 +159,61 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | herdr | Persistent agent workspaces, status bridge, plugin marketplace | `agentos-herdr`, `agentos-herdr-plugins` |
 
 † Planned service, not implemented yet ([status](docs/STATUS.md)).
+| cloud | Nestlo Cloud: persistent VMs over SSH and HTTPS, private HTTPS proxy, sharing, custom domains, integrations, teams | `ssh lobby@<host> new` |
+| triggers | GitHub webhooks to tasks, factory items and pull requests | `agentos-triggers` |
+| fleet | Remote agent fleets over SSH | `agentos fleet` |
+| marketplace | Reviewed agent and skill index | `agentos market` |
+| dashboard | Web dashboard for agents, tasks and spend | `agentos-dashboard` |
+| gpu | GPU scheduling for local inference | automatic |
+| local-ai | Ollama and Open WebUI on the host | automatic |
+| agent-stack | agent-fleet apps (n8n, Flowise, Langflow, ...) through the gateway | automatic |
+| agent-fleet-web | In-browser llama.cpp chat and fleet hub | automatic |
+| openclaw | Chat front end (Telegram, Slack) for the orchestrator | automatic |
+| pullrun | Pullrun OCI runtime and Firecracker microVMs (experimental) | `pullrun` |
+| desktop | Desktop edition (i3 with gaps, sway, Hyprland) | automatic |
+| backup | restic backups and a restore drill | `agentos-restore` |
+| upgrade | Auto-upgrades that roll back on a failed health gate | automatic |
 
 </details>
 
-Detailed docs: [docs/FEATURES.md](docs/FEATURES.md)
+<details>
+<summary><b>Agents</b></summary>
 
----
+Sixteen agents are built from nixpkgs and pinned by `flake.lock`; four that nixpkgs doesn't package yet are pinned npm/PyPI launchers that download the agent on first run.
 
-## Configuration
+| Command | Agent | Provider | Source |
+|:---|:---|:---|:---|
+| `claude` | Claude Code | Anthropic | nixpkgs |
+| `codex` | Codex CLI | OpenAI | nixpkgs |
+| `aider` | Aider | Open Source | nixpkgs |
+| `gemini` | Gemini CLI | Google | nixpkgs |
+| `qwen` | Qwen Code | Alibaba | nixpkgs |
+| `amp` | Amp | Sourcegraph | nixpkgs |
+| `goose` | Goose | Block | nixpkgs |
+| `opencode` | OpenCode | SST | nixpkgs |
+| `crush` | Crush | Charm | nixpkgs |
+| `cursor-agent` | Cursor CLI | Cursor | nixpkgs |
+| `copilot` | GitHub Copilot CLI | GitHub | nixpkgs |
+| `kilocode` | Kilo Code CLI | Kilo | nixpkgs |
+| `vibe` | Mistral Vibe | Mistral | nixpkgs |
+| `kiro-cli` | Kiro CLI | AWS | nixpkgs |
+| `codebuff` | Codebuff | Codebuff | nixpkgs |
+| `pi` | Pi coding agent | pi-mono | nixpkgs |
+| `droid` | Factory Droid | Factory AI | npm launcher |
+| `cline` | Cline | Open Source | npm launcher |
+| `cn` | Continue CLI | Open Source | npm launcher |
+| `interpreter` | Open Interpreter | Open Source | PyPI launcher |
+
+```bash
+agentos spawn claude --workspace api --budget 5          # sandboxed and metered
+agentos spawn aider --workspace api -- --model sonnet    # arguments after -- go to the agent
+claude                                                   # directly, as yourself
+```
+
+</details>
+
+<details>
+<summary><b>Configuration</b></summary>
 
 Every feature is a toggle:
 
@@ -495,145 +260,134 @@ agentos = {
 };
 ```
 
----
+</details>
 
-## Comparison
+## Nestlo Cloud
 
-Most of what AgentOS is building toward (budget caps, circuit breakers, MCP servers, snapshots, vector memory, orchestration) doesn't exist on plain Linux at all; you'd build it yourself. Docker gets you isolation and not much else. The pieces that do exist elsewhere (Prometheus/Grafana, encrypted secrets, language runtimes) are manual setup on both; AgentOS ships them wired in. The one Docker gets partial credit for is reproducibility — a Dockerfile is repeatable, but not bit-for-bit the way a NixOS derivation is.
+Nestlo Cloud turns a Nestlo host into a self-hosted platform for persistent Linux VMs, for people and for agents. It follows [exe.dev](https://exe.dev)'s design and command set, so exe.dev scripts and tools (including its web agent, Shelley) work unchanged.
 
----
-
-## Project Structure
-
-```
-agentos/
-├── flake.nix                       # Top-level Nix flake
-├── modules/                        # 27 NixOS modules
-│   ├── runtime/                    #   Containerd isolation + daemon
-│   ├── budget-controller/          #   Cost tracking + auto-shutdown
-│   ├── circuit-breaker/            #   Rate limiting + loop detection
-│   ├── mcp-servers/                #   36 preconfigured MCP servers
-│   ├── vibe-integration/           #   5340 skills auto-installer
-│   ├── skills/                     #   Skill packs linked into every agent CLI
-│   ├── herdr/                      #   herdr workspaces, status bridge, plugins
-│   ├── context/                    #   Qdrant vector memory
-│   ├── orchestration/              #   Multi-agent coordination
-│   ├── policy/                     #   Policy-as-code and RBAC
-│   ├── git-automation/             #   Branch/commit/PR helpers
-│   ├── language-toolchains/        #   20+ language runtimes
-│   ├── databases/                  #   Postgres, Redis, SQLite, DuckDB
-│   ├── backup/ upgrade/            #   restic backups, upgrades with rollback
-│   └── ...                         #   17 more modules
-├── agents/                         # 20 coding agent packages
-├── nixos/
-│   ├── hosts/                      # Host configs (bare metal + ISO)
-│   └── packages/                   # CLI, installer, daemon stubs
-├── templates/                      # Agent workspace template
-├── assets/                         # WebP images
-└── docs/                           # Documentation
+```bash
+ssh lobby@cloud.example.com new --name web --cpu 4 --memory 8GB   # a VM with its own disk
+ssh -t lobby@cloud.example.com ssh web                            # a shell in it
+ssh lobby@cloud.example.com share add web alice@example.com       # share its HTTPS URL
+ssh lobby@cloud.example.com domain add web app.example.com        # on your own domain
+ssh lobby@cloud.example.com integrations add github --name gh \
+    --repository acme/web --bearer github_pat_... --attach vm:web  # git without a token in the VM
+curl -X POST https://cloud.example.com/exec -H "Authorization: Bearer $TOKEN" -d 'ls'
 ```
 
----
+- **VMs** with persistent ext4 disks, user-namespaced root, pooled CPU and memory, OCI images or a Nix-backed image with every agent CLI
+- **A private HTTPS URL** per VM: sharing with people or teams, share links, public sites, any port, custom domains with automatic certificates, login by SSH link or SSO
+- **Integrations** that add secrets at the network edge: any HTTP API, GitHub repositories, the model gateway (one budget per VM), other VMs
+- **Teams, invites and plan quotas**, an HTTPS API with SSH-signed tokens, audit events, metrics
+
+Full reference, including a feature-by-feature mapping to exe.dev: [docs/cloud.md](docs/cloud.md).
+
+## How it compares
+
+| | Nestlo | A plain Linux box | Docker / devcontainers | Hosted agent platforms |
+|:---|:---:|:---:|:---:|:---:|
+| Runs on your own hardware | ✅ | ✅ | ✅ | ❌ |
+| Open source (MIT) | ✅ | ✅ | ✅ | varies |
+| Spending cap per agent, enforced | ✅ | ❌ | ❌ | partly |
+| API keys kept out of the agent's reach | ✅ | ❌ | ❌ | ✅ |
+| Default-deny network for agents | ✅ | manual | manual | varies |
+| 20 agents and 36 MCP servers ready to use | ✅ | ❌ | ❌ | ❌ |
+| Signed audit log, provenance, DLP | ✅ | ❌ | ❌ | varies |
+| Persistent VMs with HTTPS, sharing, domains | ✅ | manual | ❌ | varies |
+| Whole system declared and reproducible | ✅ (Nix) | ❌ | partly | ❌ |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph People
+      U[Developers and teams]
+    end
+    subgraph Host["Nestlo host (NixOS)"]
+      direction LR
+      subgraph Agents["Sandboxed agents"]
+        A1[claude]:::agent
+        A2[codex]:::agent
+        A3[gemini ...]:::agent
+      end
+      D[Daemon, orchestrator, scheduler, factory]
+      G[Metering gateway: budgets, loops, DLP, routing]
+      M[MCP servers, skills]
+      O[Audit, provenance, metrics, alerts]
+      subgraph Cloud["Nestlo Cloud"]
+        L[Lobby: SSH + HTTPS API]
+        P[HTTPS proxy and auth]
+        V[(Persistent VMs)]
+        I[Integrations proxy]
+      end
+    end
+    LLM[(Model providers or local models)]
+    GH[(GitHub)]
+    U -- ssh / https --> L
+    U -- https --> P --> V
+    D --> Agents
+    Agents --> G --> LLM
+    Agents --> M
+    V --> I --> G
+    I --> GH
+    D --> GH
+    Agents -.-> O
+    G -.-> O
+    classDef agent fill:#2BB5A0,stroke:#1E8C7C,color:#0F2A2A
+```
+
+Everything above is implemented in [`services/`](services/) (Python) and [`modules/`](modules/) (NixOS), with unit tests and NixOS VM tests. [docs/STATUS.md](docs/STATUS.md) lists exactly what works and how it is tested.
+
+<details>
+<summary><b>Repository layout</b></summary>
+
+```
+├── flake.nix          the system: hosts, packages, checks
+├── modules/           NixOS modules (runtime, networking, cloud, factory, ...)
+├── services/          Python services: gateway, daemon, orchestrator, factory, cloud
+├── agents/            the agent packages
+├── nixos/hosts/       bare metal, VM, ISO and desktop hosts
+├── nixos/packages/    CLIs, installer, skill packs, Shelley
+├── tests/             NixOS VM tests (nix build .#checks.<system>.<name>)
+└── docs/              documentation and runbooks
+```
+
+</details>
 
 ## Documentation
 
-| Document | Description |
+| Topic | Read |
 |:---|:---|
-| [docs/STATUS.md](docs/STATUS.md) | What works today and what is still planned |
-| [docs/AGENTS.md](docs/AGENTS.md) | All 20 agents with usage examples and API key setup |
-| [docs/FEATURES.md](docs/FEATURES.md) | Detailed documentation of all 27 modules |
-| [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
-| [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
-| [docs/audit.md](docs/audit.md) | Tamper-evident audit log, signed checkpoints, SIEM export (OCSF), control mapping (EU AI Act, SOC 2, ISO 27001) |
-| [docs/dlp.md](docs/dlp.md) | Gateway DLP: secret and PII detectors, log/mask/block modes, per-agent overrides |
-| [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
-| [docs/provenance.md](docs/provenance.md) | Signed provenance for agent commits, verification and the merge gate |
-| [docs/policy.md](docs/policy.md) | Policy-as-code, RBAC roles, four-eyes approval; EU AI Act Art. 14 and ISO 27001 A.5.15 mapping |
-| [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
-| [docs/agent-stack.md](docs/agent-stack.md) | agent-fleet apps (n8n, Open WebUI, Flowise, Langflow, AnythingLLM, LobeChat, OpenMuse) on the host, routed through the model gateway |
-| [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
-| [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
-| [docs/agent-fleet-web.md](docs/agent-fleet-web.md) | agent-fleet in-browser chat and hub served on loopback (wllama vendored), Hugging Face deploy tool |
-| [docs/desktop.md](docs/desktop.md) / [docs/aarch64.md](docs/aarch64.md) | Desktop edition and ARM64 |
-| [docs/operations.md](docs/operations.md) | Health endpoints, SLOs and alerts, backup and restore drill, upgrades with automatic rollback, release verification |
-| [docs/runbooks/](docs/runbooks/) | One runbook per Prometheus alert |
-| [SECURITY.md](SECURITY.md) | Vulnerability disclosure policy |
-| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: add modules, agents, and more |
-
----
-
-## Roadmap
-
-- [x] Agent sandbox, daemon, `agentos list/logs/kill` (v0.3.0)
-- [x] Metering model gateway with budget caps and auto-shutdown (v0.3.0)
-- [x] Rate limit, circuit breaker, notifications (v0.3.0)
-- [x] Per-agent gateway tokens: agents cannot spend under another agent's id
-- [x] Container isolation per agent (`--isolation container`, own netns) ([docs](docs/containers.md))
-- [x] Orchestrator and scheduler: tasks, pipelines, swarms, calendar schedules ([docs](docs/orchestration.md))
-- [x] Loop detection in the gateway ([docs](docs/gateway-features.md))
-- [x] GPU scheduling for local model inference ([docs](docs/gpu.md))
-- [x] Remote agent fleets over SSH ([docs](docs/fleet.md))
-- [x] Agent marketplace with a reviewed index ([docs](docs/marketplace.md))
-- [x] Web dashboard ([docs](docs/dashboard.md))
-- [x] OS images for ARM64 ([docs](docs/aarch64.md))
-- [x] Deterministic replay of agent sessions ([docs](docs/gateway-features.md))
-- [x] Inter-agent message bus, HTTP and MCP ([docs](docs/gateway-features.md))
-- [x] Cost routing to cheaper models ([docs](docs/gateway-features.md))
-- [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
-- [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
-- [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
-- [x] Software factory: work items through plan, build, verify, review, fix loop and QA to a pull request ([docs](docs/factory.md))
-- [x] Signed provenance for AI-authored commits, verifiable offline ([docs](docs/provenance.md))
-- [x] Hash-chained, signed audit log with SIEM export ([docs](docs/audit.md))
-- [x] DLP in the gateway: mask or block secrets and PII in prompts ([docs](docs/dlp.md))
-- [x] OpenClaw chat front end, opt-in ([docs](docs/openclaw.md))
-- [x] agent-fleet app stack on the host, opt-in ([docs](docs/agent-stack.md))
-- [x] Pullrun packaged, experimental `--isolation pullrun` ([docs](docs/pullrun.md))
-
-What comes next, release by release: [docs/ROADMAP.md](docs/ROADMAP.md).
-
----
+| What works today | [STATUS](docs/STATUS.md) · [ROADMAP](docs/ROADMAP.md) · [CHANGELOG](CHANGELOG.md) |
+| Agents and sandboxes | [AGENTS](docs/AGENTS.md) · [containers](docs/containers.md) · [gpu](docs/gpu.md) · [local AI](docs/local-ai.md) |
+| The model gateway | [gateway features](docs/gateway-features.md) · [DLP](docs/dlp.md) |
+| Getting work done | [orchestration](docs/orchestration.md) · [triggers](docs/triggers.md) · [factory](docs/factory.md) · [skills](docs/skills.md) · [herdr](docs/herdr.md) |
+| Nestlo Cloud | [cloud](docs/cloud.md) |
+| Governance | [audit](docs/audit.md) · [provenance](docs/provenance.md) · [policy and RBAC](docs/policy.md) |
+| Operating it | [operations](docs/operations.md) · [runbooks](docs/runbooks/) · [dashboard](docs/dashboard.md) · [fleet](docs/fleet.md) · [marketplace](docs/marketplace.md) |
+| More | [desktop](docs/desktop.md) · [ARM64](docs/aarch64.md) · [OpenClaw](docs/openclaw.md) · [agent stack](docs/agent-stack.md) · [Pullrun](docs/pullrun.md) · [all features](docs/FEATURES.md) |
+| Security | [SECURITY](SECURITY.md) |
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-
-- How to add a new module
-- How to add a new agent
-- Commit conventions
-- Testing guidelines
+Contributions are welcome: new agents, modules, skill packs, docs and bug reports. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
-git clone https://github.com/anubhavg-icpl/agentos.git
-cd agentos
-nix develop                                   # Enter dev shell
-nix flake check --no-build --all-systems      # Evaluate everything
-nix build .#services                          # Service unit tests
-nix build .#checks.x86_64-linux.e2e           # End-to-end VM test (needs KVM for speed)
+git clone https://github.com/anubhavg-icpl/agentos.git nestlo && cd nestlo
+nix develop                                   # the dev shell
+nix flake check --no-build --all-systems      # evaluate everything
+nix build .#services                          # the service unit tests
+nix build .#checks.x86_64-linux.cloud         # a NixOS VM test (KVM recommended)
 ```
-
----
-
-<div align="center">
-
-<img src="assets/social-preview.webp" alt="AgentOS" width="50%">
-
-<br/>
 
 ## License
 
-**MIT** — See [LICENSE](LICENSE)
+[MIT](LICENSE) © Anubhav Gain · [GitHub](https://github.com/anubhavg-icpl)
 
-## Author
-
-**Anubhav Gain**
-[GitHub](https://github.com/anubhavg-icpl) · [VIBE Library](https://github.com/anubhavg-icpl/vibe)
-
+<div align="center">
 <br/>
-
----
-
-If AgentOS is useful to you, consider ⭐ starring the repository.
-
+<img src="assets/nestlo-logo.svg" alt="" width="72">
+<br/>
+<sub>If Nestlo is useful to you, a ⭐ helps other people find it.</sub>
 </div>

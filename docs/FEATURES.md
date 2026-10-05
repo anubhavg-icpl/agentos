@@ -1,6 +1,6 @@
-# AgentOS — Feature Reference
+# Nestlo — Feature Reference
 
-Complete documentation of every feature built into AgentOS.
+Complete documentation of every feature built into Nestlo.
 
 > [!NOTE]
 > The orchestrator, scheduler, MCP gateway/registry service, provisioner and
@@ -268,7 +268,7 @@ See [AGENTS.md](./AGENTS.md) for the complete list and usage.
 
 ## VIBE Integration (anubhavg-icpl/vibe)
 
-AgentOS installs the VIBE library into the supported agent CLIs on first boot, fetching it from GitHub with `npx`.
+Nestlo installs the VIBE library into the supported agent CLIs on first boot, fetching it from GitHub with `npx`.
 
 | Asset Type | Count | Description |
 |-----------|-------|-------------|
@@ -325,14 +325,14 @@ See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skill
 
 - A headless herdr server for the agent user (`agentos-herdr-server-agentos-agent`, sandboxed, not restarted by rebuilds); operators attach with `agentos-herdr attach`.
 - Management bridge `agentos-herdr status|metrics|monitor`: panes and agents per user and state, loopback Prometheus metrics (`agentos_herdr_panes{user,state}`, scraped by `agentos.observability`), and a notification through `agentos.notifications` when an agent stays blocked.
-- The AgentOS herdr plugin (`integrations/herdr-plugin`): orchestrator tasks, factory items, budgets, approve and cancel for gated tasks.
+- The Nestlo herdr plugin (`integrations/herdr-plugin`): orchestrator tasks, factory items, budgets, approve and cancel for gated tasks.
 - Declarative plugins (`agentos.herdr.plugins`, pinned to a commit, idempotent, uninstalls only what it installed) and `agentos-herdr-plugins` (marketplace catalog, review, pinned install, `install-all`, update with manifest diff).
 - Opt-in daily marketplace sweep (`marketplace.installAll`): unreviewed third-party code, off by default, warned about for the agent user.
 - Skill pack `herdr`, `packages.<system>.herdr`, desktop launcher entry.
 
 See [herdr.md](herdr.md). VM test `herdr`; unit tests `services/tests/test_herdr_*.py`.
 
-## AgentOS Cloud (`modules/cloud`)
+## Nestlo Cloud (`modules/cloud`)
 
 `agentos.cloud` provides the exe.dev feature set on the host.
 

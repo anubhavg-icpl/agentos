@@ -1,6 +1,6 @@
 # agent-fleet web UIs
 
-Two static web pages from [agent-fleet](https://github.com/anubhavg-icpl/agent-fleet), packaged and served by AgentOS:
+Two static web pages from [agent-fleet](https://github.com/anubhavg-icpl/agent-fleet), packaged and served by Nestlo:
 
 - **chat**: an AI chat that runs entirely in the browser. llama.cpp runs as WebAssembly (wllama 3.6.1) in a Web Worker; five small open GGUF models (Qwen, Llama) are selectable. It is also a PWA.
 - **hub**: the agent-fleet overview page.
@@ -29,12 +29,12 @@ When the web dashboard runs, its header shows links to both pages (`/api/links`,
 
 | Resource | Source |
 |:---|:---|
-| Page, scripts, styles, images | the AgentOS host (`pkgs.agentos.agent-fleet-web`) |
+| Page, scripts, styles, images | the Nestlo host (`pkgs.agentos.agent-fleet-web`) |
 | wllama JS and WebAssembly (and its compatibility build) | the host: vendored from the npm tarballs of `@wllama/wllama` and `@wllama/wllama-compat` 3.6.1, pinned by hash. Upstream loads them from `cdn.jsdelivr.net`; the import paths are rewritten at build time |
 | GGUF model weights | **the visitor's browser downloads them from `huggingface.co`** (and its CDN hosts) on first use of a model, then caches them. This is the only runtime request to a third party. The chat sends no prompts anywhere: inference is local to the browser |
 | Hub links | plain anchors to GitHub and Hugging Face, followed only on click |
 
-Each model is a few hundred MB to a few GB. The machine running the *browser* needs access to huggingface.co, not the AgentOS host.
+Each model is a few hundred MB to a few GB. The machine running the *browser* needs access to huggingface.co, not the Nestlo host.
 
 ## Server details
 

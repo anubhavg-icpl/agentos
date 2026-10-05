@@ -1,6 +1,6 @@
 # Operations
 
-Running AgentOS in production: health checks, SLOs and alerts, backup and restore, upgrades with rollback, and verifying a release. Each alert has a runbook in [runbooks/](runbooks/).
+Running Nestlo in production: health checks, SLOs and alerts, backup and restore, upgrades with rollback, and verifying a release. Each alert has a runbook in [runbooks/](runbooks/).
 
 ## Health
 
@@ -54,7 +54,7 @@ The rules ship with the observability module (`agentos.observability.alerts.enab
 
 | Alert | Severity | Fires when |
 |:---|:---|:---|
-| `AgentOSServiceDown` | critical | an AgentOS systemd unit is not active, or a scrape target is down, for 2 min |
+| `AgentOSServiceDown` | critical | a Nestlo systemd unit is not active, or a scrape target is down, for 2 min |
 | `AgentOSGatewayHighErrorRatio` | warning | 5xx ratio over 5 min is above 5% for 10 min |
 | `AgentOSGatewaySLOBurnFast` / `Medium` / `Slow` | critical / critical / warning | see above |
 | `AgentOSBudgetNearExhaustion` | warning | an agent's or the global daily spend passes 90% of its cap |
@@ -145,7 +145,7 @@ sudo agentos-restore --snapshot 1a2b3c4d  # a specific snapshot
 sudo agentos-restore --include /var/lib/agentos/state   # only part of it
 ```
 
-An in-place restore stops the AgentOS services and `redis-agentos`, restores, then starts them (`--no-restart` leaves them stopped). On a new machine restore, then `nixos-rebuild switch` so ownership and units match, and check `/readyz` on each service.
+An in-place restore stops the Nestlo services and `redis-agentos`, restores, then starts them (`--no-restart` leaves them stopped). On a new machine restore, then `nixos-rebuild switch` so ownership and units match, and check `/readyz` on each service.
 
 The VM test `checks.x86_64-linux.backup` runs this end to end: back up to a local repository, delete the state and stop Redis, restore, compare. It needs KVM, so CI only builds its driver (`.#checks.x86_64-linux.backup.driver`).
 

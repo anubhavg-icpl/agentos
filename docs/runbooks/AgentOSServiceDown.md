@@ -4,7 +4,7 @@ Severity: critical. Part of [operations.md](../operations.md).
 
 ## What it means
 
-An AgentOS systemd unit (`agentos-model-gateway`, `agentos-daemon`, `agentos-orchestrator`, `agentos-dashboard`, `agentos-scheduler`) is not active for 2 minutes, or Prometheus cannot scrape the gateway or daemon. The alert labels say which.
+A Nestlo systemd unit (`agentos-model-gateway`, `agentos-daemon`, `agentos-orchestrator`, `agentos-dashboard`, `agentos-scheduler`) is not active for 2 minutes, or Prometheus cannot scrape the gateway or daemon. The alert labels say which.
 
 ## Impact
 

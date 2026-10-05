@@ -29,7 +29,7 @@ matching prefix in `overrides` wins; an override inherits the global
 | `off` | Not scanned. |
 | `log` | Forwarded unchanged. The detector types and counts are recorded in the audit log (`dlp.detection`), the gateway log (`dlp` field) and the service log. |
 | `mask` | Every match is replaced by `[REDACTED:<type>]`, JSON bodies are re-serialised so the provider receives valid JSON, and the masked body is what is recorded when session recording is on. |
-| `block` | Refused with `403`, error type `dlp_blocked`, message `request blocked by AgentOS DLP policy: detected aws_access_key, email`. Nothing is sent to the provider. |
+| `block` | Refused with `403`, error type `dlp_blocked`, message `request blocked by Nestlo DLP policy: detected aws_access_key, email`. Nothing is sent to the provider. |
 
 **Matched values are never stored or reported**: audit events, log lines and
 error messages carry detector names and counts only.

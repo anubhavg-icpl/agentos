@@ -1,6 +1,6 @@
-# AgentOS Cloud
+# Nestlo Cloud
 
-AgentOS Cloud turns an AgentOS host into a self-hosted platform for persistent
+Nestlo Cloud turns a Nestlo host into a self-hosted platform for persistent
 Linux VMs, for people and for coding agents. It follows the design and the
 command set of [exe.dev](https://exe.dev), so exe.dev users, scripts and tools
 (including exe.dev's agent, Shelley) work with it:
@@ -27,7 +27,7 @@ your machine.
 
 ## What exe.dev offers, and where it is here
 
-| exe.dev | AgentOS Cloud |
+| exe.dev | Nestlo Cloud |
 |---|---|
 | `ssh exe.dev <command>` (the lobby) | `ssh lobby@<host> <command>`, the same commands and flags, `--json` |
 | VMs with persistent disks, by the second | systemd-nspawn machines with their own ext4 disk image (`--disk`), user-namespaced root, restarted after reboots |
@@ -270,7 +270,7 @@ ssh lobby@host integrations add peer --name db --vm db --port 5432 --attach tag:
 ### The llm integration
 
 With `agentos.networking.enable`, every VM gets `http://llm.int.<domain>`: the
-AgentOS model gateway, with a gateway identity per VM (so the gateway's
+Nestlo model gateway, with a gateway identity per VM (so the gateway's
 budgets, loop detection, DLP and audit apply per VM) and no provider key in the
 VM. It speaks the exe.dev LLM integration protocol:
 

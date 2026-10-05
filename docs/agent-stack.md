@@ -1,7 +1,7 @@
 # Agent stack
 
 `agentos.agentStack` runs the apps of
-[agent-fleet](https://github.com/anubhavg-icpl/agent-fleet) on the AgentOS host.
+[agent-fleet](https://github.com/anubhavg-icpl/agent-fleet) on the Nestlo host.
 agent-fleet deploys them as Hugging Face Docker Spaces; here they are NixOS
 services and podman containers behind the model gateway.
 
@@ -187,7 +187,7 @@ Unix socket and is not reachable at all.
 - Container images are untested in the VM test (no network): only the
   generated unit and options are checked. First start pulls the image, so the
   unit is slow to start and fails until the registry is reachable (it retries).
-- Each enabled app is linked from the AgentOS dashboard (`/api/links`) when
+- Each enabled app is linked from the Nestlo dashboard (`/api/links`) when
   the dashboard is enabled.
 - The cap-drop default is conservative. If an image misbehaves (entrypoints
   that `chown` or `su`), add the capability for that app instead of
@@ -217,7 +217,7 @@ Pinned at the time of writing (indexes, multi-arch):
 agent-fleet's `deploy.py` creates public Docker Spaces and injects generated
 secrets as Space secrets; its Dockerfiles build on the same upstream images.
 Here the same apps run on your machine, private by construction, with the
-secrets generated locally and LLM spend metered by the AgentOS gateway. The two
+secrets generated locally and LLM spend metered by the Nestlo gateway. The two
 are independent: nothing here talks to Hugging Face, and the static `chat` and
 `agent-hub` Spaces (browser inference, a landing page) are not part of the
 stack.

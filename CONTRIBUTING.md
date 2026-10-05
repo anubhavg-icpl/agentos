@@ -1,6 +1,6 @@
-# Contributing to AgentOS
+# Contributing to Nestlo
 
-Thanks for your interest in improving AgentOS! This is an operating system for coding agents, and we welcome contributions of all kinds.
+Thanks for your interest in improving Nestlo! This is an operating system for coding agents, and we welcome contributions of all kinds.
 
 ## Getting Started
 

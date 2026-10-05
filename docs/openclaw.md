@@ -1,6 +1,6 @@
 # OpenClaw
 
-[OpenClaw](https://github.com/openclaw/openclaw) is a Node daemon that connects chat channels (Telegram, Slack, Discord, WhatsApp, ...) to an LLM agent with skills, cron and memory. The `agentos.openclaw` module (`modules/openclaw/`) runs it as a hardened systemd service and connects it to AgentOS in two directions:
+[OpenClaw](https://github.com/openclaw/openclaw) is a Node daemon that connects chat channels (Telegram, Slack, Discord, WhatsApp, ...) to an LLM agent with skills, cron and memory. The `agentos.openclaw` module (`modules/openclaw/`) runs it as a hardened systemd service and connects it to Nestlo in two directions:
 
 ```
  chat user ──DM (allowlist)──▶ OpenClaw (user openclaw, 127.0.0.1:18789)
@@ -13,7 +13,7 @@
                                                               orchestrator ──▶ sandboxed coding agents
 ```
 
-nixpkgs has the package (`pkgs.openclaw`) but no NixOS module; this one is AgentOS's own.
+nixpkgs has the package (`pkgs.openclaw`) but no NixOS module; this one is Nestlo's own.
 
 ## Enabling
 
@@ -51,7 +51,7 @@ agentos = {
 | `acceptPromptInjectionRisk` | `false` | Must be `true`; nixpkgs marks the package insecure (see below). |
 | `package` | `pkgs.openclaw` | The package, with nixpkgs' insecure flag cleared behind the option above. |
 | `port` | `18789` | Gateway and Control UI port. Always bound to loopback. |
-| `model` | `claude-sonnet-5-5` | Model id sent through the AgentOS gateway. |
+| `model` | `claude-sonnet-5-5` | Model id sent through the Nestlo gateway. |
 | `budgetUsd` | `5` | Daily budget (UTC day) of the gateway agent id `openclaw`, set on every start. |
 | `memoryMax` | `2G` | `MemoryMax` of the service. |
 | `channels.telegram.{enable,tokenFile,allowFrom}` | off | See [Channels](#channels). |
@@ -92,7 +92,7 @@ Tokens come from files outside the Nix store (sops-nix, agenix, a root-owned fil
 
 Other channels (Discord, WhatsApp, ...) are not supported by the module. They would need their own allowlist handling; do not add them to the generated config by hand without it.
 
-## Running AgentOS tasks from chat
+## Running Nestlo tasks from chat
 
 With `workspaces` set, OpenClaw can start coding agents, but only through one command, `agentos-task-chat`:
 

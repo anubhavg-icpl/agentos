@@ -1,6 +1,6 @@
 # Audit log
 
-`agentos.audit` records who did what on an AgentOS host in a log that shows
+`agentos.audit` records who did what on a Nestlo host in a log that shows
 when it has been edited afterwards. It is built for record-keeping duties such
 as EU AI Act Art. 12, SOC 2 CC7.2 and ISO 27001 A.8.15 (control mapping at the
 end).
@@ -205,7 +205,7 @@ Application Activity); field names follow
 | `severity_id` | 1 Informational; 2 Low for 4xx and budget refusals; 3 Medium for 5xx, auth failures, kills and DLP blocks; 4 High for lost events |
 | `status_id`, `status_code` | Success/Failure from the HTTP status, task status or event type |
 | `message` | one-line summary |
-| `metadata.version`, `.product`, `.uid`, `.sequence`, `.log_name` | `1.3.0`, AgentOS, record hash, `seq`, `agentos-audit` |
+| `metadata.version`, `.product`, `.uid`, `.sequence`, `.log_name` | `1.3.0`, Nestlo, record hash, `seq`, `agentos-audit` |
 | `actor.user.name` | agent id or user name (`system` when none) |
 | `api.operation`, `api.response.code`, `http_response.code` | event type, HTTP status |
 | `src_endpoint.svc_name` (and `.ip` for auth failures) | producing service, client address |

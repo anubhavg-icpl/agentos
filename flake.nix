@@ -1,7 +1,7 @@
-# AgentOS - An operating system for coding agents
+# Nestlo (formerly AgentOS) - an operating system for coding agents
 # Top-level flake that ties together host configs, agent packages, and modules
 {
-  description = "AgentOS - a minimal NixOS for coding agents";
+  description = "Nestlo - the open-source home for AI coding agents (NixOS)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";

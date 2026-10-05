@@ -1,6 +1,6 @@
 # Project Status
 
-What works in AgentOS today, how it is tested, and what is still planned.
+What works in Nestlo today, how it is tested, and what is still planned.
 
 Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 

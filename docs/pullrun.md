@@ -1,7 +1,7 @@
 # Pullrun (experimental)
 
 [Pullrun](https://github.com/pullrun/pullrun) is an OCI runtime that runs one
-image as a runc container or as a Firecracker microVM. AgentOS packages it
+image as a runc container or as a Firecracker microVM. Nestlo packages it
 (`pkgs.agentos.pullrun`, the `pullrun` CLI and the `pullrun-runtime` daemon,
 built from source), runs the daemon for operators, and can run agents in
 Pullrun containers.
@@ -26,7 +26,7 @@ become root on the host. So:
 - Pullrun creates the socket with mode `0700`; the unit's `ExecStartPost`
   opens it to the group.
 - The `pullrun` CLI starts a daemon of its own when it cannot connect ("direct
-  mode"). AgentOS always calls it with `--direct=false`; do the same in your
+  mode"). Nestlo always calls it with `--direct=false`; do the same in your
   own scripts.
 - The MCP server (`pullrun mcp`, tools: run, stop, exec, list, get, inspect,
   logs, stats, pull_image, list_images, build, push, prune) has no mount or

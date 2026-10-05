@@ -6,14 +6,14 @@ server and survive detaching. herdr recognizes the agent in each pane and
 marks it `working`, `blocked` (waiting for an approval or an answer), `idle`
 or `done`. It has a socket API and a CLI that agents can drive, and plugins.
 
-`agentos.herdr` makes it part of AgentOS:
+`agentos.herdr` makes it part of Nestlo:
 
 | What | How |
 |------|-----|
 | herdr and its skill | `packages.<system>.herdr` (nixpkgs-unstable's, 0.9.x), installed by the module; skill pack `herdr` ([skills.md](skills.md)) |
 | A server for the agent user | `agentos-herdr-server-agentos-agent`: everything the agent user runs in herdr persists; operators attach with `agentos-herdr attach` |
 | Management bridge | `agentos-herdr status`, a loopback Prometheus exporter per user, a notification when an agent stays blocked |
-| AgentOS plugin | orchestrator tasks, factory items, budgets and approve/cancel for gated tasks inside herdr |
+| Nestlo plugin | orchestrator tasks, factory items, budgets and approve/cancel for gated tasks inside herdr |
 | Declarative plugins | `agentos.herdr.plugins = [ { source; ref; } ]`, pinned, installed per user, idempotent |
 | Dynamic plugins | `agentos-herdr-plugins`: browse the marketplace, review, install pinned, update with a manifest diff |
 | Marketplace sweep | opt-in, off by default: install every marketplace plugin daily. Read the security section first |
@@ -41,14 +41,14 @@ agentos.herdr = {
 |--------|---------|---------|
 | `enable` | `false` | Install herdr and the two CLIs, set everything below up |
 | `package` | `pkgs.agentos.herdr` | The herdr package |
-| `users` | `agentos.runtime.operators` that exist | Users who get the AgentOS plugin, the declared plugins and an exporter |
+| `users` | `agentos.runtime.operators` that exist | Users who get the Nestlo plugin, the declared plugins and an exporter |
 | `includeAgentUser` | `agentos.runtime.enable` | Also set up the sandboxed `agentos-agent` |
 | `server.users` | the agent user | Users with a systemd-run headless server |
 | `integrations` | `[ ]` | herdr's built-in agent integrations (`herdr integration install <agent>`) for all users. They edit the agents' own settings files, so they are opt-in |
-| `agentosPlugin.enable` | `true` | Link the AgentOS plugin |
+| `agentosPlugin.enable` | `true` | Link the Nestlo plugin |
 | `plugins` | `[ ]` | `{ source; ref; enable = true; }`: GitHub plugins, pinned |
 | `localPlugins` | `[ ]` | Directories with a `herdr-plugin.toml`, linked (store paths are ideal) |
-| `pluginUsers` | all users | Who gets `plugins`, `localPlugins` and the AgentOS plugin |
+| `pluginUsers` | all users | Who gets `plugins`, `localPlugins` and the Nestlo plugin |
 | `monitor.enable` / `basePort` / `intervalSeconds` | on / 9970 / 10 | The per-user exporter; each user takes the next port, loopback only |
 | `monitor.notifyBlocked` / `notifyCommand` / `blockedGraceSeconds` | on / `agentos-notify test` / 15 | Notification on a blocked agent |
 | `marketplace.installAll` | `false` | See "Marketplace sweep" |
@@ -58,7 +58,7 @@ The package is nixpkgs-unstable's `herdr` (0.9.1 at the pinned flake.lock),
 built and cached by Hydra, so no Rust or Zig build runs on your machine. The
 skill pack pins herdr 0.9.3's `skills/herdr` (the skill is a text file that
 only uses the CLI, which is stable across 0.9.x). When nixpkgs moves to a
-newer herdr, `nix flake update nixpkgs-unstable` picks it up; AgentOS needs
+newer herdr, `nix flake update nixpkgs-unstable` picks it up; Nestlo needs
 herdr 0.8.2 or newer (plugin manifest and marketplace support).
 
 ## Agents inside herdr
@@ -133,15 +133,15 @@ monitored user, so that user must be able to read the webhook secrets
 to turn it off, or `monitor.notifyCommand` to use another command (the text is
 appended as the last argument).
 
-**Dashboard.** The AgentOS web dashboard has no mechanism for links to other
+**Dashboard.** The Nestlo web dashboard has no mechanism for links to other
 local services yet, so herdr is not listed there; the metrics are the way to
 chart it in Grafana, and `agentos-herdr status` the quick look.
 
-## The AgentOS plugin
+## The Nestlo plugin
 
 `integrations/herdr-plugin/` (plugin id `agentos.dashboard`) is linked from
 the Nix store for every user in `pluginUsers`. It adds panes and actions to
-herdr, all of them plain calls of the AgentOS CLIs as the herdr user:
+herdr, all of them plain calls of the Nestlo CLIs as the herdr user:
 
 | Pane / action | Shows or does |
 |---------------|---------------|
@@ -151,7 +151,7 @@ herdr, all of them plain calls of the AgentOS CLIs as the herdr user:
 | `approve` | lists tasks `awaiting_approval`, asks for an id, runs `agentos-task approve <id>` |
 | `cancel` | lists running and queued tasks, asks for an id and a confirmation, runs `agentos-task cancel <id>` |
 
-Open one from herdr's action list (`AgentOS: orchestrator tasks`, ...) or with
+Open one from herdr's action list (`Nestlo: orchestrator tasks`, ...) or with
 `herdr plugin pane open --plugin agentos.dashboard --entrypoint tasks`. Bind a
 key in `~/.config/herdr/config.toml`:
 
@@ -160,7 +160,7 @@ key in `~/.config/herdr/config.toml`:
 key = "prefix+t"
 type = "plugin_action"
 command = "agentos.dashboard.tasks"
-description = "AgentOS tasks"
+description = "Nestlo tasks"
 ```
 
 The plugin does what the user can do on the command line, no more: the agent
@@ -198,7 +198,7 @@ oneshot at boot and on every rebuild that changes the list) runs
   without a systemd-run server (an operator), the unit starts herdr's server
   briefly and stops it again. The unit retries every two minutes (five times an
   hour) when the network is not up yet or the ref does not exist.
-- `localPlugins` (and the AgentOS plugin) go through `herdr plugin link`,
+- `localPlugins` (and the Nestlo plugin) go through `herdr plugin link`,
   which needs no network. herdr cannot install from a local path or a
   `file://` URL, so a plugin that you vendor or build in Nix is linked.
 
@@ -276,7 +276,7 @@ call the whole herdr CLI, which includes sending keystrokes to every pane
 and agent of that user. herdr validates manifests and keeps plugin state in
 separate directories, but it does not review or sandbox anything.
 
-What AgentOS does about it:
+What Nestlo does about it:
 
 - Nothing floats: declarative plugins require a `ref`, the CLI pins every
   install to a commit and records it. `update` is an explicit act that shows
@@ -284,7 +284,7 @@ What AgentOS does about it:
 - Review before install: `show` and the confirmation list the commands each
   plugin runs (a manifest can still start a script that does more; read the
   repository for plugins you rely on).
-- The AgentOS plugin and `localPlugins` come from the Nix store and the
+- The Nestlo plugin and `localPlugins` come from the Nix store and the
   configuration you reviewed.
 - Ownership: the declarative unit never changes plugins you installed by hand.
 - The agent user is the sensitive one: it runs orchestrator and factory work.

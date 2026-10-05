@@ -1,6 +1,6 @@
-# AgentOS — Pre-installed Coding Agents
+# Nestlo — Pre-installed Coding Agents
 
-The 20 agents below are pre-installed on every AgentOS system through the
+The 20 agents below are pre-installed on every Nestlo system through the
 `all-agents` package (`agents/default.nix`). Each one has the same base tools
 (git, gh, ripgrep, fd, jq, …) on its `PATH`.
 

@@ -1,6 +1,6 @@
 # Desktop edition
 
-AgentOS is headless by default. The desktop edition adds a graphical session
+Nestlo is headless by default. The desktop edition adds a graphical session
 for people who want to sit in front of the machine: a tiling window manager,
 one dark theme, audio, fonts, IDEs and a browser. The server host does not
 change; everything below is opt-in.
@@ -102,7 +102,7 @@ Options: `gaps.inner` / `gaps.outer`, `compositor` (picom under i3),
 | `$mod+f` | fullscreen |
 | `$mod+Shift+Space` | toggle floating |
 | `$mod+r` | resize mode |
-| `$mod+grave` | AgentOS dashboard |
+| `$mod+grave` | Nestlo dashboard |
 | `$mod+c` | clipboard history |
 | `$mod+Ctrl+l` | lock |
 | `Print` / `$mod+Shift+s` | screenshot |

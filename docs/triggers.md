@@ -24,7 +24,7 @@ Code: `services/agentos_services/triggers.py` (listener), `publish.py` (push and
    # on the target repository only: Contents: read and write, Pull requests: read and write
    ```
 
-   Nothing else: no admin, no workflows, no other repositories. A token with `contents:write` can push any non-protected branch, so also enable branch protection on `main`; AgentOS refuses protected and base branches by itself, but GitHub should too.
+   Nothing else: no admin, no workflows, no other repositories. A token with `contents:write` can push any non-protected branch, so also enable branch protection on `main`; Nestlo refuses protected and base branches by itself, but GitHub should too.
 
 2. **NixOS configuration**:
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-Where AgentOS is going after v0.3.0, and why. It is based on an audit of the
+Where Nestlo is going after v0.3.0, and why. It is based on an audit of the
 code and on research into agent sandbox platforms (E2B, Daytona, Modal,
 Cloudflare and Vercel sandboxes), coding-agent protocols (MCP, A2A, ACP),
 LLM gateways (LiteLLM, Portkey, Helicone) and agent security guidance
@@ -14,7 +14,7 @@ releases as work lands; [CHANGELOG.md](../CHANGELOG.md) records what shipped.
   ([orchestration.md](orchestration.md)).
 - GitHub triggers and issue → pull request publishing, with the token held
   by root and never visible to the agent ([triggers.md](triggers.md)).
-- OpenClaw as an opt-in chat front end that submits AgentOS tasks through a
+- OpenClaw as an opt-in chat front end that submits Nestlo tasks through a
   policy bridge and spends through the gateway ([openclaw.md](openclaw.md)).
 - Agent stack: n8n, Open WebUI + Ollama, Flowise, Langflow, AnythingLLM and
   LobeChat from the agent-fleet repo on the host, each with its own gateway
@@ -84,7 +84,7 @@ Finish and secure what is merged before adding more.
 
 - MCP 2025-11-25 authorization, elicitation and Tasks bridged to the
   message bus.
-- Agent Client Protocol so editors (Zed, JetBrains) can drive AgentOS
+- Agent Client Protocol so editors (Zed, JetBrains) can drive Nestlo
   agents; A2A agent cards for the bus; a system-wide `AGENTS.md`.
 - Signed marketplace index with per-entry integrity hashes; an MCP
   registry mirror.

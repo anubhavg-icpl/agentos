@@ -1,6 +1,6 @@
 # Remote agent fleets
 
-`agentos-fleet` manages other AgentOS hosts over SSH: one status table for all of them, `agentos spawn` on a remote host, and arbitrary commands.
+`agentos-fleet` manages other Nestlo hosts over SSH: one status table for all of them, `agentos spawn` on a remote host, and arbitrary commands.
 
 ```
 agentos-fleet add build1 admin@10.0.0.5 --port 2222
@@ -28,7 +28,7 @@ Hosts added with `agentos-fleet add` live in `~/.config/agentos/fleet.json`. A d
 
 `agentos-fleet` runs your own `ssh`, so your keys, agent and `~/.ssh/config` apply. Host key checking is never relaxed: the first connection to a new host fails until its key is trusted (`ssh-keyscan host >> ~/.ssh/known_hosts` after checking the fingerprint, or `programs.ssh.knownHosts`). `status` runs non-interactively (`BatchMode=yes`), `spawn` uses `ssh -t` so the agent gets a terminal.
 
-Remote commands run under `sh -c` with `/run/current-system/sw/bin` on `PATH`, whatever the remote login shell is. The remote user needs to be an AgentOS operator (group `agentos`, passwordless sudo for `spawn`), as when working on that host directly.
+Remote commands run under `sh -c` with `/run/current-system/sw/bin` on `PATH`, whatever the remote login shell is. The remote user needs to be a Nestlo operator (group `agentos`, passwordless sudo for `spawn`), as when working on that host directly.
 
 ## What `status` collects
 
