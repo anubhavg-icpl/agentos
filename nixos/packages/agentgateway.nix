@@ -54,6 +54,12 @@ rustPlatform.buildRustPackage {
   # Reported by `agentgateway --version` (the workspace version is 0.0.0)
   env.VERSION = version;
 
+  # Upstream's release profile is fat LTO with one codegen unit, whose final
+  # link of the agentgateway binary needs more memory than a typical builder
+  # has (rustc was killed); thin LTO keeps most of the gain
+  env.CARGO_PROFILE_RELEASE_LTO = "thin";
+  env.CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16";
+
   # crates/core/build.rs takes the build version and git revision from
   # tools/report_build_info.sh, which needs git and the checkout; without
   # them the env!() lookups in crates/core/src/version.rs fail to compile
