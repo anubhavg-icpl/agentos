@@ -25,6 +25,8 @@ agentos-orchestrator = "agentos_services.orchestrator:main"
 agentos-task-runner = "agentos_services.taskrunner:main"
 agentos-scheduler = "agentos_services.scheduler:main"
 agentos-triggers = "agentos_services.triggers:main"
+agentos-factory-server = "agentos_services.factory:main"
+agentos-factory-cli = "agentos_services.factory:cli_main"
 
 [tool.setuptools.packages.find]
 include = ["agentos_services*"]

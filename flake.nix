@@ -173,6 +173,8 @@
           orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
           # GitHub webhooks -> tasks -> pushed branch and pull request.
           triggers = import ./tests/triggers.nix { inherit pkgs agentosModules; };
+          # Software factory: fake roles take an item to a pull request with evidence.
+          factory = import ./tests/factory.nix { inherit pkgs agentosModules; };
           # Container-isolated agents in their own network namespace.
           container = import ./tests/container.nix { inherit pkgs agentosModules; };
           # Pullrun daemon: operators-only socket, agents in Pullrun containers.

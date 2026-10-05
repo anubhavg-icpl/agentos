@@ -89,6 +89,16 @@ approval gates, retries and priorities, driven by `agentos-task`. GitHub
 webhooks can create tasks and publish pull requests. See
 [orchestration.md](orchestration.md) and [triggers.md](triggers.md).
 
+### 7a. Software factory (`modules/factory`)
+`agentos.factory.lines.<name>` runs work items (GitHub issues or
+`agentos-factory`) through planner, builder, verify, reviewer, a fix loop and
+QA against the acceptance criteria, then opens a pull request (`supervised`,
+`approval-first`) or merges it (`dark`, which needs `allowAutoMerge` on the
+repository, a verify command, a QA role and a plan approval or scope guard).
+Every step is an orchestrator task. Metrics `agentos_factory_*`, alerts
+`AgentOSFactoryBlocked`, `AgentOSFactoryStuck`, `AgentOSFactoryBudgetBurn`.
+See [factory.md](factory.md).
+
 ---
 
 ## Tool Ecosystem

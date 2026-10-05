@@ -23,6 +23,7 @@
     # Agent intelligence
     ./context
     ./orchestration
+    ./factory
     ./policy
     ./openclaw
 
