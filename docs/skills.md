@@ -132,6 +132,11 @@ and a `pack.json`.
 | `fwc-swiftui-skills` | `swiftui-liquid-glass`, `swiftui-iphone-duo` | none | none | MIT | none |
 | `ui-skills` | `baseline-ui`, `create-design-md`, `fixing-accessibility`, `fixing-metadata`, `fixing-motion-performance`, `improve-ui`, `ui-skills-root` | `ui-skills` | `ui-skills` | MIT | CLI and MCP use ui-skills.com |
 | `img2threejs` | `img2threejs` | `img2threejs` | none | Apache-2.0 | installer subcommands only |
+| `karpathy-guidelines` | `karpathy-guidelines` | none | none | MIT | none |
+| `karpathy-claude-skills` | `karpathy-coding-loop`, `karpathy-context-engineering`, `karpathy-task-routing`, `karpathy-verification` | none | none | MIT | none |
+| `chisle` (opt-in) | `chisle`, `chisle-review`, `chisle-audit`, `chisle-help` | Claude Code hooks | none | MIT | none |
+| `anti-slop` | `install-anti-slop` | `anti-slop` | none | MIT | none (the upstream skill's `pnpm add` path uses npm) |
+| `reticle` | 19 skills (see below) | `reticle` | `reticle` | FSL-1.1-ALv2 (skills Apache-2.0) | none; drives the local Chromium |
 
 ### fwc-swiftui-skills
 
@@ -177,6 +182,98 @@ loop.
   fetch with `npx` and write into agent skill directories, which duplicates
   this module; use `doctor` and `version` only.
 
+### karpathy-guidelines
+
+[multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills)
+(MIT): one skill, `karpathy-guidelines`, with coding guidelines drawn from
+Andrej Karpathy's notes on how LLMs go wrong when coding: state assumptions,
+keep changes surgical, avoid overcomplication, define success criteria that
+can be checked. Markdown only.
+
+### karpathy-claude-skills
+
+[benfngu/karpathy-claude-skills](https://github.com/benfngu/karpathy-claude-skills)
+(MIT): four skills from Karpathy's talks and posts: `karpathy-coding-loop`
+(plan, small diffs, verify before reporting done), `karpathy-context-engineering`,
+`karpathy-task-routing` (how much autonomy, which tool or model) and
+`karpathy-verification` (judging AI output). Markdown only. Upstream treats
+`karpathy-guidelines` as superseded by this set; both packs are on by default
+and either can be turned off. Upstream's `install.sh` also appends an
+`@KARPATHY.md` import to `~/.claude/CLAUDE.md`; that edits a file you own, so
+it is not done here and the skills load when their descriptions match a task.
+
+### chisle
+
+Makes the agent use fewer words and skip code the task does not need. Source: [JayPokale/Chisle](https://github.com/JayPokale/Chisle) (MIT).
+
+Skills: `chisle` (the terse-prose and YAGNI-first ruleset), `chisle-review` (flag over-engineering in a diff), `chisle-audit` (ranked bloat report across code and prose), `chisle-help` (command card). They load in every agent CLI like any other skill.
+
+In Claude Code the pack also installs three hooks: a session-start hook that injects the ruleset, a prompt hook that re-states it each turn and handles `/chisle` on/off, and a post-tool hook that trims oversized tool output (long `Bash`, `Grep`, `WebFetch` and MCP results) before the agent reads it. Elided text is kept under `~/.claude/chisle-spill/` so the agent can grep it back.
+
+Because the hooks change what every Claude Code session sees, the pack is not enabled by default (`defaultEnable = false`). Enable it explicitly:
+
+```nix
+agentos.skills.packs.chisle.enable = true;
+```
+
+The module merges the pack's `passthru.claudeHooks` into the Claude Code managed settings drop-in (`/etc/claude-code/managed-settings.d/50-agentos-skills.json`, see above), pointing at the node scripts in the Nix store. Nothing is written to `~/.claude` at build time.
+
+Runtime switches (environment): `CHISLE_DEFAULT_MODE=off` disables the ruleset, `CHISLE_COMPRESS=0` disables output trimming, `CHISLE_COMPRESS_TOOLS=Bash,Grep` narrows which tools are trimmed. Inside a session, `/chisle off` and `/chisle` toggle it.
+
+The upstream installer (`npx chisle`) is not exposed: it edits `~/.claude` and other agents' config files, which Nix manages.
+
+### anti-slop
+
+Oxlint rules that catch specific coding mistakes in JavaScript and TypeScript projects (array `filter().map()` chains, widening then asserting types, `Reflect.get`, object-shaped parameters, `typeof` at runtime, and more), so the agent fixes them. Source: [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop) (MIT). Skill: `install-anti-slop`.
+
+The plugin is built from the pinned source and shipped with the pack. Run it in any project:
+
+```console
+$ anti-slop                 # lint the current directory with every anti-slop rule
+$ anti-slop src/ --fix      # any oxlint arguments work
+$ anti-slop -c my.json .    # use your own oxlint config instead of the built-in one
+```
+
+`anti-slop` runs oxlint from nixpkgs and loads the plugin from the Nix store through oxlint's `jsPlugins`, so it works offline and needs no `pnpm add`. The upstream `install-anti-slop` skill instead copies the plugin into a repository and installs `oxlint` and `@oxlint/plugins` from npm; use that when the project should own and customise the rules. The plugin is pinned upstream against oxlint 1.78.0, and nixpkgs may carry a different oxlint version.
+
+### reticle
+
+Reticle stops an agent from calling an app finished when it is not. It opens the
+app in a browser, uses it, and marks each check worked, did not work, or not
+enough information, with an explanation for every failure. Source:
+https://github.com/reticlehq/reticle (pinned in `sources.nix`).
+
+**Skills (19).** `reticle` (install, instrument and verify), `agentic-tdd`,
+`audit-my-app`, `debug-broken-ui`, `design-system-compliance`,
+`drive-desktop-app`, `false-green-tests`, `fix-what-i-pointed-at`,
+`install-and-verify`, `replay-user-flows`, `test-error-states`,
+`verify-cli-run`, `verify-form-validation`, `verify-keyboard-access`,
+`verify-login-logout`, `verify-optimistic-update`, `verify-pagination`,
+`verify-ui-change`, `verify-unattended`.
+
+**Tools.** `reticle` (the CLI) is on PATH. The pack registers one MCP server,
+`reticle` (`reticle mcp`). The CLI is built from the pinned source with pnpm:
+only `@reticlehq/server` and the workspace packages it depends on are built, on
+Node 22. Nothing is downloaded when it runs. The wrapper sets
+`RETICLE_CHROMIUM_PATH` to nixpkgs' Chromium (so Playwright never installs a
+browser), `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` and `RETICLE_TELEMETRY=0`; all
+three can be overridden from the environment.
+
+Licence:
+
+| Part | Licence |
+| --- | --- |
+| The 19 skills, `@reticlehq/core`, `engine`, `browser`, `open-verification` | Apache-2.0 |
+| `@reticlehq/server` (the `reticle` CLI and MCP server), `@reticlehq/init` | FSL-1.1-ALv2 |
+| `server/src/features/ee` | Reticle Enterprise License |
+
+FSL-1.1-ALv2 allows internal use, development and evaluation. The one
+restriction is offering Reticle itself as a competing product or service. Each
+version becomes Apache-2.0 two years after its release. The enterprise code is
+audit-log functionality that nothing else imports; the build deletes it, so it is
+not in the output. The pack's `license` field is `FSL-1.1-ALv2` because that is
+the most restrictive licence of what ships.
+
 <!-- Entries for further packs go here, in the same form. -->
 
 ## Licenses
@@ -188,8 +285,19 @@ Each pack keeps its upstream license; `agentos-skills list` prints it.
 | `fwc-swiftui-skills` | MIT |
 | `ui-skills` | MIT |
 | `img2threejs` | Apache-2.0 |
+| `karpathy-guidelines` | MIT |
+| `karpathy-claude-skills` | MIT |
+| `chisle` | MIT |
+| `anti-slop` | MIT |
+| `reticle` | FSL-1.1-ALv2 (CLI and MCP server); skills and SDK Apache-2.0 |
 
-<!-- Licenses with conditions, such as the Reticle FSL note, go here. -->
+Reticle's server package, which provides the `reticle` CLI and MCP server, is
+under the Functional Source License 1.1 (Apache-2.0 future): internal use,
+development and evaluation are allowed; offering Reticle itself as a competing
+product or service is not. Each release becomes Apache-2.0 two years later.
+Its enterprise-licensed code (`server/src/features/ee`) is removed at build
+time. Anthropic's `docx`, `pdf`, `pptx` and `xlsx` skills are "all rights
+reserved" and are not shipped.
 
 ## Network use
 
@@ -212,7 +320,11 @@ affected pack's tools unused.
    `nixos/packages/skills/default.nix`. `skills` maps the skill name to its
    directory in the source; every directory needs a `SKILL.md` with front matter.
 3. `nix build .#checks.x86_64-linux.skills-eval` builds every pack and the
-   bundle and checks front matter, name collisions and `pack.json`.
+   bundle and checks front matter, name collisions and `pack.json`. Every
+   skill is also checked against the Agent Skills spec while its pack builds
+   (`validate.py`): the name is 1-64 characters of a-z, 0-9 and single
+   hyphens and equals the directory name, and the description is present and
+   at most 1024 characters.
 
 `checks.x86_64-linux.skills` is a VM test of the module: links in the agent
 user's `.claude`, `.codex` and `.agents` directories, user-created skills left
