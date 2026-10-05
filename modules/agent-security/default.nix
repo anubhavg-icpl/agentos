@@ -854,7 +854,8 @@ in
 
     # ── PR-Agent ────────────────────────────────────────────────────────
     (lib.mkIf pr.enable {
-      environment.systemPackages = [ (wrapper "nestlo-pr-review" "pr-review") ];
+      # the launcher too, for --warm and direct use (its own env, no gateway)
+      environment.systemPackages = [ (wrapper "nestlo-pr-review" "pr-review") pr.package ];
 
       systemd.services.nestlo-pr-review = lib.mkIf pr.auto.enable (gatewayDeps // {
         description = "Nestlo PR-Agent review of agent pull requests";
