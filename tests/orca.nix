@@ -64,7 +64,8 @@ let
 in
 pkgs.testers.runNixOSTest {
   name = "nestlo-orca";
-  globalTimeout = 3600;
+  # k3s imports the Nix-built images one at a time: ~9 min without KVM
+  globalTimeout = 7200;
 
   nodes.machine = { lib, ... }: {
     imports = nestloModules;
@@ -142,15 +143,15 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("nestlo-model-gateway.service")
 
     with subtest("the chart is deployed and the operator becomes ready"):
-        machine.wait_until_succeeds(KC + "get deployment -n agent-orca-system agent-orca", timeout=900)
+        machine.wait_until_succeeds(KC + "get deployment -n agent-orca-system agent-orca", timeout=2400)
         machine.wait_until_succeeds(
-            KC + "rollout status -n agent-orca-system deployment/agent-orca --timeout=30s", timeout=900)
+            KC + "rollout status -n agent-orca-system deployment/agent-orca --timeout=30s", timeout=2400)
         crds = kubectl("get crd -o name")
         for crd in ["agents", "agentruns", "agentworkflows", "modelproviders", "modelselectors", "tools"]:
             assert f"{crd}.agentorca.agentorca.io" in crds, crds
 
     with subtest("agent orca is registered and the ModelProviders point at the gateway"):
-        machine.wait_until_succeeds(KC + "get modelprovider -n default claude-sonnet", timeout=900)
+        machine.wait_until_succeeds(KC + "get modelprovider -n default claude-sonnet", timeout=2400)
         for ns in ["agent-orca-system", "default"]:
             mp = json.loads(kubectl(f"get modelprovider -n {ns} claude-sonnet -o json"))
             base = mp["spec"]["baseURL"]
@@ -190,7 +191,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("the UI answers on loopback"):
         machine.wait_until_succeeds(
-            KC + "rollout status -n agent-orca-system deployment/agent-orca-ui --timeout=30s", timeout=600)
+            KC + "rollout status -n agent-orca-system deployment/agent-orca-ui --timeout=30s", timeout=1800)
         machine.wait_until_succeeds("curl -fsS http://127.0.0.1:9980/ | grep -i '<div id=\"root\"'", timeout=300)
         listeners = machine.succeed("ss -Htln")
         for port in ["9980", "9981", "9982"]:
