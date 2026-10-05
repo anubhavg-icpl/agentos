@@ -34,3 +34,6 @@ tmp/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Tool caches (sbomnix / vulnix)
+http_cache.sqlite
