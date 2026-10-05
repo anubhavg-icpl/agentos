@@ -290,6 +290,25 @@ vibe search "security"   # Search
 
 ---
 
+## Agent Skills (`modules/skills`)
+
+`agentos.skills` links skill packs (nixos/packages/skills, pinned sources) into every agent CLI's user-level skills directory, for the agent user and `agentos.skills.users`.
+
+- Packs: `fwc-swiftui-skills`, `ui-skills`, `img2threejs`; one `agentos.skills.packs.<name>.enable` option per pack.
+- Targets (`agentos.skills.targets`): `.agents/skills`, `.claude/skills`, `.codex/skills`, `.config/opencode/skills`, `.gemini/skills`, `.copilot/skills`, `.cursor/skills`, `.factory/skills`, `.config/agents/skills` (Amp), `.config/goose/skills`, `.qwen/skills`, `.config/crush/skills`.
+- A name used by two packs fails the build. Skills a user wrote are not overwritten; stale links of ours are removed.
+- Pack tools are added to the PATH; pack MCP servers to `agentos.mcp-registry.extraToolServers`.
+
+```bash
+agentos-skills list
+agentos-skills doctor
+agentos-skills path <skill>
+```
+
+See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skills`.
+
+---
+
 ## MCP Server Registry (36 servers)
 
 Preconfigured Model Context Protocol servers, written to `/etc/agentos/mcp-servers.json`. Each entry runs a published npm package (`npx -y`) or PyPI package (`uvx`), fetched on first start. Runtime enable/disable changes are stored in `/var/lib/agentos/mcp-servers.json`.

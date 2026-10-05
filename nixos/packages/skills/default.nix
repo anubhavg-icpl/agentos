@@ -9,4 +9,6 @@ let
 in
 {
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;
+  img2threejs = callPack ./packs/img2threejs.nix;
+  ui-skills = callPack ./packs/ui-skills.nix;
 }

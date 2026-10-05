@@ -19,6 +19,7 @@
 #   tools        list of derivations whose bin/ is merged into $out/bin
 #   mcp          attrset of MCP servers the pack provides:
 #                { <name> = { command = "..."; args = [ ... ]; env = { }; }; }
+#   defaultEnable whether agentos.skills enables the pack by default (true)
 #   description, homepage, license (an SPDX id string), notes (free text,
 #                e.g. license caveats or what needs the network)
 { lib, stdenvNoCC, jq, symlinkJoin }:
@@ -33,6 +34,7 @@
 , homepage
 , license
 , notes ? ""
+, defaultEnable ? true
 }:
 
 assert lib.assertMsg (builtins.match "[a-z0-9-]+" pack != null) "skill pack name ${pack} must be [a-z0-9-]+";
@@ -83,7 +85,8 @@ stdenvNoCC.mkDerivation {
   '';
 
   passthru = {
-    inherit pack mcp tools;
+    inherit pack mcp tools defaultEnable;
+    packMeta = meta;
     skillNames = lib.attrNames skills;
   };
 
