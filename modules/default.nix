@@ -33,6 +33,7 @@
     ./mcp-servers
     ./pullrun
     ./orca
+    ./openshell
 
     # Safety & control
     ./budget-controller

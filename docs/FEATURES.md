@@ -332,6 +332,30 @@ See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skill
 
 See [herdr.md](herdr.md). VM test `herdr`; unit tests `services/tests/test_herdr_*.py`.
 
+## Agent Orca (`modules/orca`)
+
+`nestlo.orca` runs [Agent Orca](https://github.com/heddles/agent-orca), a Kubernetes operator for AI agents, on a single-node k3s cluster.
+
+- k3s with pod and service ranges clear of Nestlo's networks; the operator, UI, model router, MCP ingester, Redis and pause images are built by Nix and loaded into k3s (nothing of the platform is pulled from a registry); the Helm chart is deployed by k3s' Helm controller.
+- `ModelProvider` resources and a `default` `ModelSelector` that send every model call through the Nestlo model gateway as agent `orca` (`nestlo-orca-setup`), with a daily budget (`budgetUsd`); the cluster holds no provider keys.
+- UI, ACP API and task API on loopback (9980, 9981, 9982); `aoctl` and `kubectl` configured; a firewall chain limits pods to the gateway and the API server on the host.
+- `allowedRegistries` restricts agent images. Not included: Postgres run archival, Hindsight, offline CoreDNS images.
+
+See [orca.md](orca.md). VM test `orca`.
+
+## OpenShell (`modules/openshell`)
+
+`nestlo.openshell` integrates [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell), a runtime that runs agents in sandboxes under declarative policies.
+
+- `packages.<system>.openshell`: `openshell`, `openshell-gateway`, `openshell-supervisor`, `openshell-sandbox` and `openshell-prover`, built from the pinned source.
+- Sandboxes with Landlock, seccomp and deny-by-default network egress; policies in YAML; providers that hand credentials only to authorized endpoints; the prover for boundary checks; OCSF logs.
+- Skill pack `openshell` (`openshell-cli`, `generate-sandbox-policy`, `debug-inference`, `debug-openshell-cluster`).
+- `nestlo-openshell-gateway`: the gateway as a hardened service on loopback with mutual TLS, driving podman or docker; `openshell` for operators with their client certificate.
+- Sandbox model calls go through the Nestlo model gateway as agent `openshell` (provider profile `nestlo-gateway`, budget, DLP, audit); real provider keys never enter a sandbox.
+- Policies declared in Nix (checked at evaluation, rendered to `/etc/openshell/policies/`, optionally the gateway-global policy), upstream and custom provider profiles, provider instances from secret files, gateway OCSF log and OTLP export.
+
+See [openshell.md](openshell.md). VM test `openshell`.
+
 ## Nestlo Cloud (`modules/cloud`)
 
 `nestlo.cloud` provides the exe.dev feature set on the host.

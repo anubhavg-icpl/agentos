@@ -145,6 +145,7 @@ and a `pack.json`.
 | `caliper` | `grill-skill`, `evaluate-skill` | `caliper` | none | MIT | runs agent CLIs, which call their model APIs |
 | `ouroboros` | 23 skills, `ouroboros-*` | `ooo`, `ouroboros`, `ozo` | `ouroboros` | MIT | drives the `claude` CLI; telemetry off |
 | `herdr` | `herdr` | none (`nestlo.herdr` installs the CLI) | none | Apache-2.0 | none |
+| `openshell` | `openshell-cli`, `generate-sandbox-policy`, `debug-inference`, `debug-openshell-cluster` | none (`nestlo.openshell` installs the CLI) | none | Apache-2.0 | none |
 
 ### fwc-swiftui-skills
 
@@ -311,6 +312,13 @@ The skill from [herdrdev/herdr](https://github.com/herdrdev/herdr) (0.9.3, Apach
 - The skill describes itself as active only when the user mentions herdr, and requires `HERDR_ENV=1`, which herdr sets in every pane, so it costs a short description in the context elsewhere and nothing else.
 - The pack ships no tools: the `herdr` binary, the agent-user server, the status bridge and the plugin management come from `nestlo.herdr` ([herdr.md](herdr.md)). Enabling the pack without the module leaves the skill with no CLI to call.
 - No network use.
+
+### openshell
+
+The four skills in [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell)'s `skills/` directory (Apache-2.0, pinned to a commit of `main`): `openshell-cli` (use the `openshell` CLI for sandboxes, providers, policies and logs), `generate-sandbox-policy` (turn plain-language requirements and API documentation into L4 or L7 network policies and middleware configuration), `debug-inference` (diagnose inference clients that use an attached provider) and `debug-openshell-cluster` (diagnose an unhealthy or unreachable gateway and sandbox startup).
+
+- The pack ships no tools: the `openshell` CLI and the gateway come from `nestlo.openshell` ([openshell.md](openshell.md)). The skills tell the agent to use the installed `openshell --help` as the authority for syntax.
+- No network use by the pack itself.
 
 <!-- Entries for further packs go here, in the same form. -->
 
@@ -489,6 +497,7 @@ Each pack keeps its upstream license; `nestlo-skills list` prints it.
 | `anthropic-skills`, `hyperframes`, `impeccable`, `caveman`, `open-design` | Apache-2.0 (`open-design`'s `web-clone` MIT; `anthropic-skills` per skill) |
 | `composio-awesome-claude-skills`, `composio-automation` | Apache-2.0 as stated in the repository README (no LICENSE file) |
 | `herdr` | Apache-2.0 |
+| `openshell` | Apache-2.0 |
 
 Reticle's server package, which provides the `reticle` CLI and MCP server, is
 under the Functional Source License 1.1 (Apache-2.0 future): internal use,
