@@ -34,6 +34,7 @@
     ./pullrun
     ./orca
     ./agent-security
+    ./llm-observability
     ./openshell
 
     # Safety & control

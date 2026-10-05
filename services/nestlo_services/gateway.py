@@ -70,6 +70,7 @@ from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
 from . import health as healthmod
 from .store import BudgetRefused, Store, connect
+from . import genai_trace
 from .usage import GENERATION_KEYS, Pricing, UsageParser, apply_output_cap, estimate_cost, output_cap
 
 log = logging.getLogger("nestlo.gateway")
@@ -104,6 +105,7 @@ class Gateway:
     def __init__(self, cfg, store, pricing, clock=time.time, audit=None):
         self.cfg = cfg
         self.audit = audit if audit is not None else auditmod.client_from_config(cfg, "gateway")
+        self.tracer = genai_trace.from_config(cfg)
         self.dlp = Dlp(cfg["gateway"].get("dlp"), key_source=self._provider_keys, clock=clock)
         self.store = store
         self.pricing = pricing
@@ -168,9 +170,10 @@ class Gateway:
         return self.store.limit(agent, self.cfg["budget"]["default_daily_usd"])
 
     def write_log(self, agent, entry):
+        entry = dict(entry, ts=round(self.clock(), 3), agent=agent)
+        self.tracer.record(entry)           # GenAI span; non-blocking, never raises
         if not self.log_dir:
             return
-        entry = dict(entry, ts=round(self.clock(), 3), agent=agent)
         line = json.dumps(entry, sort_keys=True) + "\n"
         path = os.path.join(self.log_dir, agent + ".log")
         with self._log_lock:

@@ -135,6 +135,21 @@ DEFAULTS = {
             "otlp": {"enabled": False, "endpoint": "", "token_file": "", "ca_file": ""},
         },
     },
+    "tracing": {
+        # OpenTelemetry GenAI spans, one per gateway request (genai_trace.py, docs/llm-observability.md)
+        "enabled": False,
+        "endpoint": "http://127.0.0.1:4318/v1/traces",     # OTLP/HTTP JSON; the Nestlo collector
+        "headers": {},
+        "headers_file": "",                     # "Name: value" lines, re-read on change
+        "ca_file": "",
+        "service_name": "nestlo-model-gateway",
+        "timeout_sec": 5,
+        "queue": 2048,
+        "batch": 128,
+        "flush_interval_sec": 2,
+        "sample_ratio": 1.0,
+        "legacy_system_attribute": False,       # also emit the deprecated gen_ai.system
+    },
     "notify": {
         # Internal event types to forward (see daemon.EVENT_TEXT)
         "events": [],
