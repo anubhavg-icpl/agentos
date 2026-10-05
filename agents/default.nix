@@ -270,6 +270,9 @@ rec {
   agent-fleet-web = pkgs.callPackage ../nixos/packages/agent-fleet-web.nix { };
   agent-fleet-deploy = pkgs.callPackage ../nixos/packages/agent-fleet-deploy.nix { inherit agent-fleet-web; };
 
+  # Agent skill packs (agentos.skills, docs/skills.md), exposed as skills-<pack>
+} // lib.mapAttrs' (name: lib.nameValuePair "skills-${name}") (import ../nixos/packages/skills { inherit pkgs; }) // {
+
   # Service daemons. These are placeholders with no source code yet;
   # they are only referenced when agentos.daemons.enable = true.
   daemon = pkgs.callPackage ../nixos/packages/daemon.nix { };

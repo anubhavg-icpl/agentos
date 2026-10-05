@@ -290,6 +290,19 @@ vibe search "rag"          # Search the library
 
 ---
 
+## Agent Skills
+
+`agentos.skills` installs skill packs pinned to upstream commits: Reticle, Chisle (opt-in), UI Skills, Ouroboros, Caliper, Anti-Slop, img2threejs, FWC SwiftUI, and the Karpathy guidelines and skills. Every skill is checked against the Agent Skills spec at build time. The packs link their skills into the skills directory of every agent CLI for the agent user and any users you list: `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, `~/.gemini/skills`, `~/.config/opencode/skills` and more. Each pack's tools go on the PATH and its MCP servers into the MCP registry. Enable or disable packs and targets per option; skills you wrote yourself are never overwritten.
+
+```bash
+agentos-skills list        # packs, skills, tools, MCP servers, licenses
+agentos-skills doctor      # which links exist or are broken, per user and CLI
+```
+
+Full reference: [docs/skills.md](docs/skills.md)
+
+---
+
 ## MCP Server Registry
 
 <div align="center">
@@ -392,6 +405,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | editors | Neovim (LSP configured), Helix | automatic |
 | ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
 | vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
+| skills | Skill packs linked into every agent CLI | `agentos-skills` |
 
 † Planned service, not implemented yet ([status](docs/STATUS.md)).
 
@@ -467,6 +481,7 @@ agentos/
 │   ├── circuit-breaker/            #   Rate limiting + loop detection
 │   ├── mcp-servers/                #   36 preconfigured MCP servers
 │   ├── vibe-integration/           #   5340 skills auto-installer
+│   ├── skills/                     #   Skill packs linked into every agent CLI
 │   ├── context/                    #   Qdrant vector memory
 │   ├── orchestration/              #   Multi-agent coordination
 │   ├── policy/                     #   Policy-as-code and RBAC
