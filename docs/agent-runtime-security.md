@@ -165,6 +165,15 @@ config at build time (`requireBTF`, default true; a custom
 `requireBTF = false` if you know the kernel has BTF) and the unit checks
 `/sys/kernel/btf/vmlinux` before starting, with a message that says so.
 
+Tetragon also resolves kprobe targets through `/proc/kallsyms`. Nestlo's
+kernel hardening (`modules/security`) sets `kernel.kptr_restrict = 2`, which
+hides kernel addresses even from processes with `CAP_SYSLOG`, and then no
+policy loads ("no kernel symbols found"). With this module enabled the value
+is `1`: kernel pointers stay hidden from every process without `CAP_SYSLOG`
+(agents included) and are readable by Tetragon. Override
+`boot.kernel.sysctl."kernel.kptr_restrict"` with `lib.mkForce` if you need 2
+and can do without the monitor.
+
 ## Options
 
 | Option | Default | Meaning |

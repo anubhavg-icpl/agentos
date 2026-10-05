@@ -550,6 +550,12 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Tetragon resolves kprobe targets through /proc/kallsyms. Nestlo's
+    # hardening sets kptr_restrict = 2, which hides kernel addresses even
+    # from CAP_SYSLOG, and every policy then fails to load ("no kernel
+    # symbols found"). 1 still hides them from processes without CAP_SYSLOG.
+    boot.kernel.sysctl."kernel.kptr_restrict" = lib.mkOverride 90 1;
+
     assertions = [
       {
         assertion = rt.enable;
