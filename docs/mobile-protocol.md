@@ -205,3 +205,39 @@ How should your phone reach this machine?
     `nestlo-mobile tunnel stop` when done.
   - Failed pairing attempts are rate-limited per client IP (the
     `CF-Connecting-IP` header, trusted only on connections from loopback).
+
+### Tunnel providers
+
+`nestlo.mobile.tunnel.provider` sets the default. `pair --via tunnel` lists every
+provider and lets the operator choose; `--provider <name>` picks one directly.
+Each provider is a small adapter:
+- it starts its command under the `nestlo-mobile-tunnel` unit (one tunnel at a time);
+- it parses the public endpoint from the output;
+- it writes `/run/nestlo-mobile/tunnel.json`:
+  `{"provider","url"|"host","port","trust":"webpki"|"pin","expires_at"?}`.
+
+| Provider | Account | Command (adapter) | Endpoint | Trust |
+|---|---|---|---|---|
+| `cloudflare` (default) | none | `cloudflared tunnel --no-autoupdate --url https://127.0.0.1:7443 --no-tls-verify` | `https://*.trycloudflare.com` | webpki |
+| `cloudflare-named` | Cloudflare account | `cloudflared tunnel --no-autoupdate run --token <tokenFile>` | `publicUrl` | webpki |
+| `tailscale-funnel` | tailnet with Funnel | `tailscale funnel --bg https+insecure://127.0.0.1:7443` | `https://<machine>.<tailnet>.ts.net` | webpki |
+| `tailscale` | tailnet | none (address only) | MagicDNS name or `100.x`, port 7443 | pin |
+| `ngrok` | ngrok authtoken (`authtokenFile`) | `ngrok http https://127.0.0.1:7443 --log stdout --log-format json [--url <domain>]` | `https://*.ngrok-free.app` or the reserved domain | webpki |
+| `zrok` | zrok enable token (`tokenFile`, run `zrok enable` once) | `zrok share public https://127.0.0.1:7443 --insecure --headless` | `https://*.share.zrok.io` (or self-hosted) | webpki |
+| `pinggy` | none (free sessions are time-limited) | `ssh -p 443 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -R0:127.0.0.1:7443 tls@a.pinggy.io` (TLS passthrough) | `<random>.a.pinggy.link:443` | pin (end to end) |
+| `localhost-run` | none | `ssh -o StrictHostKeyChecking=accept-new -R 80:127.0.0.1:7080 nokey@localhost.run` | `https://*.lhr.life`: the onboarding page only, plus LAN hosts for the API | webpki |
+| `bore` | none (or own server, `server`/`secretFile`) | `bore local 7443 --to bore.pub` | `bore.pub:<port>`: raw TCP, so TLS stays end to end | pin |
+| `frp` | own frps server (`server`, `tokenFile`) | `frpc` with a generated TCP proxy for 7443 | `<server>:<remotePort>` | pin |
+
+- **Endpoint shapes:**
+  - A provider whose endpoint is a raw TCP port (`bore`, `frp`, the `pinggy` TLS
+    passthrough, `tailscale`) keeps the machine's own certificate end to end. The
+    QR lists it as a `host` entry of the form `host:port`, and the app pins `fp`.
+  - A provider that terminates TLS (`cloudflare`, `ngrok`, `zrok`,
+    `tailscale-funnel`) is listed as a `url` entry, and the app uses WebPKI.
+- **`host` syntax:** a `host` entry may now carry a port, as `name:port` or
+  `[v6]:port`. Without one, the URI's `port` applies.
+- **Secrets:** provider tokens are files (`tokenFile`/`authtokenFile`), read with
+  systemd `LoadCredential`. They are never in the Nix store and never in a QR.
+- **Unknown endpoints:** an adapter that cannot parse an endpoint within 60 s
+  fails the unit with the provider's last output lines, and `pair` shows them.
