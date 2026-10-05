@@ -94,15 +94,20 @@ let
       esac
     }
 
-    # Drop our links to skills that are no longer installed, in every known
-    # target directory (also those that were deselected)
-    for rel in ${lib.concatStringsSep " " (lib.attrValues knownTargets)}; do
+    # In selected target directories drop our links to skills that are no
+    # longer installed; in deselected ones drop all our links, so removing a
+    # target really stops that CLI from loading the skills
+    for rel in ${lib.concatStringsSep " " (lib.unique (lib.attrValues knownTargets))}; do
       dir="$home/$rel"
       [ -d "$dir" ] || continue
+      case " ${lib.concatStringsSep " " (lib.unique (lib.attrValues targetDirs))} " in
+        *" $rel "*) selected=1 ;;
+        *) selected=0 ;;
+      esac
       for link in "$dir"/*; do
         [ -L "$link" ] || continue
         ours "$link" || continue
-        [ -L "$bundle/skills/$(basename "$link")" ] && continue
+        if [ "$selected" = 1 ] && [ -L "$bundle/skills/$(basename "$link")" ]; then continue; fi
         rm -f "$link"
       done
     done

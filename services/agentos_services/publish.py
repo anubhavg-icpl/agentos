@@ -166,7 +166,7 @@ def resolve_spec(task, opts, marker=None):
     if not _REPO.match(repo):
         raise PublishError("invalid repository name", "config")
     title = clean_text(block.get("title"), 200) or "AgentOS: %s" % task.get("id", "change")
-    body = clean_text(block.get("body"), 4000, multiline=True)
+    body = clean_text(block.get("body"), 60000, multiline=True)
     merge = block.get("merge")
     if merge is not None:
         if not isinstance(merge, dict) or merge.get("method") not in _METHODS:

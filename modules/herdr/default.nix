@@ -371,7 +371,7 @@ in
       };
       basePort = lib.mkOption {
         type = lib.types.port;
-        default = 9960;
+        default = 9970;
         description = "Loopback port of the first user's exporter; each further user takes the next port.";
       };
       intervalSeconds = lib.mkOption {
@@ -454,6 +454,13 @@ in
 
   config = lib.mkIf cfg.enable {
     assertions = [
+      {
+        # Each monitored user takes basePort + index; the factory exporter must
+        # not sit inside that range
+        assertion = !(config.agentos.factory.enable or false) || !cfg.monitor.enable
+          || !(lib.elem (config.agentos.factory.metricsPort or 9960) (map portOf allUsers));
+        message = "agentos.herdr.monitor.basePort range collides with agentos.factory.metricsPort; move one of them";
+      }
       {
         assertion = lib.all (u: config.users.users ? ${u}) (lib.filter (u: u != agentUser) (allUsers ++ pluginUsers ++ cfg.marketplace.users ++ cfg.server.users));
         message = "agentos.herdr: unknown user(s): "

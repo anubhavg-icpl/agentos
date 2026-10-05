@@ -39,6 +39,8 @@ import sys
 import threading
 import time
 
+import redis
+
 from . import audit as auditmod
 from . import config as configmod
 from . import health as healthmod
@@ -84,6 +86,8 @@ TASK_TERMINAL = ("succeeded", "failed", "timeout", "cancelled", "skipped")
 _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$")
 _ITEM_ID = re.compile(r"^F-[0-9]{1,12}$")
 MAX_TITLE, MAX_BODY, MAX_CRITERIA, MAX_CRITERION = 300, 20000, 30, 400
+# A concurrent claimer of a GitHub source saves its item right after claiming
+CLAIM_WAIT_STEPS, CLAIM_WAIT_SEC = 100, 0.02
 
 
 class ConfigError(ValueError):
@@ -549,10 +553,13 @@ class Factory:
             if isinstance(src.get("url"), str) and src["url"].startswith("https://") and len(src["url"]) < 300:
                 source["url"] = src["url"]
         dkey = None
+        new_id = "F-%d" % self.r.incr(self._k("seq"))
         if source["kind"] == "github":
+            # Claim the source atomically: two deliveries of one issue at the
+            # same moment must not both create an item (the API is threaded)
             dkey = self._k("src", line["name"], "%s#%d" % (source["repo"], source["number"]))
-            existing = self.get(self.r.get(dkey) or "")
-            if existing and existing["state"] not in FINISHED:
+            existing = self.claim_source(dkey, new_id)
+            if existing is not None:
                 return existing, True
         given = [sanitize(c, MAX_CRITERION).strip() for c in (criteria or [])]
         csource = "given" if given else None
@@ -561,7 +568,7 @@ class Factory:
             csource = "issue" if given else None
         now = self.clock()
         item = {
-            "id": "F-%d" % self.r.incr(self._k("seq")), "line": line["name"], "title": title, "body": text,
+            "id": new_id, "line": line["name"], "title": title, "body": text,
             "acceptance": given, "criteria_source": csource, "source": source, "priority": priority,
             "state": AWAITING if line["mode"] == "approval-first" else BACKLOG,
             "round": 0, "size": None, "scope": [], "tasks": {k: [] for k in STAGE_TASKS.values()},
@@ -572,12 +579,42 @@ class Factory:
             "budget_bonus": 0.0, "plan_rejections": 0, "builder_task": None, "fix": None, "resume": None,
         }
         item["history"][0]["to"] = item["state"]
-        if dkey:
-            self.r.set(dkey, item["id"], ex=self.ttl())
         self.save(item)
         self.emit("factory.item.created", ident["name"], item=item["id"], line=item["line"], title=title[:120],
                   source_kind=source["kind"], mode=line["mode"])
         return item, False
+
+    def claim_source(self, dkey, new_id):
+        """Point `dkey` at `new_id` unless it names an item that is still open.
+
+        Returns that open item (a duplicate) or None when the claim is ours. The
+        compare-and-set runs in a WATCH transaction, so of two concurrent
+        deliveries exactly one wins; a key left by a finished or expired item is
+        taken over."""
+        waited = 0
+        while True:
+            with self.r.pipeline() as p:
+                try:
+                    p.watch(dkey)
+                    held = p.get(dkey)
+                    existing = self.get(held) if held else None
+                    if existing and existing["state"] not in FINISHED:
+                        p.unwatch()
+                        return existing
+                    if held and existing is None and waited < CLAIM_WAIT_STEPS:
+                        # The winner of a concurrent claim saves its item right
+                        # after claiming; wait for it rather than take over a
+                        # claim that is still being completed
+                        p.unwatch()
+                        waited += 1
+                        time.sleep(CLAIM_WAIT_SEC)
+                        continue
+                    p.multi()
+                    p.set(dkey, new_id, ex=self.ttl())
+                    p.execute()
+                    return None
+                except redis.WatchError:
+                    continue
 
     # ── cost ───────────────────────────────────────────────────────────
     def update_cost(self, item):
@@ -588,7 +625,12 @@ class Factory:
                     total += float(self.spend(tid, item["created_at"]) or 0.0)
                 except Exception:
                     log.exception("cannot read spend of %s", tid)
-        item["cost_usd"] = round(max(total, 0.0), 6)
+        total = round(max(total, 0.0), 6)
+        grew = total - float(item.get("cost_usd") or 0.0)
+        if grew > 0:
+            # Monotonic per-line spend for rate alerts (AgentOSFactoryBudgetBurn)
+            self.r.incrbyfloat(self._k("cost_total", item["line"]), grew)
+        item["cost_usd"] = total
 
     def budget_total(self, item):
         return self.lines[item["line"]]["budget_usd_per_item"] + item.get("budget_bonus", 0.0)
@@ -711,7 +753,7 @@ class Factory:
             if item["builder_task"]:
                 body["start_from"] = item["builder_task"]
             verify = list(line["verify"] or [])
-            if line["enforce_scope"] and item["scope"]:
+            if line["enforce_scope"]:
                 pre = [self.opts.get("scope_check") or "agentos-factory-scope"]
                 for g in item["scope"]:
                     pre += ["--allow", g]
@@ -774,7 +816,7 @@ class Factory:
         out += ["", "## Cost", "$%.2f of $%.2f budget." % (item["cost_usd"], self.budget_total(item)), "",
                 "Factory item: `%s`" % item["id"]]
         text = "\n".join(out)
-        return text if len(text) <= 60000 else text[:60000] + "\n[truncated]"
+        return text if len(text) <= 59000 else text[:59000] + "\n[truncated]"
 
     # ── driving ────────────────────────────────────────────────────────
     def drive(self, item):
@@ -868,14 +910,14 @@ class Factory:
         item["builder_task"] = task["id"]
         verify = result.get("verify")
         vtail = (verify or {}).get("output_tail") or ""
-        if line["enforce_scope"] and item["scope"]:
+        if line["enforce_scope"]:
             files = result.get("changed_files")
             bad = scope_violations(files, item["scope"]) if isinstance(files, list) else [
                 ln.split(":", 1)[1].strip() for ln in vtail.splitlines() if ln.startswith("SCOPE-VIOLATION:")]
             if bad:
                 item["evidence"]["scope"].append({"round": item["round"], "task": task["id"], "outside": bad[:100]})
                 self.block(item, "changed files outside the declared scope %s: %s" % (
-                    ", ".join(item["scope"]), ", ".join(bad[:20])), "scope")
+                    ", ".join(item["scope"]) or "(none declared)", ", ".join(bad[:20])), "scope")
                 return
         if verify:
             status = verify.get("status")
@@ -1153,6 +1195,10 @@ class Factory:
             for sz in SIZES:
                 out.append("agentos_factory_items_by_size%s %d" % (lab(line=name, size=sz), sum(
                     1 for i in items if i["line"] == name and i.get("size") == sz)))
+        head("agentos_factory_cost_usd_total", "counter", "Metered spend of the line's items (monotonic)")
+        for name in sorted(self.lines):
+            out.append("agentos_factory_cost_usd_total%s %.6f" % (
+                lab(line=name), float(self.r.get(self._k("cost_total", name)) or 0.0)))
         head("agentos_factory_state_seconds_total", "counter", "Time retained items spent in each state")
         spent = {}
         for i in items:

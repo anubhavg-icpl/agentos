@@ -101,12 +101,12 @@ pkgs.testers.runNixOSTest {
         assert out[0]["user"] == "agentos-agent" and out[0]["up"] is True and len(out[0]["panes"]) >= 1, out
         text = machine.succeed("agentos-herdr status")
         assert "agentos-agent: " in text and "alice: herdr not available (server not running)" in text, text
-        metrics = "curl -sf http://127.0.0.1:9961/metrics"
+        metrics = "curl -sf http://127.0.0.1:9971/metrics"
         machine.wait_until_succeeds(f"{metrics} | grep -q 'agentos_herdr_up{{user=\"agentos-agent\"}} 1'")
         machine.wait_until_succeeds(f"{metrics} | grep -Eq 'agentos_herdr_panes{{user=\"agentos-agent\",state=\"[a-z]+\"}} 1'")
-        machine.succeed("curl -sf http://127.0.0.1:9960/metrics | grep -q 'agentos_herdr_up{user=\"alice\"} 0'")
+        machine.succeed("curl -sf http://127.0.0.1:9970/metrics | grep -q 'agentos_herdr_up{user=\"alice\"} 0'")
         # loopback only
-        assert "127.0.0.1:9961" in machine.succeed("ss -ltn")
+        assert "127.0.0.1:9971" in machine.succeed("ss -ltn")
         machine.fail("ss -ltn | grep -E '(0.0.0.0|\\*|\\[::\\]):996[01]'")
 
     with subtest("the marketplace CLI fails cleanly without network"):

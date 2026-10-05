@@ -49,7 +49,7 @@ agentos.herdr = {
 | `plugins` | `[ ]` | `{ source; ref; enable = true; }`: GitHub plugins, pinned |
 | `localPlugins` | `[ ]` | Directories with a `herdr-plugin.toml`, linked (store paths are ideal) |
 | `pluginUsers` | all users | Who gets `plugins`, `localPlugins` and the AgentOS plugin |
-| `monitor.enable` / `basePort` / `intervalSeconds` | on / 9960 / 10 | The per-user exporter; each user takes the next port, loopback only |
+| `monitor.enable` / `basePort` / `intervalSeconds` | on / 9970 / 10 | The per-user exporter; each user takes the next port, loopback only |
 | `monitor.notifyBlocked` / `notifyCommand` / `blockedGraceSeconds` | on / `agentos-notify test` / 15 | Notification on a blocked agent |
 | `marketplace.installAll` | `false` | See "Marketplace sweep" |
 | `marketplace.users` / `exclude` / `minStars` / `schedule` / `githubTokenFile` | operators / `[ ]` / 0 / `daily` / none | Scope of the sweep |
@@ -108,7 +108,7 @@ A user whose herdr server is not running is reported as such, not as an error.
 
 **Metrics.** Per user, `agentos-herdr monitor` (the unit
 `agentos-herdr-monitor-<user>`, running as that user) serves on
-`127.0.0.1:<9960 + index>`:
+`127.0.0.1:<9970 + index>`:
 
 ```
 agentos_herdr_up{user}                         1 when the server answers

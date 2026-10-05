@@ -306,7 +306,7 @@ def validate_publish(block):
         if not isinstance(repo, str) or not _REPO.fullmatch(repo):
             raise ValidationError("publish.repo must look like owner/name")
         out["repo"] = repo
-    for key, cap in (("title", 200), ("body", 4000)):
+    for key, cap in (("title", 200), ("body", 60000)):
         value = block.get(key)
         if value is None:
             continue
