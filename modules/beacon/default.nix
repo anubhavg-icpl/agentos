@@ -210,7 +210,11 @@ let
       [ $((now - m)) -ge 120 ] || continue
       s=$(stat -c %s "$f")
       dst=archive/runtime-$(date -u -d "@$m" +%Y%m%dT%H%M%SZ)-$s.jsonl.zst
-      [ -e "$dst" ] || { zstd -q -T1 -19 -o "$dst.tmp" "$f" && mv "$dst.tmp" "$dst"; }
+      if [ ! -e "$dst" ]; then
+        # set -e does not apply inside && lists: a failed zstd must fail the unit
+        zstd -q -f -T1 -19 -o "$dst.tmp" "$f"
+        mv "$dst.tmp" "$dst"
+      fi
     done
     ${lib.optionalString (cfg.retention.days > 0) ''
       find archive -name 'runtime-*.jsonl.zst' -mtime +${toString cfg.retention.days} -delete
@@ -840,6 +844,9 @@ in
             User = "beacon";
             Group = "beacon";
             ExecStart = archiveScript;
+            # zstd copies the source's owner to its output (fchown), which
+            # ~@privileged would answer with SIGSYS
+            SystemCallFilter = [ "@system-service" "~@privileged" "@chown" ];
             ReadWritePaths = [ stateDir ];
           };
         };
