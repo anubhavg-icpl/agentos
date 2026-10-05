@@ -156,3 +156,52 @@ HTTPS name behind a reverse proxy).
   `openFirewall = true`.
 - **Android package id:** `dev.nestlo.app`. **Release asset:** `nestlo-android.apk`
   (stable name), plus `nestlo-<tag>.apk`.
+
+## Reaching the machine from anywhere: tunnels
+
+`nestlo-mobile pair` **asks** how the phone should reach the machine. With
+`--via lan|tunnel|tailscale|url`, it skips the question; without a terminal, it
+uses the configured default (`nestlo.mobile.connect.default`, default `lan`):
+
+```
+How should your phone reach this machine?
+  [1] same network (LAN)            phone and machine on the same Wi-Fi
+  [2] quick tunnel (Cloudflare)     works anywhere, no account, temporary URL
+  [3] tailscale                     both devices on your tailnet
+  [4] my own URL                    nestlo.mobile.publicUrl (reverse proxy, named tunnel)
+```
+
+- **Quick tunnel:**
+  - The `nestlo-mobile-tunnel` unit runs
+    `cloudflared tunnel --no-autoupdate --url https://127.0.0.1:7443 --no-tls-verify`
+    and reads the `https://<random>.trycloudflare.com` URL from its log.
+  - `pair --via tunnel` starts the unit if needed, waits (up to 60 s) for the URL,
+    and keeps the unit running.
+  - With `nestlo.mobile.tunnel.persistent = true`, the unit runs at boot, but
+    the URL changes on every restart.
+  - For a stable name, set `tunnel.tokenFile` (a named Cloudflare tunnel token)
+    and `publicUrl`.
+  - Cloudflare terminates TLS, so over a tunnel the app validates the normal
+    WebPKI certificate of the tunnel host instead of pinning `fp`.
+  - The pairing code (single use, short TTL) and the device token still protect
+    the API.
+- **Tailscale:** uses the machine's tailnet name or `100.x` address
+  (`tailscale ip -4` and `tailscale status --json`) as the first host, with the
+  pinned certificate.
+- **Single port for everything:** the API port (7443) also serves the
+  unauthenticated onboarding pages `/pair`, `/app` and `/app/nestlo.apk`, so one
+  tunnel carries onboarding, the API, events, terminals and the desktop. The
+  plain-HTTP onboarding listener on 7080 stays for LAN use.
+- **New URI parameter, `url`** (repeatable, tried before any `host`): a complete
+  base URL such as `https://abc-def.trycloudflare.com`. For a `url` with an
+  `https` scheme and a host that is not an IP literal, the app validates the
+  certificate with the system trust store (WebPKI) and ignores `fp`. For bare
+  `host` entries, the pinned `fp` applies as before.
+- **QR entry for a tunnel:** `https://<random>.trycloudflare.com/pair#v=1&...&url=https://<random>.trycloudflare.com&host=<private ips>...`.
+  The page loads with a valid certificate and no warnings.
+- **Safety:**
+  - A tunnel exposes the API to the internet. `pair` says so, prints that only a
+    holder of a pairing code or a device token can use it, and suggests
+    `nestlo-mobile tunnel stop` when done.
+  - Failed pairing attempts are rate-limited per client IP (the
+    `CF-Connecting-IP` header, trusted only on connections from loopback).
