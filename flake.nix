@@ -204,6 +204,10 @@
           agent-security = import ./tests/agent-security.nix { inherit pkgs nestloModules; };
           # OTel GenAI spans from the gateway to an OTLP sink; Langfuse/OpenLIT stacks
           llm-observability = import ./tests/llm-observability.nix { inherit pkgs nestloModules; };
+          # SPIRE identities (X.509/JWT SVIDs), Cedar authorization
+          agent-identity = import ./tests/agent-identity.nix { inherit pkgs nestloModules; };
+          # OpenBao: init/unseal, KV, JWT login by SPIRE identity, /run/secrets sync
+          openbao = import ./tests/openbao.nix { inherit pkgs nestloModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs nestloModules; };
           # Local inference backend registered as a gateway provider.

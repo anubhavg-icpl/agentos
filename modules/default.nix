@@ -35,6 +35,8 @@
     ./orca
     ./agent-security
     ./llm-observability
+    ./agent-identity
+    ./openbao
     ./openshell
 
     # Safety & control
