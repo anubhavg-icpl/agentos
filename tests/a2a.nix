@@ -44,7 +44,7 @@ pkgs.testers.runNixOSTest {
   name = "nestlo-a2a";
   globalTimeout = 1800;
 
-  nodes.machine = { ... }: {
+  nodes.machine = { lib, ... }: {
     imports = nestloModules ++ [ ../modules/a2a ];
 
     virtualisation.memorySize = 2048;
@@ -82,7 +82,9 @@ pkgs.testers.runNixOSTest {
         };
         acp = {
           enable = true;
-          agents.fake.command = [ "fake-acp-agent" "--acp" ];
+          # only the fake agent: the default launchers would put the real
+          # agent CLIs (claude-agent-acp, codex-acp, ...) in the VM closure
+          agents = lib.mkForce { fake.command = [ "fake-acp-agent" "--acp" ]; };
         };
       };
     };
