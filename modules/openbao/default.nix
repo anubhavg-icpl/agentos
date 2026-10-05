@@ -43,9 +43,12 @@ let
   svid = "${idc.svidTool}/bin/nestlo-svid";
 
   # Common client environment for the scripts
+  # HOME: the CLI reads its token helper file (~/.bao-token); the units run
+  # with ProtectHome, where /root is unreadable and every command fails
   clientEnv = ''
     export BAO_ADDR=${addr}
     export BAO_CACERT=${caFile}
+    export HOME=/var/empty
   '';
 
   agentPolicy = name: a: ''
@@ -137,11 +140,11 @@ let
       ready=
       for _ in $(seq 1 60); do
         rc=0
-        status=$(${bao} status -format=json 2>/dev/null) || rc=$?
+        status=$(${bao} status -format=json 2>/tmp/bao-status.err) || rc=$?
         if [ "$rc" != 1 ]; then ready=1; break; fi
         sleep 1
       done
-      [ -n "$ready" ] || { echo "OpenBao does not answer on ${addr}" >&2; exit 1; }
+      [ -n "$ready" ] || { echo "OpenBao does not answer on ${addr}:" >&2; cat /tmp/bao-status.err >&2; exit 1; }
 
       if [ "$(jq -r .initialized <<<"$status")" != true ]; then
         echo "initialising OpenBao (1 key share)"
