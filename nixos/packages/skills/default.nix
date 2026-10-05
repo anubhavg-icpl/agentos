@@ -9,4 +9,6 @@ let
 in
 {
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;
+  caliper = callPack ./packs/caliper.nix;
+  ouroboros = callPack ./packs/ouroboros.nix;
 }
