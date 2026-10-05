@@ -309,10 +309,12 @@ let
       else
         echo "creating session ${name}"
         tuios new ${lib.escapeShellArg name} --detach >/dev/null
-        initial=$(tuios list-windows -s ${lib.escapeShellArg name} --json | jq -r '.windows[0].window_id')
+        # the shell the session starts with is not part of the layout: give it
+        # a name of its own (it is the only, so the focused, window) and close
+        # it by that name once the layout's windows exist
+        tuios run-command -s ${lib.escapeShellArg name} RenameWindow nestlo-layout-initial >/dev/null
         ${windowCmds}
-        # the shell the session starts with is not part of the layout
-        tuios close-window -s ${lib.escapeShellArg name} "$initial" >/dev/null
+        tuios run-command -s ${lib.escapeShellArg name} CloseWindow nestlo-layout-initial >/dev/null
       fi
     '';
 
