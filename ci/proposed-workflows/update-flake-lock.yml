@@ -37,7 +37,7 @@ jobs:
             echo "flake.lock is up to date"
             exit 0
           fi
-          branch="flake-lock-update-$(date -u +%Y%m%d)"
+          branch="flake-lock-update-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"

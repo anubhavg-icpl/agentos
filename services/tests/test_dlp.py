@@ -343,3 +343,17 @@ def test_gateway_without_dlp_is_untouched(make_gateway, upstream):
     gw = make_gateway()
     assert request(gw, "POST", "/agent/a1/anthropic/v1/messages", msg(SECRET_PROMPT))[0] == 200
     assert upstream.requests[-1]["body"]["messages"][0]["content"] == SECRET_PROMPT
+
+
+def test_recordings_keep_the_scanned_response(make_gateway, upstream, tmp_path):
+    rec = tmp_path / "rec"
+    gw = make_gateway(gateway={"dlp": {"mode": "mask", "scan_responses": True}},
+                      recording={"enabled": True, "dir": str(rec)})
+    assert request(gw, "POST", "/agent/a1/anthropic/v1/messages", msg("hi", mock_text_rev=("key %s" % AWS)[::-1]))[0] == 200
+    saved = (rec / "a1" / "000001.json").read_text()
+    assert AWS not in saved and "[REDACTED:aws_access_key]" in saved
+    gw = make_gateway(gateway={"dlp": {"mode": "block", "scan_responses": True}},
+                      recording={"enabled": True, "dir": str(tmp_path / "rec2")})
+    assert request(gw, "POST", "/agent/a2/anthropic/v1/messages", msg("hi", mock_text_rev=("key %s" % AWS)[::-1]))[0] == 502
+    blocked = json.loads((tmp_path / "rec2" / "a2" / "000001.json").read_text())
+    assert blocked["response"]["status"] == 502 and AWS not in json.dumps(blocked)

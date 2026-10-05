@@ -47,7 +47,7 @@ let
           (w: {
             record = ratio w;
             expr = ''
-              sum(rate(agentos_gateway_responses_total{code=~"5.."}[${w}]))
+              (sum(rate(agentos_gateway_responses_total{code=~"5.."}[${w}])) or vector(0))
               /
               sum(rate(agentos_gateway_responses_total[${w}]))
             '';
@@ -85,6 +85,8 @@ let
               systemd_unit_state{name=~"agentos-(model-gateway|daemon|orchestrator|dashboard|scheduler)\\.service",state="active"} == 0
               or
               up{job=~"agentos-(daemon|gateway)"} == 0
+              or
+              up{job="systemd"} == 0
             '';
             for = "2m";
             severity = "critical";

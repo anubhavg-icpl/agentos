@@ -138,7 +138,9 @@ class Health:
                 results[name] = "ok"
             except Exception as exc:
                 ok = False
-                results[name] = "failed: %s" % (str(exc) or type(exc).__name__)
+                # Probes are unauthenticated: the detail goes to the journal only
+                log.warning("%s: readiness check %s failed: %s", self.service, name, str(exc) or type(exc).__name__)
+                results[name] = "failed"
         return (200 if ok else 503), {"status": "ready" if ok else "not ready",
                                       "service": self.service, "checks": results}
 

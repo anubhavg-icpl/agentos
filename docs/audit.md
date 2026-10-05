@@ -99,8 +99,11 @@ recomputes every hash after the edit still cannot re-sign the old checkpoints.
   checkpoint signed by an unknown key is an error. For stronger assurance
   copy the public key to another system once, and verify with
   `--pubkey-only --pubkey <file>`.
-* To rotate, delete the key file and restart the writer: the new key id is
-  added to `public.keys`, old checkpoints stay verifiable.
+* To rotate, delete the key file, then run
+  `systemctl restart agentos-audit-keygen.service agentos-audit.service`
+  (the keygen unit stays active after first boot, so restarting the writer
+  alone does not make a new key). The new key id is added to `public.keys`;
+  old checkpoints stay verifiable.
 
 ## Verifying
 
@@ -186,7 +189,7 @@ agentos.audit.export = {
 };
 ```
 
-All three send the same OCSF event as the log body.
+All three send the same OCSF event as the log body. A sink that sends a token (Splunk always, OTLP with `tokenFile`) refuses an `http://` URL unless it points at this host; use `https://`.
 
 ### OCSF mapping
 

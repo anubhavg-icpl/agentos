@@ -83,7 +83,8 @@ and `phone` can flag harmless text. Start with `log`, look at the
   holds the body back, scans it with the agent's policy and sends it with the
   new `Content-Length`; `mask` redacts it, `block` replaces it with `502
   dlp_blocked`. Spend is recorded either way, because the provider already
-  billed it. **Streamed responses (most agent traffic) pass through
+  billed it. A session recording stores the response the agent received
+  (masked, or the 502), so a replay never returns the unscanned body. **Streamed responses (most agent traffic) pass through
   unscanned**: masking a stream means buffering it, which would remove the
   streaming. Responses over `maxScanBytes` are streamed unscanned.
 * Gateway admin endpoints and the inter-agent message bus are not scanned.

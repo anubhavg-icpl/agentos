@@ -247,10 +247,13 @@ class SyslogSink:
 
 
 class _HttpSink:
-    def __init__(self, url, ca_file=None, timeout=15.0, verify=True):
+    def __init__(self, url, ca_file=None, timeout=15.0, verify=True, credentialed=False):
         self.url = urllib.parse.urlsplit(url)
         if self.url.scheme not in ("http", "https") or not self.url.hostname:
             raise ValueError("export URL %r must be http:// or https://" % url)
+        # A token never travels in clear text, except to this host
+        if credentialed and self.url.scheme != "https" and self.url.hostname not in ("127.0.0.1", "localhost", "::1"):
+            raise ValueError("export URL %r must be https:// when a token is sent" % url)
         self.ca_file, self.timeout, self.verify = ca_file, timeout, verify
 
     def _post(self, body, headers):
@@ -278,7 +281,7 @@ class SplunkSink(_HttpSink):
 
     def __init__(self, url, token_file, ca_file=None, source="agentos-audit", sourcetype="agentos:audit:ocsf",
                  index=None, host=None, timeout=15.0, verify=True):
-        super().__init__(url, ca_file, timeout, verify)
+        super().__init__(url, ca_file, timeout, verify, credentialed=True)
         self.token_file, self.source, self.sourcetype, self.index = token_file, source, sourcetype, index
         self.host = host or socket.gethostname()
 
@@ -315,7 +318,7 @@ class OtlpSink(_HttpSink):
     name = "otlp"
 
     def __init__(self, endpoint, token_file=None, ca_file=None, timeout=15.0, verify=True, service="agentos-audit"):
-        super().__init__(endpoint, ca_file, timeout, verify)
+        super().__init__(endpoint, ca_file, timeout, verify, credentialed=bool(token_file))
         self.token_file, self.service = token_file, service
 
     def log_record(self, rec):

@@ -817,6 +817,7 @@ class Gateway:
         captured = bytearray()
         capture_cap = int(self.cfg["recording"]["max_body_bytes"])
         truncated = False
+        recorded_status = None
         if self.cfg["recording"]["enabled"] or self.store.record_enabled(agent):
             record_seq = self.recorder.next_seq(agent)
 
@@ -962,6 +963,11 @@ class Gateway:
                 pending = data
                 if status_override:
                     dlp_blocked_response = True
+                if record_seq is not None:
+                    # Record what the client received, never the unscanned body
+                    captured = bytearray(data[:capture_cap])
+                    truncated = len(data) > capture_cap
+                    recorded_status = status_override or resp.status
         finally:
             if conn is not None:
                 conn.close()
@@ -984,7 +990,7 @@ class Gateway:
             if record_seq is not None:
                 rec = self.recorder.build(
                     agent, record_seq, round(self.clock(), 3), provider, req.command, "/" + rest_path, query,
-                    orig_body, resp.status, dict(resp.getheaders()), bytes(captured), model, parser.streaming,
+                    orig_body, recorded_status or resp.status, dict(resp.getheaders()), bytes(captured), model, parser.streaming,
                     truncated)
                 if client_gone:
                     rec["incomplete"] = True

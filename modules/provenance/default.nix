@@ -79,7 +79,6 @@ in
     systemd.services.agentos-provenance-keygen = {
       description = "AgentOS provenance signing key (generated at first boot if absent)";
       wantedBy = [ "multi-user.target" ];
-      before = [ "agentos-task-runner@.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

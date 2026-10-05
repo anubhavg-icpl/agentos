@@ -255,9 +255,9 @@ agentos-breaker reset <id>  # close an open circuit
 |:---|:---|
 | **Health and readiness** | The gateway, daemon, orchestrator and dashboard answer `/healthz` and `/readyz`; their units are `Type=notify` with a watchdog |
 | **Alerting and SLO** | Prometheus rules for service, gateway, budget, circuit, loop, queue, disk and Redis, plus a 99.5% gateway SLO with burn-rate alerts; optional Alertmanager (`agentos.observability.alertmanager`) |
-| **Backup and restore** | `agentos.backup` (restic) saves state, Redis, audit and secrets; `agentos-restore` and a tested drill |
+| **Backup and restore** | `agentos.backup` (restic) saves state, Redis, audit and secrets; `agentos-restore` with a documented drill and a VM test (`checks.<system>.backup`, needs KVM) |
 | **Safe upgrades** | `agentos.upgrade` wraps `system.autoUpgrade` and rolls back when the health gate fails |
-| **Supply chain** | Release ISO with provenance, cosign signature, SHA256SUMS and CycloneDX SBOM (`nix run .#sbom`); see [docs/operations.md](docs/operations.md) |
+| **Supply chain** | CycloneDX SBOM (`nix run .#sbom`); release provenance, cosign signature and SHA256SUMS once the workflows in `ci/proposed-workflows/` are installed; see [docs/operations.md](docs/operations.md) |
 
 ---
 

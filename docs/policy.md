@@ -102,7 +102,7 @@ agentos.rbac = {
 
 Defaults: `roles.admin.groups = [ "agentos" ]`, so operators in the `agentos` group, the scheduler, the triggers and the OpenClaw bridge (whose unit has `SupplementaryGroups = agentos`) keep today's behaviour. The socket itself stays mode 0660 group `agentos`: roles narrow what its callers may do, they do not widen who can connect. Every caller on the socket is in the `agentos` group, so with the default every caller is an admin. To narrow someone, move the admin role to a dedicated group (`roles.admin.groups = [ "agentos-admins" ]`) and list the other callers under `submitter`, `approver` or `viewer`; services such as the scheduler, triggers and the bridge need `submitter`.
 
-`separateApprover = true`: nobody, admins included, may approve or reject a task they submitted (`submitted_by`). The decision of a second person is recorded on the task (`approval.by`, `at`, `note`).
+`separateApprover = true`: nobody, admins included, may approve or reject a task they submitted (`submitted_by`). The decision of a second person is recorded on the task (`approval.by`, `at`, `note`). Tasks created by internal callers without a peer (no unix socket client) have `submitted_by` unset, so `separateApprover` does not restrict who decides them; tasks from `agentos-task`, OpenClaw and the triggers always carry a submitter.
 
 ```sh
 agentos-task whoami      # user, groups, roles

@@ -418,7 +418,10 @@ def main(argv=None):
     host = "127.0.0.1" if cfg["daemon"]["metrics_listen"] in ("0.0.0.0", "") else cfg["daemon"]["metrics_listen"]
     port = int(cfg["daemon"]["metrics_port"])
     try:
-        healthmod.watchdog_loop(stop, lambda: daemon.reap_beat.age() < 60 and healthmod.http_probe(host, port, "/healthz"))
+        # Same allowance as the reaper readiness check, so a long reap_interval_sec is not a hang
+        reap_limit = max(60.0, 5 * float(cfg["daemon"]["reap_interval_sec"]))
+        healthmod.watchdog_loop(stop, lambda: daemon.reap_beat.age() < reap_limit
+                                and healthmod.http_probe(host, port, "/healthz"))
     except KeyboardInterrupt:
         stop.set()
     metrics.shutdown()

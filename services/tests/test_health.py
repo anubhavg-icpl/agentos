@@ -83,7 +83,7 @@ def test_health_reports_failing_checks():
     h = H.Health("x", {"good": lambda: None, "bad": bad})
     assert h.respond("healthz") == (200, {"status": "ok", "service": "x"})
     status, body = h.respond("readyz")
-    assert status == 503 and body["checks"] == {"good": "ok", "bad": "failed: boom"}
+    assert status == 503 and body["checks"] == {"good": "ok", "bad": "failed"}
     h.checks.pop("bad")
     assert h.respond("readyz")[0] == 200
 
@@ -128,7 +128,7 @@ def test_gateway_readyz_fails_when_redis_is_down(make_gateway, store):
     store.r.ping = down
     assert request(gw, "GET", "/healthz")[0] == 200            # still alive
     status, _, raw = request(gw, "GET", "/readyz")
-    assert status == 503 and "redis" in json.loads(raw)["checks"]["redis"]
+    assert status == 503 and json.loads(raw)["checks"]["redis"] == "failed"
 
 
 def test_gateway_readyz_fails_when_admin_socket_is_gone(make_gateway):

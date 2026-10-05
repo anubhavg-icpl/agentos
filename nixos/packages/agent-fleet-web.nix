@@ -79,7 +79,7 @@ stdenvNoCC.mkDerivation {
                      'const CONFIG_PATHS = { default: `''${LOCAL}/wllama.wasm` };' \
       --replace-fail 'wllama = new Wllama(CONFIG_PATHS, { parallelDownloads: 3 });' \
                      'wllama = new Wllama(CONFIG_PATHS, { parallelDownloads: 3 });
-          wllama.setCompat({ worker: `''${LOCAL}/compat/wllama.js`, wasm: `''${LOCAL}/compat/wllama.wasm` });'
+          wllama.setCompat({ worker: `''${LOCAL}/compat/wllama.js`, wasm: `''${LOCAL}/compat/wllama.wasm` }, "firefox_safari");'
 
     # No page of ours may still point at the CDN (the vendored library only
     # names it as a default, which the lines above override)

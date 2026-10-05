@@ -9,7 +9,7 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 | Test | Command | Covers |
 |:---|:---|:---|
 | Evaluation of every output | `nix flake check --no-build --all-systems` | Host, VM image, ISO, packages, checks on x86_64 and aarch64 |
-| Service unit tests (822) | `nix build .#services` | Gateway proxying (JSON + SSE), key injection, pricing, budgets, alerts, rate limit, circuit breaker, admin socket; daemon reaping, auto-shutdown, notifications, metrics |
+| Service unit tests (824) | `nix build .#services` | Gateway proxying (JSON + SSE), key injection, pricing, budgets, alerts, rate limit, circuit breaker, admin socket; daemon reaping, auto-shutdown, notifications, metrics |
 | VM tests | `nix build .#checks.x86_64-linux.<name>` for `gateway-features`, `orchestration`, `container`, `platform`, `desktop`, `triggers`, `openclaw`, `pullrun`, `local-ai`, `agent-stack`, `agent-fleet-web`, `audit`, `backup` (plus eval-only `hardening`, `agent-inclusion`, `policy-eval`) | See each feature's doc; only `e2e` runs in CI today |
 | End-to-end VM test | `nix build .#checks.x86_64-linux.e2e` | Boots a VM and drives a real agent run: spawn → sandbox → gateway → priced spend → budget exceeded → daemon stops the agent → webhook; plus sandbox, control-plane isolation and egress checks |
 | Backup and restore | `nix build .#checks.x86_64-linux.backup` | restic backup of state, Redis and secrets; delete; `agentos-restore` (needs KVM; CI builds the driver only) |

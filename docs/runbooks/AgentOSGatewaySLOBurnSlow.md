@@ -14,7 +14,11 @@ Agents are getting 5xx responses at a rate that, sustained, breaks the SLO. The 
 
 ```sh
 # Prometheus listens on localhost:9001
-curl -s localhost:9001/api/v1/query --data-urlencode 'query=agentos:gateway_error_ratio:rate5m'
+# the window pairs this alert compares (1d/2h at 3x, 3d/6h at 1x)
+curl -s localhost:9001/api/v1/query --data-urlencode 'query=agentos:gateway_error_ratio:rate1d'
+curl -s localhost:9001/api/v1/query --data-urlencode 'query=agentos:gateway_error_ratio:rate2h'
+curl -s localhost:9001/api/v1/query --data-urlencode 'query=agentos:gateway_error_ratio:rate3d'
+curl -s localhost:9001/api/v1/query --data-urlencode 'query=agentos:gateway_error_ratio:rate6h'
 curl -s localhost:9001/api/v1/query --data-urlencode 'query=sum by (code) (rate(agentos_gateway_responses_total{code=~"5.."}[30m]))'
 journalctl -u agentos-model-gateway --since -1h | tail -100
 ```

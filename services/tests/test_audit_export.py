@@ -47,8 +47,8 @@ def records(adir):
 
 
 # ── OCSF mapping ───────────────────────────────────────────────────────────
-def test_gateway_request_maps_to_api_activity():
-    rec = records_for("gateway.request")
+def test_gateway_request_maps_to_api_activity(by_type):
+    rec = by_type["gateway.request"]
     ev = X.to_ocsf(rec)
     assert ev["class_uid"] == 6003 and ev["class_name"] == "API Activity"
     assert ev["category_uid"] == 6 and ev["category_name"] == "Application Activity"
@@ -66,15 +66,15 @@ def test_gateway_request_maps_to_api_activity():
     json.dumps(ev)
 
 
-def test_failures_map_to_failure_status_and_higher_severity():
-    ev = X.to_ocsf(records_for("auth.failure"))
+def test_failures_map_to_failure_status_and_higher_severity(by_type):
+    ev = X.to_ocsf(by_type["auth.failure"])
     assert ev["status_id"] == 2 and ev["status"] == "Failure" and ev["severity_id"] == 3
     assert ev["activity_id"] == 99 and ev["type_uid"] == 600399
     assert ev["actor"]["user"]["name"] == "system"
     assert ev["src_endpoint"]["ip"] == "10.0.0.9" and ev["unmapped"]["peer"] == {"uid": 990, "pid": 77}
-    ev = X.to_ocsf(records_for("task.finish"))
+    ev = X.to_ocsf(by_type["task.finish"])
     assert ev["status_id"] == 2 and ev["activity_id"] == 3 and ev["type_uid"] == 600303
-    ev = X.to_ocsf(records_for("agent.kill"))
+    ev = X.to_ocsf(by_type["agent.kill"])
     assert ev["activity_id"] == 4 and ev["type_uid"] == 600304 and ev["severity_id"] == 3
 
 
@@ -86,21 +86,16 @@ def test_every_event_type_maps():
         assert ev["activity_id"] in (1, 2, 3, 4, 99) and ev["severity_id"] in range(0, 7)
 
 
-_cache = {}
-
-
-def records_for(etype):
-    if not _cache:
-        import tempfile
-        d = tempfile.mkdtemp()
-        populate(d + "/a")
-        _cache.update({r["type"]: r for r in A.iter_records(d + "/a")})
-    return _cache[etype]
+@pytest.fixture(scope="module")
+def by_type(tmp_path_factory):
+    d = str(tmp_path_factory.mktemp("ocsf") / "a")
+    populate(d)
+    return {r["type"]: r for r in A.iter_records(d)}
 
 
 # ── syslog (RFC 5424 over TCP, octet counting) ─────────────────────────────
-def test_syslog_message_is_rfc5424():
-    rec = records_for("gateway.request")
+def test_syslog_message_is_rfc5424(by_type):
+    rec = by_type["gateway.request"]
     msg = X.syslog_message(rec, "host1").decode()
     m = re.match(r'^<(\d+)>1 (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z) host1 agentos-audit - gateway\.request '
                  r'\[agentos@32473 seq="(\d+)" hash="([0-9a-f]{64})" type="gateway\.request" actor="a1"\] (\{.*\})$', msg)
@@ -109,12 +104,12 @@ def test_syslog_message_is_rfc5424():
     assert int(m.group(3)) == rec["seq"]
     assert json.loads(m.group(5))["class_uid"] == 6003
     assert X.octet_frame(b"abc") == b"3 abc"
-    err = X.syslog_message(records_for("auth.failure"), "h").decode()
+    err = X.syslog_message(by_type["auth.failure"], "h").decode()
     assert err.startswith("<108>1 ")                          # 13*8 + 4 (warning)
 
 
-def test_structured_data_is_escaped():
-    rec = dict(records_for("gateway.request"), actor='we"ird]\\')
+def test_structured_data_is_escaped(by_type):
+    rec = dict(by_type["gateway.request"], actor='we"ird]\\')
     msg = X.syslog_message(rec, "h").decode()
     assert 'actor="we\\"ird\\]\\\\"' in msg
 
@@ -443,3 +438,14 @@ def test_start_exporters_ships_end_to_end(adir, http_sink, tmp_path):
         assert wait_for(lambda: X.Cursor(adir + "/export/splunk.cursor").load() == 4)
     finally:
         stop.set()
+
+
+def test_tokens_are_not_sent_in_clear_text(tmp_path):
+    tok = tmp_path / "tok"
+    tok.write_text("secret")
+    with pytest.raises(ValueError):
+        X.SplunkSink("http://splunk.example:8088/services/collector", str(tok))
+    with pytest.raises(ValueError):
+        X.OtlpSink("http://otel.example:4318/v1/logs", token_file=str(tok))
+    X.SplunkSink("http://127.0.0.1:8088/services/collector", str(tok))   # loopback is fine
+    X.OtlpSink("http://otel.example:4318/v1/logs")                       # no token, nothing to leak
