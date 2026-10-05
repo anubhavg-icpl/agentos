@@ -309,17 +309,19 @@ class Orchestrator:
             except T.ValidationError as exc:
                 raise T.ValidationError("node %s: %s" % (n, exc))
             self._check_origin(fields.get("origin"), peer)
-            with self.lock:
-                try:
-                    self._apply_policy(fields, rt, reserve=reserve)
-                except ApiError as exc:
-                    raise ApiError(exc.status, "node %s: %s" % (n, exc.message))
             records.append((n, fields, None if when is None else when.strip()))
 
         submitter = peer_identity(peer)[0] if peer else None
         now = self.clock()
         created = {}
+        # One lock from the first policy check to the last create, so two
+        # workflows cannot both pass the same daily budget
         with self.lock:
+            for n, fields, _ in records:
+                try:
+                    self._apply_policy(fields, rt, reserve=reserve)
+                except ApiError as exc:
+                    raise ApiError(exc.status, "node %s: %s" % (n, exc.message))
             for n, fields, when in records:
                 task = self._new_task(dict(fields, group=group), group, now, submitter, node=n, when=when)
                 task["id"] = ids[n]

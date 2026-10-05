@@ -28,7 +28,10 @@ writeShellApplication {
 
     # Refresh the sources, keep state/ (token, credentials)
     rm -rf "$work/spaces" "$work/docs" "$work/deploy.py"
-    cp -r --no-preserve=mode ${src}/spaces ${src}/docs ${src}/deploy.py "$work/"
+    cp -r --no-preserve=mode ${src}/spaces ${src}/docs "$work/"
+    # The pinned deploy.py annotates with HfApi before importing it (NameError
+    # at import); postponed annotations make it load
+    { printf 'from __future__ import annotations\n'; cat ${src}/deploy.py; } > "$work/deploy.py"
 
     if [ ! -s "$work/state/hf_token" ] && [ -n "''${HF_TOKEN:-}" ]; then
       (umask 077; printf '%s\n' "$HF_TOKEN" > "$work/state/hf_token")

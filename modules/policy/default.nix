@@ -146,7 +146,7 @@ let
   };
   compiled = {
     default = compile (setFields cfg.default);
-    repos = lib.mapAttrs (_: p: compile (setFields p)) cfg.repos;
+    repos = lib.mapAttrs (_: p: compile (effective p)) cfg.repos;
   };
   version = builtins.substring 0 12 (builtins.hashString "sha256" (builtins.toJSON compiled));
 

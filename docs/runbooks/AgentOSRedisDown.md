@@ -23,5 +23,5 @@ Typical causes: disk full, a corrupt AOF after a crash. (`maxmemory 256mb` with 
 ## Mitigate
 
 - `systemctl restart redis-agentos`. The services reconnect by themselves.
-- Corrupt AOF: `redis-check-aof --fix /var/lib/redis-agentos/appendonlydir/*.manifest`, then start.
+- Corrupt AOF: first copy it aside (`cp -a /var/lib/redis-agentos/appendonlydir /root/aof-$(date +%s)`), then run `redis-check-aof /var/lib/redis-agentos/appendonlydir/*.manifest` without `--fix` to see what is damaged. Only if losing the tail it reports is acceptable, run it again with `--fix`, then start. Otherwise restore (below).
 - Data lost: `agentos-restore --include /var/lib/redis-agentos` (see [operations.md](../operations.md#disaster-recovery-in-place)). Spend counters since the last backup are lost.

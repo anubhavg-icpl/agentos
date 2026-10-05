@@ -411,3 +411,13 @@ def test_daily_budget_counts_every_task_of_the_day(porch, clock):
     for i in range(1100):  # more than any list window
         porch.tasks.create({"id": "task-filler%04d" % i, "created_at": now + 1 + i * 1e-3, "status": "succeeded"})
     assert "acme/widgets.daily_budget_usd" in refused(porch, origin="gh:acme/widgets#3", budget_usd=2)
+
+
+def test_entries_inherit_nested_defaults():
+    pol = P.Policy({"version": "v",
+                            "default": {"require_approval": {"mode": "costAbove", "threshold_usd": 5},
+                                        "routing": {"a": "b"}},
+                            "repos": {"r": {"require_approval": {"threshold_usd": 1}, "routing": {"c": "d"}}}})
+    eff = pol.effective("r")
+    assert eff["require_approval"] == {"mode": "costAbove", "threshold_usd": 1}
+    assert eff["routing"] == {"a": "b", "c": "d"}

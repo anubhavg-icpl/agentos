@@ -51,10 +51,10 @@ class Policy:
 
     # ── resolution ─────────────────────────────────────────────────────
     def effective(self, name):
-        """The default with the entry `name` on top (key by key)."""
-        eff = json.loads(json.dumps(self.default))
-        eff.update(json.loads(json.dumps(self.repos.get(name) or {})))
-        return eff
+        """The default with the entry `name` on top; nested tables (require_approval,
+        routing, publish) merge key by key, so an entry that sets only a threshold
+        keeps the default approval mode."""
+        return _deep_merge(json.loads(json.dumps(self.default)), json.loads(json.dumps(self.repos.get(name) or {})))
 
     def resolve(self, candidates):
         """(name, effective policy) for the first candidate with an entry."""
@@ -69,6 +69,15 @@ class Policy:
         return {"enabled": self.enabled, "name": name, "version": self.version,
                 "matched": name != "default" or not repo, "policy": eff,
                 "repos": sorted(self.repos)}
+
+
+def _deep_merge(base, top):
+    for key, value in top.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
 
 
 def candidates(fields, workspace_root):

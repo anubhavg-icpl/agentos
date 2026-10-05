@@ -282,6 +282,11 @@ class AuditLog:
             self._trim_partial(path)
             line = read_last_line(path)
             if line is None:
+                if os.path.getsize(path) == 0:
+                    # Created by _rotate but never written (or its only line was torn):
+                    # drop it, or the next rotation to this seq fails on O_EXCL
+                    log.warning("%s: removing an empty segment left by a crash", path)
+                    os.unlink(path)
                 continue
             try:
                 rec = json.loads(line)

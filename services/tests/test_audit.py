@@ -208,6 +208,18 @@ def test_log_resumes_the_chain_after_restart_and_trims_a_torn_write(adir):
     assert res.ok and res.last_seq == 6
 
 
+def test_an_empty_tail_segment_left_by_a_crash_is_dropped(adir):
+    log = make_log(adir, n=3)
+    os.close(log.fd)
+    empty = log._segment_path(4)                           # _rotate created it, then the crash
+    open(empty, "w").close()
+    log2 = A.AuditLog(adir, clock=Clock())
+    assert log2.seq == 3 and not os.path.exists(empty)
+    log2._rotate(4, log2.clock())                          # the rotation that used to hit O_EXCL
+    log2.append("gateway.request", "a", "gateway", {"status": 200})
+    assert A.verify(adir).ok
+
+
 def test_unreadable_last_record_stops_the_writer(adir):
     make_log(adir, n=2)
     with open(seg(adir), "ab") as f:

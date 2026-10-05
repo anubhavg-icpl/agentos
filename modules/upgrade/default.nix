@@ -221,6 +221,8 @@ in
     systemd.services.agentos-upgrade-gate = lib.mkIf gate.enable {
       description = "AgentOS post-upgrade health gate (rolls back a failing upgrade)";
       wantedBy = [ "multi-user.target" ];
+      # The rollback switches configurations; it must not stop the gate running it
+      restartIfChanged = false;
       wants = [ "network-online.target" ];
       after = [
         "network-online.target"

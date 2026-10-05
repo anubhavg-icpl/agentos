@@ -54,7 +54,10 @@ assert lib.assertMsg
 assert lib.assertMsg
   (settings.policy.repos."acme/widgets".require_approval.threshold_usd == 3
     && settings.policy.repos."acme/widgets".budget_usd == 5
-    && settings.policy.default.max_retries == 2)
+    && settings.policy.default.max_retries == 2
+    # entries are compiled with the defaults they inherit
+    && settings.policy.repos."acme/widgets".max_retries == 2
+    && settings.policy.repos.scratch.budget_usd == 20)
   "policy did not compile into services.toml";
 assert lib.assertMsg
   (roles.admin.groups == [ "agentos" ] && settings.rbac.separate_approver == false)
