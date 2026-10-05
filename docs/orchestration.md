@@ -80,6 +80,8 @@ agentos-task workflow status <group>
 
 ### Approval gates
 
+Who may approve, and which tasks are gated automatically, is set by `agentos.rbac` and `agentos.policy` ([policy.md](policy.md)).
+
 `gate: true` (`--gate`) makes a task wait in `awaiting_approval`. It does not start and holds no worker slot until someone runs `agentos-task approve <id>`; the task then queues normally (dependencies, priority and limits still apply). `reject` cancels it and every unfinished task that depends on it, directly or not, even a workflow node whose `when` is `always`. A gated task whose dependency fails is skipped without waiting for a decision. In a swarm every member is gated and must be approved separately.
 
 The approver is the client's uid from `SO_PEERCRED` on the orchestrator socket, which the kernel supplies and a client cannot forge (a `by` field in the request body is ignored). The decision is recorded on the task as `approval: {decision, by, uid, at, note}`; the submitter is recorded the same way as `submitted_by`. Any member of the `agentos` group can approve; deciding twice, or on a task that is not awaiting approval, is refused (HTTP 409).

@@ -359,6 +359,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | networking | Metering model gateway, agent bridge, NAT | automatic |
 | context | Qdrant vector DB, persistent memory | `agentos-memory` |
 | orchestration | Multi-agent coordination † | `agentos-orchestrate` |
+| policy | Typed policy-as-code and RBAC roles on the orchestrator socket | `agentos-task policy show`, `whoami` |
 | mcp-registry | 14 core MCP tools | `agentos-tools` |
 | mcp-servers | 36 MCP servers (8 categories) | `agentos-mcp` |
 | budget-controller | Per-agent and global daily caps, auto-shutdown | `agentos-budget` |
@@ -456,6 +457,7 @@ agentos/
 │   ├── vibe-integration/           #   5340 skills auto-installer
 │   ├── context/                    #   Qdrant vector memory
 │   ├── orchestration/              #   Multi-agent coordination
+│   ├── policy/                     #   Policy-as-code and RBAC
 │   ├── git-automation/             #   Branch/commit/PR helpers
 │   ├── language-toolchains/        #   20+ language runtimes
 │   ├── databases/                  #   Postgres, Redis, SQLite, DuckDB
@@ -481,6 +483,7 @@ agentos/
 | [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
 | [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
 | [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
+| [docs/policy.md](docs/policy.md) | Policy-as-code, RBAC roles, four-eyes approval; EU AI Act Art. 14 and ISO 27001 A.5.15 mapping |
 | [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |

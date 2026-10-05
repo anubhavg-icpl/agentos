@@ -47,8 +47,12 @@ writeShellApplication {
       agentos-task reject <task-id> [--note <text>]
       agentos-task workflow submit <file.json> [--wait] [--json]
       agentos-task workflow status <group> [--json]
+      agentos-task policy show [owner/name|workspace] [--json]
+      agentos-task whoami [--json]
 
     NOTES
+      policy show    the effective policy (agentos.policy) for a repository or workspace name,
+                     or the default; whoami: your user, groups and RBAC roles (agentos.rbac)
       --after <id>   start when that task has succeeded; the prompt may use {prev_result}
                      (its output) and the tasks run one after another in the workspace
       --swarm <n>    n agents, same prompt, in parallel; each in its own git worktree on its
@@ -343,7 +347,42 @@ writeShellApplication {
       esac
     }
 
+    cmd_whoami() {
+      local resp
+      resp=$(api GET /whoami)
+      if [ "''${1:-}" = "--json" ]; then echo "$resp"; return; fi
+      jq -r '"user:    \(.name) (uid \(.uid))",
+             "groups:  \(.groups | join(", "))",
+             "roles:   \(if .rbac then (.roles | join(", ") | if . == "" then "none" else . end) else "all (rbac disabled)" end)",
+             "four-eyes (separate approver): \(.separate_approver)"' <<<"$resp"
+    }
+
+    cmd_policy() {
+      [ "''${1:-}" = "show" ] || die "Usage: agentos-task policy show [owner/name|workspace] [--json]"
+      shift
+      local repo="" raw=0
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --json) raw=1; shift ;;
+          *) repo="$1"; shift ;;
+        esac
+      done
+      [[ -z "$repo" || "$repo" =~ ^[A-Za-z0-9._/-]{1,201}$ ]] || die "invalid repository or workspace name: $repo"
+      local resp
+      resp=$(api GET "/policy''${repo:+?repo=$repo}")
+      if [ "$raw" -eq 1 ]; then echo "$resp"; return; fi
+      jq -r 'if .enabled | not then "policy: not enabled (agentos.policy.enable = false); nothing is enforced" else
+               "policy:  \(.name)\(if .matched then "" else " (no entry for the name; showing the default)" end)",
+               "version: \(.version)",
+               "entries: \(.repos | if length == 0 then "none" else join(", ") end)",
+               (.policy | to_entries[] | "  \(.key): \(.value | tojson)"),
+               (if (.policy | length) == 0 then "  (unrestricted)" else empty end)
+             end' <<<"$resp"
+    }
+
     case "''${1:-help}" in
+      whoami) shift; cmd_whoami "$@" ;;
+      policy) shift; cmd_policy "$@" ;;
       approve|reject) cmd_decide "$@" ;;
       workflow|wf) shift; cmd_workflow "$@" ;;
       submit|run) shift; cmd_submit "$@" ;;
