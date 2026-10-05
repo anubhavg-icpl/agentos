@@ -27,6 +27,15 @@ DEFAULTS = {
         # their URL (/agent/<id>:<token>/...); the unmanaged /<provider>/
         # path is then only served on the admin socket.
         "require_agent_tokens": True,
+        # Data loss prevention on request bodies (dlp.py, docs/dlp.md)
+        "dlp": {
+            "mode": "off",                      # off | log | mask | block
+            "detectors": ["all"],
+            "scan_responses": False,            # non-streaming responses only
+            "max_scan_bytes": 16 * 1024 * 1024,
+            # {"agent-id-prefix": {"mode": "block", "detectors": [...], "scan_responses": true}}
+            "overrides": {},
+        },
     },
     "budget": {
         "default_daily_usd": 50.0,
@@ -101,6 +110,28 @@ DEFAULTS = {
         "lock_dir": "/run/agentos/gpu",
         # A lock younger than this is never treated as stale (spawn is starting)
         "stale_grace_sec": 30,
+    },
+    "audit": {
+        # Tamper-evident audit log (audit.py, docs/audit.md)
+        "enabled": False,
+        "dir": "/var/lib/agentos-audit",
+        "socket": "/run/agentos-audit/audit.sock",
+        # Refuse gateway requests and task changes while the writer is unreachable
+        "strict": False,
+        "buffer": 1000,                         # events a producer holds while the writer is down
+        "retention_days": 183,                  # EU AI Act Art. 26: at least six months
+        "segment_bytes": 64 * 1024 * 1024,
+        "checkpoint_every": 100,
+        "checkpoint_interval_sec": 300,
+        "signing_key": "",                      # default: $CREDENTIALS_DIRECTORY/audit-signing-key
+        "export": {
+            "interval_sec": 5,
+            "batch": 200,
+            "syslog": {"enabled": False, "host": "", "port": 6514, "tls": True, "ca_file": "", "hostname": ""},
+            "splunk": {"enabled": False, "url": "", "token_file": "", "ca_file": "",
+                       "source": "agentos-audit", "sourcetype": "agentos:audit:ocsf", "index": ""},
+            "otlp": {"enabled": False, "endpoint": "", "token_file": "", "ca_file": ""},
+        },
     },
     "notify": {
         # Internal event types to forward (see daemon.EVENT_TEXT)

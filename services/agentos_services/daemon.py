@@ -24,6 +24,7 @@ import threading
 import time
 import urllib.request
 
+from . import audit as auditmod
 from . import config as configmod
 from .gpu import Registry as GpuRegistry
 from .store import Store, connect
@@ -61,8 +62,9 @@ def _pid_alive(pid):
 
 
 class Daemon:
-    def __init__(self, cfg, store, runner=_run, clock=time.time, sender=None):
+    def __init__(self, cfg, store, runner=_run, clock=time.time, sender=None, audit=None):
         self.cfg = cfg
+        self.audit = audit if audit is not None else auditmod.client_from_config(cfg, "daemon")
         self.store = store
         self.run_cmd = runner
         self.clock = clock
@@ -123,6 +125,9 @@ class Daemon:
                         state["announced"] = True
                         self.save(state)
                         self.emit({"type": "agent_started", "agent": state["id"], "command": state.get("command", "")})
+                        self.audit.emit("agent.spawn", state.get("operator"), agent=state["id"], kind=state.get("agent"),
+                                        workspace=state.get("workspace"), isolation=state.get("isolation"),
+                                        sandboxed=state.get("sandboxed"), pid=state.get("pid"))
                     continue
                 if state.get("status") == "running":
                     # The CLI registers the agent just before starting it
@@ -130,6 +135,7 @@ class Daemon:
                         continue
                     state["status"] = "exited"
                     self.emit({"type": "agent_exited", "agent": state["id"]})
+                    self.audit.emit("agent.exit", state.get("operator"), agent=state["id"], kind=state.get("agent"))
                 state.setdefault("ended_at", self.clock())
                 self.save(state, self.history_dir)
                 try:
@@ -182,6 +188,7 @@ class Daemon:
                 self.save(state)
         if ok:
             self.emit({"type": "agent_killed", "agent": agent_id, "reason": reason})
+            self.audit.emit("agent.kill", None, agent=agent_id, reason=reason)
         return ok
 
     def handle(self, event):

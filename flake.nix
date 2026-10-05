@@ -155,6 +155,8 @@
           e2e = import ./tests/e2e.nix { inherit pkgs agentosModules; };
           # Loop detection, cost routing, record/replay and the message bus.
           gateway-features = import ./tests/gateway-features.nix { inherit pkgs agentosModules; };
+          # Tamper-evident audit log, signed checkpoints, gateway DLP.
+          audit = import ./tests/audit.nix { inherit pkgs agentosModules; };
           # Task queue, orchestrator plans and cron-style schedules.
           orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
           # GitHub webhooks -> tasks -> pushed branch and pull request.
@@ -182,7 +184,7 @@
             packages = with pkgs; [
               nixpkgs-fmt
               nil
-              (python3.withPackages (ps: [ ps.pytest ps.redis ps.fakeredis ]))
+              (python3.withPackages (ps: [ ps.pytest ps.redis ps.fakeredis ps.cryptography ]))
             ];
           };
         });

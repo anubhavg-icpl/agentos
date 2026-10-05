@@ -17,6 +17,15 @@ let
   adminSocket = config.agentos.services.settings.gateway.admin_socket;
   recordingsDir = "/var/lib/agentos/recordings";
 
+  dlp = config.agentos.gateway.dlp;
+  dlpDetectors = [
+    "private_key" "aws_access_key" "aws_secret_key" "github_token" "slack_token" "api_key" "jwt"
+    "provider_key" "credential_assignment" "high_entropy"
+    "email" "credit_card" "iban" "phone"
+  ];
+  dlpMode = lib.types.enum [ "off" "log" "mask" "block" ];
+  dlpDetectorList = lib.types.listOf (lib.types.enum ([ "all" ] ++ dlpDetectors));
+
   # Call the gateway admin socket; prints the body, or the error message and a
   # non-zero status. Shared by the two CLIs below.
   adminApi = ''
@@ -370,6 +379,75 @@ in
     };
   };
 
+  # ── Data loss prevention in the gateway (docs/dlp.md) ──────────────
+  options.agentos.gateway.dlp = {
+    mode = lib.mkOption {
+      type = dlpMode;
+      default = "off";
+      description = ''
+        What the gateway does with secrets and personal data it finds in
+        request bodies before forwarding them to a provider:
+        off (no scan), log (record the detector types in the audit log and
+        forward unchanged), mask (replace each match with [REDACTED:type]) or
+        block (refuse with 403 dlp_blocked). Matched values are never logged.
+      '';
+    };
+
+    detectors = lib.mkOption {
+      type = dlpDetectorList;
+      default = [ "all" ];
+      example = [ "private_key" "aws_access_key" "github_token" "credit_card" ];
+      description = ''
+        Detectors to run: "all", or any of ${lib.concatStringsSep ", " dlpDetectors}.
+        provider_key matches the API keys configured in agentos.networking.providers.
+      '';
+    };
+
+    scanResponses = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Also scan provider responses with the same policy. Only non-streaming
+        responses are scanned (the body is held back until it has been
+        checked); event streams are passed through unscanned.
+      '';
+    };
+
+    maxScanBytes = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 16 * 1024 * 1024;
+      description = ''
+        Largest body that is scanned. In mask and block mode a larger request
+        is refused (413 dlp_scan_limit) because it cannot be checked; in log
+        mode it is forwarded unscanned.
+      '';
+    };
+
+    overrides = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          mode = lib.mkOption {
+            type = dlpMode;
+            description = "Mode for agents whose id starts with this prefix";
+          };
+          detectors = lib.mkOption {
+            type = lib.types.nullOr dlpDetectorList;
+            default = null;
+            description = "Detectors for these agents (null: the global list)";
+          };
+          scanResponses = lib.mkOption {
+            type = lib.types.nullOr lib.types.bool;
+            default = null;
+            description = "Response scanning for these agents (null: the global setting)";
+          };
+        };
+      });
+      default = { };
+      example = lib.literalExpression ''{ "ci-" = { mode = "block"; }; "scratch-" = { mode = "off"; }; }'';
+      description = "Per agent-id-prefix policy; the longest matching prefix wins";
+    };
+  };
+
   config = lib.mkIf cfg.enable {
     assertions = [{
       assertion = config.agentos.runtime.enable;
@@ -399,6 +477,16 @@ in
         listen = [ "127.0.0.1" hostAddress ];
         port = cfg.modelGatewayPort;
         pricing_file = "/etc/agentos/pricing.json";
+        dlp = {
+          inherit (dlp) mode detectors;
+          scan_responses = dlp.scanResponses;
+          max_scan_bytes = dlp.maxScanBytes;
+          overrides = lib.mapAttrs
+            (_: o: { inherit (o) mode; }
+              // lib.optionalAttrs (o.detectors != null) { inherit (o) detectors; }
+              // lib.optionalAttrs (o.scanResponses != null) { scan_responses = o.scanResponses; })
+            dlp.overrides;
+        };
       };
       recording = {
         enabled = cfg.recordSessions;

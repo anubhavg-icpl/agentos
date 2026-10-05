@@ -11,6 +11,7 @@
     # Core infrastructure
     ./runtime
     ./security
+    ./audit
     ./observability
     ./dashboard
     ./fleet

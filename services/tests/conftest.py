@@ -94,7 +94,9 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
                 ])
             tokens = body.get("mock_tokens", {"input_tokens": 1_000_000, "output_tokens": 0})
             return self._json(200, {"id": "msg_1", "type": "message", "model": model,
-                                    "content": [{"type": "text", "text": "hi"}], "usage": tokens})
+                                    "content": [{"type": "text", "text": body["mock_text_rev"][::-1] if "mock_text_rev" in body
+                                                                     else body.get("mock_text", "hi")}],
+                                    "usage": tokens})
         if self.path == "/v1/chat/completions":
             if body.get("stream"):
                 usage = {"prompt_tokens": 300, "completion_tokens": 100,

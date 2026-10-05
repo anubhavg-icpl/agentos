@@ -10,7 +10,7 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 |:---|:---|:---|
 | Evaluation of every output | `nix flake check --no-build --all-systems` | Host, VM image, ISO, packages, checks on x86_64 and aarch64 |
 | Service unit tests (253) | `nix build .#services` | Gateway proxying (JSON + SSE), key injection, pricing, budgets, alerts, rate limit, circuit breaker, admin socket; daemon reaping, auto-shutdown, notifications, metrics |
-| VM tests | `nix build .#checks.x86_64-linux.<name>` for `gateway-features`, `orchestration`, `container`, `platform`, `desktop` | See each feature's doc; only `e2e` runs in CI today |
+| VM tests | `nix build .#checks.x86_64-linux.<name>` for `gateway-features`, `orchestration`, `container`, `platform`, `desktop`, `audit` | See each feature's doc; only `e2e` runs in CI today |
 | End-to-end VM test | `nix build .#checks.x86_64-linux.e2e` | Boots a VM and drives a real agent run: spawn → sandbox → gateway → priced spend → budget exceeded → daemon stops the agent → webhook; plus sandbox, control-plane isolation and egress checks |
 | Shell linting | `nix build .#cli .#installer` | `agentos` and `agentos-install` pass shellcheck |
 
@@ -43,6 +43,7 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 | Container isolation | Working | `agentos spawn --isolation container`: own root, PID, IPC and network namespace on the `agentos0` bridge. See [containers.md](containers.md). |
 | GPU scheduling | Working | `agentos spawn --gpu N` with exclusive locks. See [gpu.md](gpu.md). |
 | Loop detection, cost routing, record/replay, message bus | Working | See [gateway-features.md](gateway-features.md). |
+| Audit log, SIEM export, gateway DLP | Implemented; unit tests plus VM test `audit` | See [audit.md](audit.md) and [dlp.md](dlp.md). The audit log is tamper-evident, not tamper-proof against root. |
 | Orchestrator and scheduler | Working | `agentos-task`, `agentos-schedule`. Tasks run in the systemd sandbox only. See [orchestration.md](orchestration.md). |
 | Web dashboard, fleets, marketplace | Working | See [dashboard.md](dashboard.md), [fleet.md](fleet.md), [marketplace.md](marketplace.md). |
 | Desktop edition | Working, not boot-tested in CI | i3 (gaps) by default, sway or Hyprland; VS Code, Zed, Firefox. See [desktop.md](desktop.md). |
