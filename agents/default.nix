@@ -176,6 +176,11 @@ rec {
   codebuff = up.codebuff;
   pi-coding-agent = up.pi-coding-agent;
 
+  # herdr: persistent terminal workspaces for the agents above (agentos.herdr,
+  # docs/herdr.md). Not an agent, so not part of all-agents; the module
+  # installs it. nixpkgs-unstable's package (0.9.x), built from source there.
+  herdr = up.herdr;
+
 
   # ════════════════════════════════════════════════════════════════════
   # NPM LAUNCHERS (fetched from registry.npmjs.org on first run)

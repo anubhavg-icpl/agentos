@@ -45,6 +45,7 @@
     ./provisioning
     ./editors
     ./desktop
+    ./herdr
 
     # Automation
     ./scheduler

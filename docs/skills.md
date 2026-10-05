@@ -139,6 +139,7 @@ and a `pack.json`.
 | `reticle` | 19 skills (see below) | `reticle` | `reticle` | FSL-1.1-ALv2 (skills Apache-2.0) | none; drives the local Chromium |
 | `caliper` | `grill-skill`, `evaluate-skill` | `caliper` | none | MIT | runs agent CLIs, which call their model APIs |
 | `ouroboros` | 23 skills, `ouroboros-*` | `ooo`, `ouroboros`, `ozo` | `ouroboros` | MIT | drives the `claude` CLI; telemetry off |
+| `herdr` | `herdr` | none (`agentos.herdr` installs the CLI) | none | Apache-2.0 | none |
 
 ### fwc-swiftui-skills
 
@@ -298,6 +299,14 @@ Works through an app's details before building, asks about the decisions that ch
 - Known gap: httpx2 asks for idna 3.18 and nixpkgs has 3.15, so the dependency check for that single bound is skipped. Only internationalized host names in the HTTP MCP transport allow-list are affected (two upstream tests for that are disabled). The stdio MCP server used by agents is unaffected.
 - Build: version set with `SETUPTOOLS_SCM_PRETEND_VERSION` (CHANGELOG.md stops at 0.41.0; the plugin manifests and the pinned source say 0.55.4). `tests/unit` runs in the build (23323 pass); files that need `/bin/bash`, the codex/ourocode/dsh agent CLIs, a nested sandbox, Windows behavior or a non-UTF-8 locale are disabled in `tools/ouroboros.nix`.
 
+### herdr
+
+The skill from [herdrdev/herdr](https://github.com/herdrdev/herdr) (0.9.3, Apache-2.0) that teaches an agent running inside herdr to inspect and drive panes, tabs, workspaces and other agents through the `herdr` CLI (`herdr pane list`, `herdr agent prompt`, `herdr agent wait`, ...).
+
+- The skill describes itself as active only when the user mentions herdr, and requires `HERDR_ENV=1`, which herdr sets in every pane, so it costs a short description in the context elsewhere and nothing else.
+- The pack ships no tools: the `herdr` binary, the agent-user server, the status bridge and the plugin management come from `agentos.herdr` ([herdr.md](herdr.md)). Enabling the pack without the module leaves the skill with no CLI to call.
+- No network use.
+
 <!-- Entries for further packs go here, in the same form. -->
 
 ## Licenses
@@ -316,6 +325,7 @@ Each pack keeps its upstream license; `agentos-skills list` prints it.
 | `reticle` | FSL-1.1-ALv2 (CLI and MCP server); skills and SDK Apache-2.0 |
 | `caliper` | MIT |
 | `ouroboros` | MIT |
+| `herdr` | Apache-2.0 |
 
 Reticle's server package, which provides the `reticle` CLI and MCP server, is
 under the Functional Source License 1.1 (Apache-2.0 future): internal use,

@@ -18,4 +18,5 @@ in
   reticle = callPack ./packs/reticle.nix;
   caliper = callPack ./packs/caliper.nix;
   ouroboros = callPack ./packs/ouroboros.nix;
+  herdr = callPack ./packs/herdr.nix;
 }
