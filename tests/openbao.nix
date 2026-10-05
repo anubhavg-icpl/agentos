@@ -116,6 +116,6 @@ pkgs.testers.runNixOSTest {
         assert cfg["data"]["jwt_validation_pubkeys"], cfg
 
     with subtest("metrics are served for Prometheus without a token"):
-        machine.succeed("curl -sf --cacert /var/lib/nestlo-openbao/pub/ca.pem 'https://127.0.0.1:8200/v1/sys/metrics?format=prometheus' | grep -q core_unsealed")
+        machine.succeed("curl -sf --cacert /var/lib/nestlo-openbao/pub/ca.pem 'https://127.0.0.1:8200/v1/sys/metrics?format=prometheus' | grep core_unsealed")
   '';
 }

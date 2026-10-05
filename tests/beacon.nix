@@ -97,7 +97,7 @@ pkgs.testers.runNixOSTest {
         ev = [e for e in events(shared_log) if e.get("prompt", {}).get("text") == "hello from otlp"][0]
         assert ev["event"]["action"] == "prompt.submitted" and ev["harness"]["collection_method"] == "otlp", ev
         # the collector's own metrics count it (nestlo.observability scrapes them)
-        machine.wait_until_succeeds("curl -sf http://127.0.0.1:9975/metrics | grep -q 'otelcol_exporter_sent_log_records_total{exporter=\"beaconjson\"'")
+        machine.wait_until_succeeds("curl -sf http://127.0.0.1:9975/metrics | grep 'otelcol_exporter_sent_log_records_total{exporter=\"beaconjson\"'")
 
     with subtest("the shared state is private to the group beacon"):
         assert machine.succeed("stat -c '%U:%G %a' /var/lib/beacon /var/lib/beacon/logs").split() == [

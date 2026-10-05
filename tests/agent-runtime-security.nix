@@ -100,7 +100,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("the alert is counted for Prometheus"):
         machine.wait_until_succeeds(
-            "curl -sf http://127.0.0.1:9976/metrics | grep -q 'nestlo_runtime_security_events_total{rule=\"credential-access\",action=\"alert\"} [1-9]'"
+            "curl -sf http://127.0.0.1:9976/metrics | grep 'nestlo_runtime_security_events_total{rule=\"credential-access\",action=\"alert\"} [1-9]'"
         )
   '';
 }

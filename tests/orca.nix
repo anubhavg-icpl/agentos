@@ -191,7 +191,7 @@ pkgs.testers.runNixOSTest {
     with subtest("the UI answers on loopback"):
         machine.wait_until_succeeds(
             KC + "rollout status -n agent-orca-system deployment/agent-orca-ui --timeout=30s", timeout=600)
-        machine.wait_until_succeeds("curl -fsS http://127.0.0.1:9980/ | grep -qi '<div id=\"root\"'", timeout=300)
+        machine.wait_until_succeeds("curl -fsS http://127.0.0.1:9980/ | grep -i '<div id=\"root\"'", timeout=300)
         listeners = machine.succeed("ss -Htln")
         for port in ["9980", "9981", "9982"]:
             assert f"127.0.0.1:{port}" in listeners, listeners

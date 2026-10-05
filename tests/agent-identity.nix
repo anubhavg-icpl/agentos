@@ -70,7 +70,7 @@ pkgs.testers.runNixOSTest {
         assert "127.0.0.1:8081" in listeners, listeners
         assert "0.0.0.0:8081" not in listeners and "*:8081" not in listeners, listeners
         # the node attested with the generated certificate
-        machine.succeed(f"spire-server agent list -socketPath {server_sock} | grep -q 'x509pop/nestlo-host'")
+        machine.succeed(f"spire-server agent list -socketPath {server_sock} | grep 'x509pop/nestlo-host'")
         # the node CA key is gone after signing
         machine.fail("test -e /var/lib/nestlo-spire/pki/ca.key")
 
@@ -135,7 +135,7 @@ pkgs.testers.runNixOSTest {
         for u in ("nestlo-spire-server", "nestlo-spire-agent"):
             props = machine.succeed(f"systemctl show {u}.service -p ProtectSystem -p NoNewPrivileges")
             assert "ProtectSystem=strict" in props and "NoNewPrivileges=yes" in props, props
-        machine.succeed("systemctl show nestlo-spire-server.service -p DynamicUser | grep -q yes")
+        machine.succeed("systemctl show nestlo-spire-server.service -p DynamicUser | grep yes")
 
     with subtest("cedar policies were validated at build time and nestlo-authz decides"):
         machine.succeed("test -s /etc/nestlo/cedar/policies.cedar -a -s /etc/nestlo/cedar/schema.cedarschema")

@@ -315,7 +315,7 @@ pkgs.testers.runNixOSTest {
         timers = machine.succeed("systemctl list-unit-files --type=timer --no-legend")
         for t in ["nestlo-redteam.timer", "nestlo-agent-scan.timer", "nestlo-pr-review.timer"]:
             assert t in timers, timers
-        machine.succeed("systemctl cat nestlo-redteam.timer | grep -q OnCalendar=weekly")
+        machine.succeed("systemctl cat nestlo-redteam.timer | grep OnCalendar=weekly")
 
     with subtest("agent-scan flags a poisoned tool description and passes a clean config, offline"):
         res = machine.execute("nestlo-agent-scan --no-defaults --no-emit --json --path ${poisoned}")
@@ -334,7 +334,7 @@ pkgs.testers.runNixOSTest {
         assert machine.execute("nestlo-agent-scan --no-emit --remote")[0] == 2
         assert machine.execute("nestlo-agent-scan --no-emit --inspect")[0] == 2
         # the unit runs without any network
-        machine.succeed("systemctl show nestlo-agent-scan.service -p PrivateNetwork | grep -q yes")
+        machine.succeed("systemctl show nestlo-agent-scan.service -p PrivateNetwork | grep yes")
         machine.succeed("systemctl start nestlo-agent-scan.service")
         machine.succeed(f"test -L {STATE}/reports/agent-scan/latest.json")
 
