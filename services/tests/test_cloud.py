@@ -932,3 +932,10 @@ def test_tokens_never_look_like_flags_and_double_dash(env):
     env.st.save_vm(vm)
     env.run(env.alice, "share remove-link web -- -dashy")
     assert "-dashy" not in env.st.vm_by_name("web")["links"]
+
+
+def test_remote_command_keeps_shell_syntax():
+    from agentos_services.cloud import lobby as L
+    assert L.remote_command("ssh web") == []
+    assert L.remote_command("ssh web 'nohup x >/dev/null 2>&1 &'") == ["/bin/sh", "-c", "'nohup x >/dev/null 2>&1 &'"]
+    assert L.remote_command("ssh  web   cat /etc/hostname") == ["/bin/sh", "-c", "cat /etc/hostname"]

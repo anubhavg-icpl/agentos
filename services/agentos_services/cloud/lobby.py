@@ -81,6 +81,15 @@ def pump(sock):
                 sock.sendall(data)
 
 
+def remote_command(line):
+    """argv for the command of `ssh <vm> <command>`: like OpenSSH, the command
+    text (quoting, redirections, `&`) goes to the VM's shell; [] means a login shell."""
+    parts = line.split(None, 2)
+    if len(parts) < 3 or not parts[2].strip():
+        return []
+    return ["/bin/sh", "-c", parts[2]]
+
+
 def keys_main(argv):
     """AuthorizedKeysCommand: agentos-cloud-lobby keys %t %k"""
     if len(argv) != 2:
@@ -120,7 +129,7 @@ def main(argv=None):
             sys.stderr.write("usage: ssh <vm> [command]\n")
             return 2
         tty = os.isatty(0)
-        res = call("attach", fds=[0, 1, 2], key=key, vm=words[1], argv=words[2:], tty=tty,
+        res = call("attach", fds=[0, 1, 2], key=key, vm=words[1], argv=remote_command(line), tty=tty,
                    term=os.environ.get("TERM"))
         return int((res or {}).get("exit", 0))
     if words[0] == "tunnel":
