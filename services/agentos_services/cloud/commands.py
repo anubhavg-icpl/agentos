@@ -78,6 +78,9 @@ def parse(spec, words):
     pos, flags, i = [], {}, 0
     while i < len(words):
         w = words[i]
+        if w == "--":
+            pos.extend(words[i + 1:])
+            break
         if w.startswith("--") and len(w) > 2:
             name, eq, value = w.partition("=")
             kind = spec.flags.get(name)

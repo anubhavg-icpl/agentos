@@ -921,3 +921,14 @@ def test_lobby_socket_closes_forwarded_fds(env, tmp_path):
     time.sleep(0.2)
     assert os.read(r, 10) == b""      # EOF: the service kept no copy of the write end
     srv.shutdown()
+
+
+def test_tokens_never_look_like_flags_and_double_dash(env):
+    from agentos_services.cloud import state as ST
+    assert all(ST.url_token(3)[0].isalnum() for _ in range(500))
+    env.run(env.alice, "new --name web")
+    vm = env.st.vm_by_name("web")
+    vm["links"]["-dashy"] = {"created": 0, "role": "web"}
+    env.st.save_vm(vm)
+    env.run(env.alice, "share remove-link web -- -dashy")
+    assert "-dashy" not in env.st.vm_by_name("web")["links"]

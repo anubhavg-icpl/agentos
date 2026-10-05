@@ -32,6 +32,14 @@ class StateError(Exception):
         self.message = message
 
 
+def url_token(nbytes=18):
+    """A URL-safe random token that cannot be mistaken for a command-line flag."""
+    while True:
+        tok = secrets.token_urlsafe(nbytes)
+        if tok[0].isalnum():
+            return tok
+
+
 def new_id(nbytes=4):
     return secrets.token_hex(nbytes)
 
@@ -252,7 +260,7 @@ class State:
 
     # ── share links ────────────────────────────────────────────────────
     def add_link(self, vm, role="web"):
-        tok = secrets.token_urlsafe(18)
+        tok = url_token(18)
         vm.setdefault("links", {})[tok] = {"created": int(self.clock()), "role": role}
         self.save_vm(vm)
         self.r.set(self._k("link", tok), vm["id"])
@@ -293,7 +301,7 @@ class State:
 
     # ── invites ────────────────────────────────────────────────────────
     def create_invite(self, by_uid, email=None, team=None, role="user", days=7, plan=None):
-        code = secrets.token_urlsafe(12)
+        code = url_token(12)
         doc = {"code": code, "by": by_uid, "email": email, "team": team, "role": role, "plan": plan,
                "created": int(self.clock()), "exp": int(self.clock()) + days * 86400, "used_by": None}
         self._put("invite", code, doc, ttl=days * 86400)
