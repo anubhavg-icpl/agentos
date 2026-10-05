@@ -85,7 +85,12 @@ pkgs.testers.runNixOSTest {
     lobby = "ssh -o BatchMode=yes lobby@localhost"
 
     with subtest("the lobby knows alice and nobody else"):
-        out = json.loads(machine.succeed(lobby + " whoami --json"))
+        try:
+            out = json.loads(machine.succeed(lobby + " whoami --json"))
+        except Exception:
+            print(machine.execute("journalctl --no-pager -u sshd -u 'sshd@*' -u agentos-cloud | tail -60")[1])
+            print(machine.execute("sudo -u lobby /etc/ssh/agentos-cloud-keys ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDPQXmEVMVLmeFRyafKMVWgPDkv8/uRBTwmcEDatZzMD 2>&1")[1])
+            raise
         assert out["email"] == "alice@example.com" and out["admin"], out
         machine.succeed("ssh-keygen -q -t ed25519 -N ''' -f /root/stranger")
         out = machine.fail("ssh -o BatchMode=yes -i /root/stranger lobby@localhost ls 2>&1")

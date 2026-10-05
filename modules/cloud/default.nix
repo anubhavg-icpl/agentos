@@ -440,11 +440,20 @@ in
       };
 
       # ─ the lobby over SSH ───────────────────────────────────────────
+      # sshd wants the AuthorizedKeysCommand in root-owned directories that
+      # no group can write (unlike /nix/store): a copied file in /etc/ssh
+      environment.etc."ssh/agentos-cloud-keys" = {
+        mode = "0755";
+        text = ''
+          #!${pkgs.runtimeShell}
+          exec ${lobbyCmd} keys "$@"
+        '';
+      };
       services.openssh.enable = true;
       services.openssh.extraConfig = ''
         Match User ${cfg.lobbyUser}
           AuthorizedKeysFile none
-          AuthorizedKeysCommand ${lobbyCmd} keys %t %k
+          AuthorizedKeysCommand /etc/ssh/agentos-cloud-keys %t %k
           AuthorizedKeysCommandUser ${cfg.lobbyUser}
           PasswordAuthentication no
           KbdInteractiveAuthentication no
