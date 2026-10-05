@@ -312,9 +312,10 @@ pkgs.testers.runNixOSTest {
         assert "stub-env.txt" in machine.succeed(f"ls {edir}")
 
     with subtest("timers are present"):
-        timers = machine.succeed("systemctl list-unit-files --type=timer --no-legend")
+        # the unit files themselves (listing every unit over D-Bus can time
+        # out on a loaded VM)
         for t in ["nestlo-redteam.timer", "nestlo-agent-scan.timer", "nestlo-pr-review.timer"]:
-            assert t in timers, timers
+            machine.succeed(f"test -e /etc/systemd/system/{t}")
         machine.succeed("systemctl cat nestlo-redteam.timer | grep OnCalendar=weekly")
 
     with subtest("agent-scan flags a poisoned tool description and passes a clean config, offline"):
