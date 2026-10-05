@@ -38,6 +38,7 @@ pkgs.testers.runNixOSTest {
           claude = { groups = [ "coding" ]; tier = "trusted"; };
           intruder = { groups = [ "coding" ]; tier = "untrusted"; };
         };
+        # added to the example entities (examples = true)
         entities = [
           { uid = { type = "Secret"; id = "github-token"; }; attrs = { }; parents = [ ]; }
         ];

@@ -191,8 +191,12 @@ not an agent at 3 am.
 The shipped schema has `Agent` (in `Group`, with a `tier` string),
 `Repo` (in `RepoSet`), `Tool` (in `ToolSet`), `Provider` (in `ProviderSet`) and
 `Secret`, and the actions `clone`, `push` (context `branch`), `use_tool`,
-`call_provider` (context `model`) and `read_secret`. The example policies
-(options `policies` and `entities`, replace or extend freely):
+`call_provider` (context `model`) and `read_secret`. With `examples = true`
+(the default) the module ships the example policies below and the matching
+entities (`Repo::"github.com/nestlo/nestlo"` in `RepoSet::"internal"`, the
+tools `git` and `bash`, the provider `anthropic`). Your `policies` and
+`entities` are added to them; a policy with the name of an example replaces
+it, and `examples = false` starts from nothing:
 
 | Policy id | Effect |
 |-----------|--------|

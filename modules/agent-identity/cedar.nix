@@ -23,7 +23,9 @@ let
     })
     cfg.agents;
 
-  entitiesJson = pkgs.writeText "entities.json" (builtins.toJSON (agentEntities ++ cfg.entities));
+  allEntities = lib.optionals cfg.examples defaultEntities ++ cfg.entities;
+  allPolicies = lib.optionalAttrs cfg.examples examplePolicies // cfg.policies;
+  entitiesJson = pkgs.writeText "entities.json" (builtins.toJSON (agentEntities ++ allEntities));
   schemaFile = pkgs.writeText "nestlo.cedarschema" cfg.schema;
 
   policyText = lib.concatStringsSep "\n" (lib.mapAttrsToList
@@ -31,7 +33,7 @@ let
       @id("${name}")
       ${lib.removePrefix "\n" text}
     '')
-    cfg.policies);
+    allPolicies);
   policyFile = pkgs.writeText "policies.cedar" policyText;
 
   cedar = "${cfg.package}/bin/cedar";
@@ -219,16 +221,26 @@ in
       description = "Cedar schema (Cedar syntax). Policies are validated against it when the system is built.";
     };
 
+    examples = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Include the example policies and entities (the example repository,
+        tools and provider; see docs/agent-identity.md). `policies` and
+        `entities` are added to them, so declaring one policy does not drop
+        the rest; set to false to start from nothing.
+      '';
+    };
+
     policies = lib.mkOption {
       type = lib.types.attrsOf lib.types.lines;
-      default = examplePolicies;
-      defaultText = lib.literalMD "an example policy set (see docs/agent-identity.md)";
+      default = { };
       description = ''
         Cedar policies, one policy per attribute; the name becomes the
         policy's `@id`, which `nestlo-authz` reports as the reason of a
         decision. Cedar denies by default and `forbid` always wins over
-        `permit`. Set to `{ }` or override single entries to change the
-        example set.
+        `permit`. Added to the example set while `examples` is on; an entry
+        with the name of an example replaces it.
       '';
       example = lib.literalExpression ''
         {
@@ -270,12 +282,12 @@ in
 
     entities = lib.mkOption {
       type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
-      default = defaultEntities;
-      defaultText = lib.literalMD "the example repository, tools and provider of the example policies";
+      default = [ ];
       description = ''
         Resource entities in Cedar's JSON entity format ({ uid = { type;
         id; }; attrs; parents = [ { type; id; } ]; }): which repositories
         belong to which RepoSet, which tools to which ToolSet, and so on.
+        Added to the example entities while `examples` is on.
       '';
     };
 
