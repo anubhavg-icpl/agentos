@@ -2,7 +2,8 @@
 
 A provider in services.toml names its adapter with `api`:
 
-  anthropic          Messages API. x-api-key header.
+  anthropic          Messages API, and the OpenAI-compatible v1/chat/completions
+                     endpoint (usage in the OpenAI format). x-api-key header.
   openai             Chat Completions / Responses. Authorization: Bearer.
   openai-compatible  Local servers speaking the OpenAI wire format (ollama,
                      llama.cpp, vLLM, LM Studio). No key is needed and every
@@ -83,29 +84,54 @@ class Adapter:
     def query_for(self, query):
         return query
 
+    def wire_for(self, rest_path):
+        """Wire format of requests to and responses from `rest_path`."""
+        return self.wire
+
+
+def _chat_completions(rest_path):
+    return rest_path.rstrip("/").endswith("chat/completions")
+
+
+def _ask_stream_usage(payload, rest_path):
+    """Ask for usage on streamed Chat Completions so they can be priced."""
+    if (payload.get("stream") is True and _chat_completions(rest_path)
+            and "stream_options" not in payload):
+        payload["stream_options"] = {"include_usage": True}
+        return True
+    return False
+
 
 class Anthropic(Adapter):
+    """Messages API, and Anthropic's OpenAI-compatible Chat Completions
+    endpoint (v1/chat/completions), which OpenAI-only clients such as Agent
+    Orca's model router use. Both take the key in x-api-key."""
     name = wire = "anthropic"
 
     def inject_key(self, headers, key):
         if not key:
             return
+        auth = _find(headers, "authorization")
+        if auth and headers[auth] == "Bearer " + configmod.MANAGED_KEY:
+            del headers[auth]       # an OpenAI client's placeholder
+            auth = None
         name = _find(headers, "x-api-key")
         current = headers.get(name, "") if name else ""
-        if current == configmod.MANAGED_KEY or (not current and _find(headers, "authorization") is None):
+        if current == configmod.MANAGED_KEY or (not current and auth is None):
             headers[name or "x-api-key"] = key
+
+    def wire_for(self, rest_path):
+        return "openai" if _chat_completions(rest_path) else self.wire
+
+    def prepare(self, payload, rest_path):
+        return _ask_stream_usage(payload, rest_path)
 
 
 class OpenAI(Adapter):
     name = wire = "openai"
 
     def prepare(self, payload, rest_path):
-        # Ask for usage on streamed Chat Completions so it can be priced
-        if (payload.get("stream") is True and rest_path.endswith("chat/completions")
-                and "stream_options" not in payload):
-            payload["stream_options"] = {"include_usage": True}
-            return True
-        return False
+        return _ask_stream_usage(payload, rest_path)
 
 
 class OpenAICompatible(OpenAI):

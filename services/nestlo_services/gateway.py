@@ -709,7 +709,7 @@ class Gateway:
         """Set the provider's output limit on a paid request that has none, to
         the amount the budget reservation assumes (budget.default_max_tokens)."""
         version = adapter.prov.get("api_version") if adapter.name == "azure-openai" else None
-        return apply_output_cap(payload, adapter.wire, rest_path,
+        return apply_output_cap(payload, adapter.wire_for(rest_path), rest_path,
                                 int(self.cfg["budget"].get("default_max_tokens", 4096)), version)
 
     def can_switch(self, source, target):
@@ -883,7 +883,7 @@ class Gateway:
             if i:
                 route["fallback_provider"] = name
                 request_model = fb_model or request_model
-            rest_path, api = att_rest_path, adapter.wire
+            rest_path, api = att_rest_path, adapter.wire_for(att_rest_path)
 
             try:
                 if resp.status >= 500:

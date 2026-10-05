@@ -272,6 +272,9 @@ rec {
   pullrun = pkgs.callPackage ../nixos/packages/pullrun.nix { };
   # exe.dev's web coding agent; runs in Nestlo Cloud VMs (docs/cloud.md)
   shelley = pkgs.callPackage ../nixos/packages/shelley.nix { };
+  # Agent Orca: Kubernetes operator for AI agents (nestlo.orca, docs/orca.md);
+  # aoctl, the operator, model-router, mcp-ingester and ui-proxy, plus images
+  agent-orca = pkgs.callPackage ../nixos/packages/agent-orca.nix { };
   # agent-fleet: in-browser chat and fleet hub (static site, wllama vendored),
   # and the CLI that publishes them to Hugging Face Spaces
   agent-fleet-web = pkgs.callPackage ../nixos/packages/agent-fleet-web.nix { };

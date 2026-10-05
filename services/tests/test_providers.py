@@ -216,3 +216,40 @@ def test_unknown_api_is_rejected():
     with pytest.raises(ValueError):
         adapter_for({"api": "bedrock"})
     assert set(configmod.API_KINDS) == {"anthropic", "openai", "openai-compatible", "azure-openai", "gemini"}
+
+
+def test_anthropic_openai_compatible_endpoint(make_gateway, upstream, store):
+    # Agent Orca's model router speaks Chat Completions with the managed
+    # placeholder as a Bearer key, also for Claude models
+    gw = make_gateway()
+    body = {"model": "claude-test", "messages": [{"role": "user", "content": "hi"}]}
+    status, _, _ = request(gw, "POST", "/agent/o1/anthropic/v1/chat/completions", body,
+                           {"Authorization": "Bearer nestlo-managed"})
+    assert status == 200
+    seen = upstream.requests[-1]
+    assert seen["path"] == "/v1/chat/completions"
+    assert seen["headers"]["x-api-key"] == "sk-real-anthropic"
+    assert "Authorization" not in seen["headers"]
+    assert seen["body"]["max_completion_tokens"] == 4096        # the OpenAI field, not max_tokens
+    assert store.snapshot()["agents"]["o1"]["tokens"] == {"input_tokens": 10, "output_tokens": 5}
+
+    request(gw, "POST", "/agent/o1/anthropic/v1/chat/completions", dict(body, stream=True),
+            {"Authorization": "Bearer nestlo-managed"})
+    assert upstream.requests[-1]["body"]["stream_options"] == {"include_usage": True}
+    assert store.snapshot()["agents"]["o1"]["tokens"]["input_tokens"] == 10 + 200
+
+
+def test_anthropic_keeps_a_client_bearer_key(make_gateway, upstream):
+    # A real key the client brings is not replaced by the gateway's
+    gw = make_gateway()
+    request(gw, "POST", "/agent/o2/anthropic/v1/chat/completions",
+            {"model": "claude-test", "messages": []}, {"Authorization": "Bearer sk-own"})
+    seen = upstream.requests[-1]
+    assert seen["headers"]["Authorization"] == "Bearer sk-own" and "x-api-key" not in seen["headers"]
+
+
+def test_adapter_wire_follows_the_path():
+    anthropic = adapter_for({"api": "anthropic"})
+    assert anthropic.wire_for("v1/messages") == "anthropic"
+    assert anthropic.wire_for("v1/chat/completions") == "openai"
+    assert adapter_for({"api": "openai"}).wire_for("v1/responses") == "openai"

@@ -32,6 +32,7 @@
     ./skills
     ./mcp-servers
     ./pullrun
+    ./orca
 
     # Safety & control
     ./budget-controller
