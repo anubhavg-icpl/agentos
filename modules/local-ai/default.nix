@@ -1,4 +1,4 @@
-# AgentOS local inference module
+# Nestlo local inference module
 #
 # A local model server (Ollama or llama.cpp) and an optional Open WebUI, all
 # bound to loopback, registered with the model gateway as the provider
@@ -8,8 +8,8 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.localAI;
-  gpuCfg = config.agentos.gpu;
+  cfg = config.nestlo.localAI;
+  gpuCfg = config.nestlo.gpu;
 
   # "auto" follows the GPU driver selection of this machine
   autoAccel =
@@ -42,7 +42,7 @@ let
   };
 in
 {
-  options.agentos.localAI = {
+  options.nestlo.localAI = {
     enable = lib.mkEnableOption "local model inference (Ollama or llama.cpp) behind the model gateway";
 
     backend = lib.mkOption {
@@ -55,10 +55,10 @@ in
       type = lib.types.enum [ "auto" "cuda" "rocm" "cpu" ];
       default = "auto";
       description = ''
-        Compute backend. `auto` follows `agentos.gpu.vendor` (nvidia gives
+        Compute backend. `auto` follows `nestlo.gpu.vendor` (nvidia gives
         cuda, amd gives rocm) or `services.xserver.videoDrivers`, and falls
         back to cpu. The package is chosen with `mkOverride 900` so it wins
-        over the defaults of agentos.gpu and agentos.ai-ml.
+        over the defaults of nestlo.gpu and nestlo.ai-ml.
       '';
     };
 
@@ -84,7 +84,7 @@ in
         Ollama models to pull after the server starts (`ollama pull`). The
         pull runs in a oneshot unit that logs and succeeds when the registry
         is unreachable, so an offline machine still boots; pull later with
-        `systemctl restart agentos-local-ai-pull`. Ignored by llama-cpp.
+        `systemctl restart nestlo-local-ai-pull`. Ignored by llama-cpp.
       '';
     };
 
@@ -108,8 +108,8 @@ in
       example = "0";
       description = ''
         Restrict the server to these GPU indices (CUDA_/HIP_/ROCR_VISIBLE_DEVICES).
-        The server is not an agent and takes no lock from `agentos gpu`, so
-        this is how to keep other GPUs free for `agentos spawn --gpu`.
+        The server is not an agent and takes no lock from `nestlo gpu`, so
+        this is how to keep other GPUs free for `nestlo spawn --gpu`.
       '';
     };
 
@@ -139,17 +139,17 @@ in
       assertions = [
         {
           assertion = cfg.backend != "llama-cpp" || cfg.modelFile != null;
-          message = "agentos.localAI: backend llama-cpp needs agentos.localAI.modelFile";
+          message = "nestlo.localAI: backend llama-cpp needs nestlo.localAI.modelFile";
         }
         {
-          assertion = config.agentos.networking.enable;
-          message = "agentos.localAI registers a gateway provider; enable agentos.networking";
+          assertion = config.nestlo.networking.enable;
+          message = "nestlo.localAI registers a gateway provider; enable nestlo.networking";
         }
       ];
 
       # An OpenAI-compatible upstream without a key, priced at zero by the
       # gateway so cost routing can prefer it (docs/local-ai.md).
-      agentos.networking.providers.local = {
+      nestlo.networking.providers.local = {
         baseUrl = backendUrl;
         api = lib.mkDefault "openai-compatible";
         zeroCost = lib.mkDefault true;
@@ -167,7 +167,7 @@ in
           // lib.optionalAttrs (cfg.keepAlive != null) { OLLAMA_KEEP_ALIVE = cfg.keepAlive; };
       };
 
-      systemd.services.agentos-local-ai-pull = lib.mkIf (cfg.models != [ ]) {
+      systemd.services.nestlo-local-ai-pull = lib.mkIf (cfg.models != [ ]) {
         description = "Pull local AI models (tolerates being offline)";
         wantedBy = [ "multi-user.target" ];
         wants = [ "ollama.service" "network-online.target" ];
@@ -183,7 +183,7 @@ in
         script = ''
           for _ in $(seq 60); do ollama list >/dev/null 2>&1 && break; sleep 1; done
           for m in ${lib.escapeShellArgs cfg.models}; do
-            ollama pull "$m" || echo "could not pull $m (offline?); retry with: systemctl restart agentos-local-ai-pull"
+            ollama pull "$m" || echo "could not pull $m (offline?); retry with: systemctl restart nestlo-local-ai-pull"
           done
           exit 0
         '';

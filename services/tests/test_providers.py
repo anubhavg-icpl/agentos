@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services.providers import adapter_for
-from agentos_services.usage import UsageParser
+from nestlo_services import config as configmod
+from nestlo_services.providers import adapter_for
+from nestlo_services.usage import UsageParser
 from conftest import request
 
 
@@ -27,7 +27,7 @@ ANTHROPIC = "/agent/a1/anthropic/v1/messages"
 def test_gemini_key_usage_and_pricing(make_gateway, upstream, store, tmp_path):
     gw = make_gateway(providers=provs(upstream, tmp_path))
     status, _, body = request(gw, "POST", GEMINI, {"contents": [{"parts": [{"text": "hi"}]}]},
-                              {"x-goog-api-key": "agentos-managed"})
+                              {"x-goog-api-key": "nestlo-managed"})
     assert status == 200
     seen = upstream.requests[-1]
     assert seen["path"] == "/v1beta/models/gemini-test:generateContent"
@@ -40,7 +40,7 @@ def test_gemini_key_usage_and_pricing(make_gateway, upstream, store, tmp_path):
 
 def test_gemini_streaming_usage_and_legacy_key_param(make_gateway, upstream, store, tmp_path):
     gw = make_gateway(providers=provs(upstream, tmp_path))
-    path = "/agent/g1/gemini/v1beta/models/gemini-test:streamGenerateContent?alt=sse&key=agentos-managed"
+    path = "/agent/g1/gemini/v1beta/models/gemini-test:streamGenerateContent?alt=sse&key=nestlo-managed"
     status, headers, body = request(gw, "POST", path, {"contents": [{"parts": [{"text": "hi"}]}]})
     assert status == 200 and body.count(b"data: ") == 2
     seen = upstream.requests[-1]
@@ -92,7 +92,7 @@ def test_azure_deployment_path_key_and_api_version(make_gateway, upstream, store
     gw = make_gateway(providers=provs(upstream, tmp_path))
     path = "/agent/z1/azure/openai/deployments/my-gpt/chat/completions"
     status, _, _ = request(gw, "POST", path, {"messages": [{"role": "user", "content": "x"}]},
-                           {"api-key": "agentos-managed"})
+                           {"api-key": "nestlo-managed"})
     assert status == 200
     seen = upstream.requests[-1]
     assert seen["path"] == "/openai/deployments/my-gpt/chat/completions?api-version=2024-10-21"
@@ -101,7 +101,7 @@ def test_azure_deployment_path_key_and_api_version(make_gateway, upstream, store
     # response says gpt-test (the underlying model): 800*1 + 500*2 + 200*0.5
     assert store.spend("z1") == pytest.approx(1900 / 1e6)
     # an explicit api-version from the client wins
-    request(gw, "POST", path + "?api-version=2023-05-15", {"messages": []}, {"api-key": "agentos-managed"})
+    request(gw, "POST", path + "?api-version=2023-05-15", {"messages": []}, {"api-key": "nestlo-managed"})
     assert upstream.requests[-1]["path"].endswith("?api-version=2023-05-15")
 
 
@@ -160,7 +160,7 @@ def test_cost_routing_can_choose_the_local_provider(make_gateway, upstream, stor
     assert store.spend("r1") == 0
     entry = json.loads((tmp_path / "logs" / "r1.log").read_text().splitlines()[-1])
     assert entry["provider"] == "local" and entry["routed_provider"] == "local"
-    described = json.loads(request(gw, "GET", "/_agentos/routing?agent=r1&provider=openai&model=gpt-test", admin=True)[2])
+    described = json.loads(request(gw, "GET", "/_nestlo/routing?agent=r1&provider=openai&model=gpt-test", admin=True)[2])
     assert described["effective"]["routed_provider"] == "local"
 
 
@@ -216,3 +216,40 @@ def test_unknown_api_is_rejected():
     with pytest.raises(ValueError):
         adapter_for({"api": "bedrock"})
     assert set(configmod.API_KINDS) == {"anthropic", "openai", "openai-compatible", "azure-openai", "gemini"}
+
+
+def test_anthropic_openai_compatible_endpoint(make_gateway, upstream, store):
+    # Agent Orca's model router speaks Chat Completions with the managed
+    # placeholder as a Bearer key, also for Claude models
+    gw = make_gateway()
+    body = {"model": "claude-test", "messages": [{"role": "user", "content": "hi"}]}
+    status, _, _ = request(gw, "POST", "/agent/o1/anthropic/v1/chat/completions", body,
+                           {"Authorization": "Bearer nestlo-managed"})
+    assert status == 200
+    seen = upstream.requests[-1]
+    assert seen["path"] == "/v1/chat/completions"
+    assert seen["headers"]["x-api-key"] == "sk-real-anthropic"
+    assert "Authorization" not in seen["headers"]
+    assert seen["body"]["max_completion_tokens"] == 4096        # the OpenAI field, not max_tokens
+    assert store.snapshot()["agents"]["o1"]["tokens"] == {"input_tokens": 10, "output_tokens": 5}
+
+    request(gw, "POST", "/agent/o1/anthropic/v1/chat/completions", dict(body, stream=True),
+            {"Authorization": "Bearer nestlo-managed"})
+    assert upstream.requests[-1]["body"]["stream_options"] == {"include_usage": True}
+    assert store.snapshot()["agents"]["o1"]["tokens"]["input_tokens"] == 10 + 200
+
+
+def test_anthropic_keeps_a_client_bearer_key(make_gateway, upstream):
+    # A real key the client brings is not replaced by the gateway's
+    gw = make_gateway()
+    request(gw, "POST", "/agent/o2/anthropic/v1/chat/completions",
+            {"model": "claude-test", "messages": []}, {"Authorization": "Bearer sk-own"})
+    seen = upstream.requests[-1]
+    assert seen["headers"]["Authorization"] == "Bearer sk-own" and "x-api-key" not in seen["headers"]
+
+
+def test_adapter_wire_follows_the_path():
+    anthropic = adapter_for({"api": "anthropic"})
+    assert anthropic.wire_for("v1/messages") == "anthropic"
+    assert anthropic.wire_for("v1/chat/completions") == "openai"
+    assert adapter_for({"api": "openai"}).wire_for("v1/responses") == "openai"

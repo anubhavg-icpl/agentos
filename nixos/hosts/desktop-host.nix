@@ -1,13 +1,13 @@
-# Desktop edition of the installed host (agentos-desktop and
-# agentos-desktop-vm): local login for the admin user.
+# Desktop edition of the installed host (nestlo-desktop and
+# nestlo-desktop-vm): local login for the admin user.
 { config, lib, ... }:
 
 let
-  passwordFile = "/etc/agentos/admin-password";
-  fallback = config.agentos.desktop.initialHashedPassword;
+  passwordFile = "/etc/nestlo/admin-password";
+  fallback = config.nestlo.desktop.initialHashedPassword;
 in
 {
-  options.agentos.desktop.initialHashedPassword = lib.mkOption {
+  options.nestlo.desktop.initialHashedPassword = lib.mkOption {
     type = lib.types.nullOr lib.types.str;
     default = null;
     example = "$y$j9T$...";
@@ -25,7 +25,7 @@ in
 
   config = {
     # Local login needs a password, unlike the SSH-key-only server. The
-    # installer (`agentos-install --desktop`) writes the hash of the password
+    # installer (`nestlo-install --desktop`) writes the hash of the password
     # entered at install time to this file. Until it exists the account stays
     # locked for local login; SSH keys keep working.
     users.users.admin = {
@@ -36,12 +36,12 @@ in
 
     assertions = [{
       assertion = fallback == null || lib.hasPrefix "$" fallback;
-      message = "agentos.desktop.initialHashedPassword must be a password hash (mkpasswd -m yescrypt), not plain text or an empty string.";
+      message = "nestlo.desktop.initialHashedPassword must be a password hash (mkpasswd -m yescrypt), not plain text or an empty string.";
     }];
 
     # NixOS only prints a terse "password file does not exist" for a missing
     # hashedPasswordFile. Say what that means and how to fix it.
-    system.activationScripts.agentosAdminPassword = lib.mkIf
+    system.activationScripts.nestloAdminPassword = lib.mkIf
       (config.users.users.admin.hashedPasswordFile == passwordFile)
       {
         text = ''
@@ -50,13 +50,13 @@ in
             echo "################################################################" >&2
             echo "WARNING: ${passwordFile} is missing or empty." >&2
             ${if fallback != null then ''
-              echo "Falling back to agentos.desktop.initialHashedPassword for a new" >&2
+              echo "Falling back to nestlo.desktop.initialHashedPassword for a new" >&2
               echo "admin account; an existing account keeps its current password." >&2
             '' else ''
               echo "The desktop login for 'admin' is LOCKED (SSH keys still work)." >&2
               echo "Fix: run  mkpasswd -m yescrypt > ${passwordFile}  as root," >&2
               echo "chmod 600 it, and rebuild; or set" >&2
-              echo "agentos.desktop.initialHashedPassword in your configuration." >&2
+              echo "nestlo.desktop.initialHashedPassword in your configuration." >&2
             ''}
             echo "################################################################" >&2
             echo "" >&2

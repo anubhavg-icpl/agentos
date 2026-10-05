@@ -40,7 +40,7 @@ def test_redis_outage_refuses_traffic_unmetered(make_gateway, upstream, store):
 def test_redis_outage_during_authentication(make_gateway, upstream, store):
     gw = make_gateway(gateway={"require_agent_tokens": True})
     digest = hashlib.sha256(b"tok").hexdigest()
-    request(gw, "PUT", "/_agentos/agents/a1", {"token_sha256": digest}, admin=True)
+    request(gw, "PUT", "/_nestlo/agents/a1", {"token_sha256": digest}, admin=True)
     store.r = BrokenRedis()
     assert request(gw, "POST", "/agent/a1:tok/anthropic/v1/messages", {"model": "claude-test"})[0] == 503
     assert upstream.requests == []
@@ -71,5 +71,5 @@ def test_accounting_failure_after_response_does_not_break_the_reply(make_gateway
 def test_health_needs_no_redis(make_gateway, store):
     gw = make_gateway()
     store.r = BrokenRedis()
-    assert request(gw, "GET", "/_agentos/health")[0] == 200
-    assert request(gw, "GET", "/_agentos/spend")[0] == 503
+    assert request(gw, "GET", "/_nestlo/health")[0] == 200
+    assert request(gw, "GET", "/_nestlo/spend")[0] == 503

@@ -8,7 +8,7 @@ Security fixes go to the latest release and to `main`. Older releases are not pa
 
 Please do not open a public issue for a security problem.
 
-Report it privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability** (private vulnerability reporting). If that is unavailable, email **anubhavg@infopercept.com** with the subject `AgentOS security`.
+Report it privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability** (private vulnerability reporting). If that is unavailable, email **anubhavg@infopercept.com** with the subject `Nestlo security`.
 
 Include what you can:
 
@@ -31,7 +31,7 @@ We credit reporters in the advisory unless you prefer to stay anonymous. We will
 
 In scope: the code in this repository, the NixOS modules and their defaults, and the release artifacts (ISO, checksums, signatures, SBOM).
 
-Out of scope: vulnerabilities in third-party agents, MCP servers and packages that AgentOS installs (report those upstream; tell us if our defaults make them worse), and findings that need an already-compromised operator account.
+Out of scope: vulnerabilities in third-party agents, MCP servers and packages that Nestlo installs (report those upstream; tell us if our defaults make them worse), and findings that need an already-compromised operator account.
 
 ## Verifying releases
 

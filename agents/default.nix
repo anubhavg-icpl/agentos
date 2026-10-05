@@ -1,9 +1,9 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS — Agent Package Registry
+# Nestlo — Agent Package Registry
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Every coding agent is exposed here as a Nix package and pre-installed on
-# AgentOS via `all-agents` (see nixos/hosts/agentos/default.nix).
+# Nestlo via `all-agents` (see nixos/hosts/nestlo/default.nix).
 #
 #   nix profile install .#claude-code
 #   nix run .#codex
@@ -90,7 +90,7 @@ let
   withAliases = { pkg, aliases ? { } }:
     if aliases == { } then pkg else
     pkgs.symlinkJoin {
-      name = "${pkg.pname or pkg.name}-agentos";
+      name = "${pkg.pname or pkg.name}-nestlo";
       paths = [ pkg ];
       postBuild = lib.concatStrings (lib.mapAttrsToList (alias: target: ''
         ln -s $out/bin/${target} $out/bin/${alias}
@@ -176,7 +176,7 @@ rec {
   codebuff = up.codebuff;
   pi-coding-agent = up.pi-coding-agent;
 
-  # herdr: persistent terminal workspaces for the agents above (agentos.herdr,
+  # herdr: persistent terminal workspaces for the agents above (nestlo.herdr,
   # docs/herdr.md). Not an agent, so not part of all-agents; the module
   # installs it. nixpkgs-unstable's package (0.9.x), built from source there.
   herdr = up.herdr;
@@ -238,7 +238,7 @@ rec {
 
   # ── Every agent ────────────────────────────────────────────────────
   all-agents = pkgs.buildEnv {
-    name = "agentos-all-agents";
+    name = "nestlo-all-agents";
     paths = [
       claude-code codex aider gemini-cli qwen-code amp goose opencode
       crush cursor-cli github-copilot-cli
@@ -250,7 +250,7 @@ rec {
 
   # ── Only reproducible, Nix-built agents ────────────────────────────
   nix-agents = pkgs.buildEnv {
-    name = "agentos-nix-agents";
+    name = "nestlo-nix-agents";
     paths = [
       claude-code codex aider gemini-cli qwen-code amp goose opencode
       crush cursor-cli github-copilot-cli
@@ -260,7 +260,7 @@ rec {
   };
 
   # ════════════════════════════════════════════════════════════════════
-  # AGENTOS INTERNAL TOOLS
+  # NESTLO INTERNAL TOOLS
   # ════════════════════════════════════════════════════════════════════
   cli = pkgs.callPackage ../nixos/packages/cli.nix { };
   services = pkgs.callPackage ../nixos/packages/services.nix { };
@@ -270,16 +270,36 @@ rec {
   schedule-cli = pkgs.callPackage ../nixos/packages/schedule-cli.nix { };
   # OCI runtime: containers and Firecracker microVMs from one image
   pullrun = pkgs.callPackage ../nixos/packages/pullrun.nix { };
+  # exe.dev's web coding agent; runs in Nestlo Cloud VMs (docs/cloud.md)
+  shelley = pkgs.callPackage ../nixos/packages/shelley.nix { };
+  # Agent Orca: Kubernetes operator for AI agents (nestlo.orca, docs/orca.md);
+  # aoctl, the operator, model-router, mcp-ingester and ui-proxy, plus images
+  agent-orca = pkgs.callPackage ../nixos/packages/agent-orca.nix { };
+  # Snyk agent-scan (MCP and skill scanner) and PR-Agent (pinned uvx launcher),
+  # used by nestlo.agentSecurity (docs/agent-security.md)
+  agent-scan = pkgs.callPackage ../nixos/packages/agent-scan.nix { };
+  pr-agent = pkgs.callPackage ../nixos/packages/pr-agent.nix { };
+  # agentgateway: MCP/A2A/LLM proxy with per-agent authz (nestlo.agentgateway)
+  agentgateway = pkgs.callPackage ../nixos/packages/agentgateway.nix { };
+  # Agent Beacon: session capture across agent harnesses, replay and reviewed
+  # memory (nestlo.beacon, docs/beacon.md); beacon CLI, beacon-hooks and a
+  # local-only beacon-otelcol, all built from source
+  agent-beacon = pkgs.callPackage ../nixos/packages/agent-beacon.nix { };
+  # TUIOS: terminal multiplexer and window manager for coding agents (agent
+  # state, inbox, fan-out, SSH and web access; nestlo.tuios, docs/tuios.md)
+  tuios = pkgs.callPackage ../nixos/packages/tuios.nix { };
+  # NVIDIA OpenShell: policy-enforced agent sandboxes (CLI, gateway, supervisor, prover)
+  openshell = pkgs.callPackage ../nixos/packages/openshell.nix { };
   # agent-fleet: in-browser chat and fleet hub (static site, wllama vendored),
   # and the CLI that publishes them to Hugging Face Spaces
   agent-fleet-web = pkgs.callPackage ../nixos/packages/agent-fleet-web.nix { };
   agent-fleet-deploy = pkgs.callPackage ../nixos/packages/agent-fleet-deploy.nix { inherit agent-fleet-web; };
 
-  # Agent skill packs (agentos.skills, docs/skills.md), exposed as skills-<pack>
+  # Agent skill packs (nestlo.skills, docs/skills.md), exposed as skills-<pack>
 } // lib.mapAttrs' (name: lib.nameValuePair "skills-${name}") (import ../nixos/packages/skills { inherit pkgs; }) // {
 
   # Service daemons. These are placeholders with no source code yet;
-  # they are only referenced when agentos.daemons.enable = true.
+  # they are only referenced when nestlo.daemons.enable = true.
   daemon = pkgs.callPackage ../nixos/packages/daemon.nix { };
   model-gateway = pkgs.callPackage ../nixos/packages/model-gateway.nix { };
   budget-controller = pkgs.callPackage ../nixos/packages/budget-controller.nix { };

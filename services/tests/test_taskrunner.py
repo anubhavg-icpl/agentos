@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from agentos_services import tasks as T
-from agentos_services.taskrunner import TaskRunner
+from nestlo_services import tasks as T
+from nestlo_services.taskrunner import TaskRunner
 from orchfix import cfg, clock, orch, runtime, submit, systemctl, taskstore  # noqa: F401
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -41,7 +41,7 @@ os.execvpe(args[i + 1], args[i + 1:], env)
 FAKE_AGENT = """#!%(python)s
 import os, sys, time
 mode = sys.argv[1] if len(sys.argv) > 1 else ""
-print("agent:", sys.argv[1:], "branch", os.environ["AGENTOS_BRANCH"], "cwd", os.getcwd(), flush=True)
+print("agent:", sys.argv[1:], "branch", os.environ["NESTLO_BRANCH"], "cwd", os.getcwd(), flush=True)
 if mode == "fail":
     print("boom", file=sys.stderr, flush=True)
     sys.exit(3)
@@ -104,11 +104,11 @@ def test_successful_run_records_result_state_and_sandbox(env, orch):
     # the daemon's registry entry
     with open(os.path.join(env.runner.state_dir, tid + ".json")) as f:
         state = json.load(f)
-    assert state["unit"] == "agentos-agent-%s.service" % tid and state["sandboxed"] and state["task"] == tid
-    assert state["status"] == "running" and state["user"] == "agentos-agent"
-    # the sandbox mirrors `agentos spawn`, and the prompt is one argv element
+    assert state["unit"] == "nestlo-agent-%s.service" % tid and state["sandboxed"] and state["task"] == tid
+    assert state["status"] == "running" and state["user"] == "nestlo-agent"
+    # the sandbox mirrors `nestlo spawn`, and the prompt is one argv element
     seen = json.load(open(env.log))
-    assert seen["unit"] == ["--unit=agentos-agent-" + tid]
+    assert seen["unit"] == ["--unit=nestlo-agent-" + tid]
     for prop in ("NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes"):
         assert prop in seen["props"]
     assert any(p.startswith("ReadWritePaths=%s " % env.ws) for p in seen["props"])
@@ -249,7 +249,7 @@ def test_verify_passed_runs_in_its_own_sandbox_unit(env, orch):
     assert v["status"] == "passed" and v["exit_code"] == 0 and "check one" in v["output_tail"]
     assert "cwd " + env.ws in v["output_tail"]
     seen = json.load(open(env.log))  # the last systemd-run call is the verification
-    assert seen["unit"] == ["--unit=agentos-verify-" + tid]
+    assert seen["unit"] == ["--unit=nestlo-verify-" + tid]
     assert "NoNewPrivileges=yes" in seen["props"] and "ProtectSystem=strict" in seen["props"]
     assert seen["argv"][1:] == ["check one"] and os.path.isabs(seen["argv"][0])
 

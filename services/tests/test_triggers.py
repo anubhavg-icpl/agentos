@@ -5,9 +5,9 @@ import threading
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services import tasks as T
-from agentos_services import triggers as TR
+from nestlo_services import config as configmod
+from nestlo_services import tasks as T
+from nestlo_services import triggers as TR
 
 SECRET = b"s3cret-for-tests"
 REPO = "acme/widgets"
@@ -176,21 +176,21 @@ def test_repo_event_and_action_must_match():
 
 
 def test_label_rule_matches_the_applied_label_only():
-    h = Hook(make_cfg({"fix": rule(action=["labeled"], label="agentos")}))
+    h = Hook(make_cfg({"fix": rule(action=["labeled"], label="nestlo")}))
     wrong = issue_payload(action="labeled", label={"name": "bug"}, sender={"login": "m", "type": "User"})
     assert h.post(wrong)[1]["status"] == "ignored"
-    right = issue_payload(action="labeled", label={"name": "agentos"})
+    right = issue_payload(action="labeled", label={"name": "nestlo"})
     assert h.post(right)[1]["status"] == "ok"
 
 
 def test_label_on_comment_rule_checks_issue_labels():
-    cfg = make_cfg({"c": rule(event="issue_comment", action=["created"], label="agentos")})
+    cfg = make_cfg({"c": rule(event="issue_comment", action=["created"], label="nestlo")})
     h = Hook(cfg)
     payload = {"action": "created", "repository": {"full_name": REPO}, "sender": {"type": "User"},
                "issue": {"number": 3, "title": "t", "body": "b", "labels": [{"name": "other"}]},
                "comment": {"body": "go", "author_association": "OWNER", "user": {"login": "o"}}}
     assert h.post(payload, event="issue_comment")[1]["status"] == "ignored"
-    payload["issue"]["labels"].append({"name": "agentos"})
+    payload["issue"]["labels"].append({"name": "nestlo"})
     assert h.post(payload, event="issue_comment")[1]["status"] == "ok"
 
 
@@ -201,12 +201,12 @@ def comment_payload(body, assoc="COLLABORATOR", number=9):
 
 
 def test_command_prefix_and_argument_extraction():
-    cfg = make_cfg({"cmd": rule(event="issue_comment", action=["created"], command_prefix="/agentos",
+    cfg = make_cfg({"cmd": rule(event="issue_comment", action=["created"], command_prefix="/nestlo",
                                 prompt="Do: {comment.body} (issue {issue.number})")})
     h = Hook(cfg)
     assert h.post(comment_payload("please fix"), event="issue_comment")[1]["status"] == "ignored"
-    assert h.post(comment_payload("/agentosfix"), event="issue_comment")[1]["status"] == "ignored"
-    assert h.post(comment_payload("/agentos fix the tests"), event="issue_comment")[1]["status"] == "ok"
+    assert h.post(comment_payload("/nestlofix"), event="issue_comment")[1]["status"] == "ignored"
+    assert h.post(comment_payload("/nestlo fix the tests"), event="issue_comment")[1]["status"] == "ok"
     assert h.orch.bodies[-1]["prompt"] == "Do: fix the tests (issue 9)"
     assert T._KEY.fullmatch(h.orch.bodies[-1]["dedupe_key"])
 
@@ -266,24 +266,24 @@ def test_trusted_associations_are_configurable():
 
 
 def test_comment_trust_uses_the_commenter_not_the_issue_author():
-    cfg = make_cfg({"cmd": rule(event="issue_comment", action=["created"], command_prefix="/agentos")})
+    cfg = make_cfg({"cmd": rule(event="issue_comment", action=["created"], command_prefix="/nestlo")})
     h = Hook(cfg)
-    assert h.post(comment_payload("/agentos go", assoc="NONE"), event="issue_comment")[1]["status"] == "ignored"
-    assert h.post(comment_payload("/agentos go", assoc="MEMBER"), event="issue_comment")[1]["status"] == "ok"
+    assert h.post(comment_payload("/nestlo go", assoc="NONE"), event="issue_comment")[1]["status"] == "ignored"
+    assert h.post(comment_payload("/nestlo go", assoc="MEMBER"), event="issue_comment")[1]["status"] == "ok"
 
 
 def test_label_by_a_maintainer_approves_an_outsiders_issue():
-    cfg = make_cfg({"fix": rule(action=["labeled"], label="agentos")})
-    payload = issue_payload(assoc="NONE", action="labeled", label={"name": "agentos"})
+    cfg = make_cfg({"fix": rule(action=["labeled"], label="nestlo")})
+    payload = issue_payload(assoc="NONE", action="labeled", label={"name": "nestlo"})
     assert Hook(cfg).post(payload)[1]["status"] == "ok"
-    strict = make_cfg({"fix": rule(action=["labeled"], label="agentos", trust_labeler=False)})
+    strict = make_cfg({"fix": rule(action=["labeled"], label="nestlo", trust_labeler=False)})
     assert Hook(strict).post(payload)[1]["status"] == "ignored"
 
 
 def test_bots_never_trigger():
     h = Hook()
     payload = issue_payload()
-    payload["sender"] = {"login": "agentos[bot]", "type": "Bot"}
+    payload["sender"] = {"login": "nestlo[bot]", "type": "Bot"}
     assert h.post(payload)[1]["status"] == "ignored" and h.orch.bodies == []
 
 
@@ -371,7 +371,7 @@ def test_todays_orchestrator_rejects_unknown_fields_so_we_fall_back():
     assert set(orch.bodies[-1]) == {"agent", "workspace", "prompt", "origin"}
     # publish is requested out of band for the root task runner
     marker = json.loads(h.state.get("publish:task-2"))
-    assert marker["repo"] == REPO and marker["title"].startswith("AgentOS: ")
+    assert marker["repo"] == REPO and marker["title"].startswith("Nestlo: ")
 
 
 def test_gate_fails_closed_on_an_orchestrator_without_gates():

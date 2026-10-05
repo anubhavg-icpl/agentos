@@ -1,11 +1,11 @@
-# AgentOS circuit breaker - internal service binary
+# Nestlo circuit breaker - internal service binary
 # (Placeholder: this will be a Rust binary in production)
 { rustPlatform }:
 
 rustPlatform.buildRustPackage {
-  pname = "agentos-circuit-breaker";
+  pname = "nestlo-circuit-breaker";
   version = "0.1.0";
   src = ./.;
   cargoHash = "";
-  meta.mainProgram = "agentos-circuit-breaker";
+  meta.mainProgram = "nestlo-circuit-breaker";
 }

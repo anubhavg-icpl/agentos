@@ -1,11 +1,11 @@
-# AgentOS services: model gateway (agentos-model-gateway), agent daemon
-# (agentos-daemon), orchestrator (agentos-orchestrator, with its root helper
-# agentos-task-runner) and scheduler (agentos-scheduler). Source in
+# Nestlo services: model gateway (nestlo-model-gateway), agent daemon
+# (nestlo-daemon), orchestrator (nestlo-orchestrator, with its root helper
+# nestlo-task-runner) and scheduler (nestlo-scheduler). Source in
 # services/; the test suite runs at build time.
-{ lib, python3Packages, git, systemd }:
+{ lib, python3Packages, git, systemd, openssh }:
 
 python3Packages.buildPythonApplication {
-  pname = "agentos-services";
+  pname = "nestlo-services";
   version = "0.4.0";
   pyproject = true;
 
@@ -19,14 +19,15 @@ python3Packages.buildPythonApplication {
     python3Packages.fakeredis
     git # task runner tests drive real repositories and worktrees
     systemd # systemd-analyze, for the calendar tests
+    openssh # ssh-keygen: cloud API tokens are checked against OpenSSH's own signatures
   ];
 
-  pythonImportsCheck = [ "agentos_services" ];
+  pythonImportsCheck = [ "nestlo_services" ];
 
   meta = {
-    description = "AgentOS model gateway, agent daemon, orchestrator and scheduler";
+    description = "Nestlo model gateway, agent daemon, orchestrator and scheduler";
     license = lib.licenses.mit;
-    mainProgram = "agentos-model-gateway";
+    mainProgram = "nestlo-model-gateway";
     platforms = lib.platforms.linux;
   };
 }

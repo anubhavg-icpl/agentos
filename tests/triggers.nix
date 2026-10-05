@@ -13,7 +13,7 @@
 #     with the token, which the agent user and the logs never see
 #   a replayed delivery and an untrusted author create no second task
 #   hostile issue text reaches the agent as plain data
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 let
   # Mock of the GitHub REST API: records every request, answers POST .../pulls
@@ -55,10 +55,10 @@ let
     name = "fake-task-agent";
     runtimeInputs = [ pkgs.coreutils ];
     text = ''
-      echo "user=$(id -un) task=$AGENTOS_TASK_ID branch=$AGENTOS_BRANCH"
+      echo "user=$(id -un) task=$NESTLO_TASK_ID branch=$NESTLO_BRANCH"
       echo "prompt=[$1]"
       echo "env=$(env | sort | tr '\n' ' ')"
-      printf '%s\n' "$1" > "change-$AGENTOS_TASK_ID.txt"
+      printf '%s\n' "$1" > "change-$NESTLO_TASK_ID.txt"
     '';
   };
 
@@ -66,11 +66,11 @@ let
   githubToken = "ghp_test_token_must_stay_private";
 in
 pkgs.testers.runNixOSTest {
-  name = "agentos-triggers";
+  name = "nestlo-triggers";
   globalTimeout = 1800;
 
   nodes.machine = { ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 3072;
     virtualisation.cores = 2;
@@ -82,7 +82,7 @@ pkgs.testers.runNixOSTest {
     users.users.ops.isNormalUser = true;
     security.sudo.wheelNeedsPassword = false;
 
-    agentos = {
+    nestlo = {
       runtime = {
         enable = true;
         operators = [ "admin" "ops" ];
@@ -97,7 +97,7 @@ pkgs.testers.runNixOSTest {
         enable = true;
         autoPR = false; # only the rule's `publish = true` asks for a PR
         publish = {
-          tokenFile = "/etc/agentos-test/github-token";
+          tokenFile = "/etc/nestlo-test/github-token";
           apiUrl = "http://127.0.0.1:9998";
           repos."acme/widgets" = {
             url = "/var/lib/test-remote.git";
@@ -107,7 +107,7 @@ pkgs.testers.runNixOSTest {
       };
       triggers = {
         enable = true;
-        secretFile = "/etc/agentos-test/webhook-secret";
+        secretFile = "/etc/nestlo-test/webhook-secret";
         rules.fix-issue = {
           event = "issues";
           action = [ "opened" ];
@@ -121,11 +121,11 @@ pkgs.testers.runNixOSTest {
     };
 
     # root-only, like a real secret
-    environment.etc."agentos-test/webhook-secret" = {
+    environment.etc."nestlo-test/webhook-secret" = {
       text = webhookSecret;
       mode = "0400";
     };
-    environment.etc."agentos-test/github-token" = {
+    environment.etc."nestlo-test/github-token" = {
       text = githubToken;
       mode = "0400";
     };
@@ -174,17 +174,17 @@ pkgs.testers.runNixOSTest {
         return int(code), text
 
     def tasks(origin):
-        data = json.loads(ops("agentos-task list --json"))
+        data = json.loads(ops("nestlo-task list --json"))
         return [t for t in data["tasks"] if t.get("origin") == origin]
 
     machine.wait_for_unit("multi-user.target")
-    for unit in ["redis-agentos.service", "agentos-daemon.service", "agentos-orchestrator.service",
-                 "agentos-triggers.service", "mock-github.service"]:
+    for unit in ["redis-nestlo.service", "nestlo-daemon.service", "nestlo-orchestrator.service",
+                 "nestlo-triggers.service", "mock-github.service"]:
         machine.wait_for_unit(unit)
     machine.wait_for_open_port(8787)
     machine.wait_for_open_port(9998)
-    machine.wait_until_succeeds("test -S /run/agentos-orchestrator/orchestrator.sock")
-    machine.succeed("su - admin -c 'agentos workspace create widgets'")
+    machine.wait_until_succeeds("test -S /run/nestlo-orchestrator/orchestrator.sock")
+    machine.succeed("su - admin -c 'nestlo workspace create widgets'")
     machine.succeed("git init --bare -q -b main /var/lib/test-remote.git")
 
     with subtest("unsigned, badly signed and wrongly signed webhooks get 401 and create nothing"):
@@ -201,10 +201,10 @@ pkgs.testers.runNixOSTest {
         (task,) = tasks("gh:acme/widgets#42")
         tid = task["id"]
         machine.wait_until_succeeds(
-            f"su - ops -c 'agentos-task show {tid} --json' | jq -e '.status == \"succeeded\"'",
+            f"su - ops -c 'nestlo-task show {tid} --json' | jq -e '.status == \"succeeded\"'",
             timeout=240,
         )
-        done = json.loads(ops(f"agentos-task show {tid} --json"))
+        done = json.loads(ops(f"nestlo-task show {tid} --json"))
         print(done)
         assert "Fix #42: Crash on start" in done["prompt"], done
         assert done["result"]["pr_url"] == "http://github.test/acme/widgets/pull/1", done
@@ -218,11 +218,11 @@ pkgs.testers.runNixOSTest {
         assert reqs[0]["body"]["head"] == f"agent/{tid}" and reqs[0]["body"]["base"] == "main", reqs
 
     with subtest("the token never reaches the agent, its log or the task record"):
-        log = ops(f"agentos-task logs {tid}")
+        log = ops(f"nestlo-task logs {tid}")
         assert TOKEN not in log and TOKEN not in json.dumps(done), log
-        machine.fail("su -s /bin/sh agentos-agent -c 'cat /etc/agentos-test/github-token'")
-        machine.fail("su -s /bin/sh agentos -c 'cat /etc/agentos-test/github-token'")
-        machine.fail("su -s /bin/sh agentos -c 'cat /etc/agentos-test/webhook-secret'")
+        machine.fail("su -s /bin/sh nestlo-agent -c 'cat /etc/nestlo-test/github-token'")
+        machine.fail("su -s /bin/sh nestlo -c 'cat /etc/nestlo-test/github-token'")
+        machine.fail("su -s /bin/sh nestlo -c 'cat /etc/nestlo-test/webhook-secret'")
 
     with subtest("a replayed delivery and an untrusted author create no task"):
         code, text = post(body, "delivery-0001")
@@ -238,10 +238,10 @@ pkgs.testers.runNixOSTest {
         assert code == 200, text
         (t,) = tasks("gh:acme/widgets#44")
         machine.wait_until_succeeds(
-            f"su - ops -c 'agentos-task show {t['id']} --json' | jq -e '.status == \"succeeded\" or .status == \"failed\"'",
+            f"su - ops -c 'nestlo-task show {t['id']} --json' | jq -e '.status == \"succeeded\" or .status == \"failed\"'",
             timeout=240,
         )
-        assert "prompt=[Fix #44: $(touch /tmp/pwned)" in ops(f"agentos-task logs {t['id']}")
+        assert "prompt=[Fix #44: $(touch /tmp/pwned)" in ops(f"nestlo-task logs {t['id']}")
         machine.fail("test -e /tmp/pwned")
   '';
 }

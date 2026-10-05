@@ -2,7 +2,7 @@
 # only) hooks that trim tool output before the agent reads it.
 #
 # The skills are plain Markdown. The hooks are node scripts; they are shipped
-# under share/agentos/chisle/ with the layout they expect (hooks/ next to
+# under share/nestlo/chisle/ with the layout they expect (hooks/ next to
 # skills/chisle/SKILL.md) and exposed as `passthru.claudeHooks`, a Claude Code
 # `hooks` settings fragment that points at the store paths. The NixOS module
 # merges it into Claude Code's managed settings; nothing is written to ~/.claude
@@ -42,13 +42,13 @@ let
   # hooks/ must sit next to skills/chisle/SKILL.md: chisle-activate.js reads
   # ../skills/chisle/SKILL.md relative to itself.
   placed = stdenvNoCC.mkDerivation {
-    pname = "agentos-chisle-hooks";
+    pname = "nestlo-chisle-hooks";
     version = "3.7.0";
     inherit src;
     dontBuild = true;
     installPhase = ''
       runHook preInstall
-      d=$out/share/agentos/chisle
+      d=$out/share/nestlo/chisle
       mkdir -p $d/skills
       cp -r hooks $d/hooks
       cp -r skills/chisle $d/skills/chisle
@@ -58,7 +58,7 @@ let
     '';
   };
 
-  hooksDir = "${placed}/share/agentos/chisle/hooks";
+  hooksDir = "${placed}/share/nestlo/chisle/hooks";
 
   cmd = script: "CHISLE_UPDATE_CHECK=0 ${node} ${hooksDir}/${script}; exit 0";
 
@@ -78,9 +78,9 @@ let
 in
 base.overrideAttrs (old: {
   installPhase = old.installPhase + ''
-    mkdir -p $out/share/agentos/chisle
-    ln -s ${placed}/share/agentos/chisle/hooks $out/share/agentos/chisle/hooks
-    ln -s ${placed}/share/agentos/chisle/skills $out/share/agentos/chisle/skills
+    mkdir -p $out/share/nestlo/chisle
+    ln -s ${placed}/share/nestlo/chisle/hooks $out/share/nestlo/chisle/hooks
+    ln -s ${placed}/share/nestlo/chisle/skills $out/share/nestlo/chisle/skills
   '';
   passthru = old.passthru // {
     inherit claudeHooks;

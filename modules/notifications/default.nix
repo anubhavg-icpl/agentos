@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Notifications Module
+# Nestlo Notifications Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # The agent daemon forwards agent events to Slack, Discord or a generic
@@ -13,12 +13,12 @@
 #
 # Webhook URLs are secrets, so they are read from files at send time (for
 # example sops secrets under /run/secrets) instead of being put in the
-# world-readable Nix store. The agentos user must be able to read them.
+# world-readable Nix store. The nestlo user must be able to read them.
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.notifications;
+  cfg = config.nestlo.notifications;
 
   eventMap = {
     agent-started = [ "agent_started" ];
@@ -34,7 +34,7 @@ let
     ++ lib.optional (cfg.webhookUrl != null) { kind = "webhook"; url = cfg.webhookUrl; };
 
   notifyCli = pkgs.writeShellApplication {
-    name = "agentos-notify";
+    name = "nestlo-notify";
     runtimeInputs = [ pkgs.curl pkgs.jq ];
     text = ''
       targets='${builtins.toJSON targets}'
@@ -42,9 +42,9 @@ let
       post() {
         local kind="$1" url="$2" text="$3" body
         case "$kind" in
-          slack)   body=$(jq -cn --arg t "AgentOS: $text" '{text: $t}') ;;
-          discord) body=$(jq -cn --arg t "AgentOS: $text" '{content: $t}') ;;
-          *)       body=$(jq -cn --arg t "$text" '{type: "test", text: $t, source: "agentos"}') ;;
+          slack)   body=$(jq -cn --arg t "Nestlo: $text" '{text: $t}') ;;
+          discord) body=$(jq -cn --arg t "Nestlo: $text" '{content: $t}') ;;
+          *)       body=$(jq -cn --arg t "$text" '{type: "test", text: $t, source: "nestlo"}') ;;
         esac
         curl -fsS -m 10 -X POST -H 'Content-Type: application/json' --data "$body" "$url" >/dev/null
       }
@@ -72,7 +72,7 @@ let
           done
           ;;
         *)
-          echo "Usage: agentos-notify <status|test [message]>" >&2
+          echo "Usage: nestlo-notify <status|test [message]>" >&2
           exit 1
           ;;
       esac
@@ -80,8 +80,8 @@ let
   };
 in
 {
-  options.agentos.notifications = {
-    enable = lib.mkEnableOption "AgentOS notifications";
+  options.nestlo.notifications = {
+    enable = lib.mkEnableOption "Nestlo notifications";
 
     slackWebhookFile = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -105,7 +105,7 @@ in
     webhookUrl = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      example = "http://127.0.0.1:9000/agentos";
+      example = "http://127.0.0.1:9000/nestlo";
       description = "Generic webhook URL (stored in the Nix store; use webhookUrlFile for secret URLs)";
     };
 
@@ -117,7 +117,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    agentos.services.settings.notify = {
+    nestlo.services.settings.notify = {
       events = lib.unique (lib.concatMap (e: eventMap.${e}) cfg.notifyOn);
       inherit targets;
     };

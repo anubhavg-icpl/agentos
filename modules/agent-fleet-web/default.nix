@@ -1,6 +1,6 @@
 # agent-fleet web UIs (in-browser chat and fleet hub)
 #
-# Serves the static site of pkgs.agentos.agent-fleet-web on loopback with a
+# Serves the static site of pkgs.nestlo.agent-fleet-web on loopback with a
 # small hardened Python server (server.py): correct content types for
 # .wasm/.mjs/.webmanifest and, for the chat, the COOP/COEP headers wllama
 # needs for multi-threaded inference. No authentication: it only serves
@@ -13,8 +13,8 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.dashboard.agentFleetWeb;
-  web = pkgs.agentos.agent-fleet-web;
+  cfg = config.nestlo.dashboard.agentFleetWeb;
+  web = pkgs.nestlo.agent-fleet-web;
   site = "${web}/share/agent-fleet";
   url = "http://127.0.0.1:${toString cfg.port}";
 
@@ -23,7 +23,7 @@ let
     (builtins.readFile ./server.py);
 in
 {
-  options.agentos.dashboard.agentFleetWeb = {
+  options.nestlo.dashboard.agentFleetWeb = {
     enable = lib.mkEnableOption "the agent-fleet chat and hub web UIs on loopback (in-browser llama.cpp chat; models download from huggingface.co)";
 
     port = lib.mkOption {
@@ -85,15 +85,15 @@ in
         };
       };
 
-      # Shown as a link in the AgentOS dashboard header (when it runs)
-      agentos.services.settings.dashboard.links = [
+      # Shown as a link in the Nestlo dashboard header (when it runs)
+      nestlo.services.settings.dashboard.links = [
         { name = "agent-fleet chat"; url = "${url}/chat/"; }
         { name = "agent-fleet hub"; url = "${url}/hub/"; }
       ];
     })
 
     # Launcher for the desktop edition
-    (lib.mkIf (cfg.enable && config.agentos.desktop.enable) {
+    (lib.mkIf (cfg.enable && config.nestlo.desktop.enable) {
       environment.systemPackages = [
         (pkgs.makeDesktopItem {
           name = "agent-fleet-chat";
@@ -108,7 +108,7 @@ in
     })
 
     (lib.mkIf cfg.deployTool {
-      environment.systemPackages = [ pkgs.agentos.agent-fleet-deploy ];
+      environment.systemPackages = [ pkgs.nestlo.agent-fleet-deploy ];
     })
   ];
 }

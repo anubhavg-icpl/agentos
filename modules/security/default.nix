@@ -1,21 +1,21 @@
-# AgentOS security module
+# Nestlo security module
 # Capability-based auth, egress firewall, secret management, audit logging
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.security;
+  cfg = config.nestlo.security;
   deny = cfg.defaultEgress == "deny";
   gatewayOnly = lib.unique cfg.gatewayOnlyDomains;
   allowedDomains = lib.unique (cfg.allowedEgressDomains ++ gatewayOnly);
   # The agent-user rules need the user to exist
-  sandbox = config.agentos.runtime.enable;
+  sandbox = config.nestlo.runtime.enable;
   # Container-isolated agents have their own network namespace on the
-  # agentos0 bridge; their traffic is forwarded (and NATed), not local
-  containers = config.agentos.networking.enable;
+  # nestlo0 bridge; their traffic is forwarded (and NATed), not local
+  containers = config.nestlo.networking.enable;
 in
 {
-  options.agentos.security = {
-    enable = lib.mkEnableOption "AgentOS security layer";
+  options.nestlo.security = {
+    enable = lib.mkEnableOption "Nestlo security layer";
 
     defaultEgress = lib.mkOption {
       type = lib.types.enum [ "deny" "allow" ];
@@ -64,8 +64,8 @@ in
       type = lib.types.listOf lib.types.str;
       default = [ ];
       description = ''
-        Hosts that sandboxed agents (the agentos-agent user) may only reach
-        through the model gateway. Set from agentos.networking.providers.
+        Hosts that sandboxed agents (the nestlo-agent user) may only reach
+        through the model gateway. Set from nestlo.networking.providers.
       '';
     };
 
@@ -83,7 +83,7 @@ in
 
     auditLogPath = lib.mkOption {
       type = lib.types.path;
-      default = /var/log/agentos/audit;
+      default = /var/log/nestlo/audit;
       description = "Where audit logs are stored";
     };
   };
@@ -101,7 +101,7 @@ in
       enable = true;
       rules = [
         "-a exit,always -F arch=b64 -S execve"  # log all command exec
-        "-w /var/lib/agentos -p wa"              # watch agent workspaces
+        "-w /var/lib/nestlo -p wa"              # watch agent workspaces
       ];
     };
 
@@ -129,7 +129,7 @@ in
     # All DNS goes through a local dnsmasq. With defaultEgress = "deny" it
     # only forwards queries for allowed domains (and their subdomains),
     # answers NXDOMAIN for everything else, and adds every resolved address
-    # to the `agentos-egress` ipset. The firewall then only lets outbound
+    # to the `nestlo-egress` ipset. The firewall then only lets outbound
     # traffic through to addresses in that set.
     services.dnsmasq = {
       enable = true;
@@ -145,9 +145,9 @@ in
           then lib.concatMap (d: map (up: "/${d}/${up}") cfg.upstreamDNS) allowedDomains
           else cfg.upstreamDNS;
         ipset =
-          lib.optional deny "/${lib.concatStringsSep "/" allowedDomains}/agentos-egress"
+          lib.optional deny "/${lib.concatStringsSep "/" allowedDomains}/nestlo-egress"
           ++ lib.optional (gatewayOnly != [ ])
-            "/${lib.concatStringsSep "/" gatewayOnly}/${lib.optionalString deny "agentos-egress,"}agentos-llm";
+            "/${lib.concatStringsSep "/" gatewayOnly}/${lib.optionalString deny "nestlo-egress,"}nestlo-llm";
       } // lib.optionalAttrs deny {
         address = "/#/";
       };
@@ -165,83 +165,83 @@ in
       extraPackages = [ pkgs.ipset ];
 
       extraCommands = ''
-        ipset create agentos-egress hash:ip family inet -exist
-        ipset create agentos-llm hash:ip family inet -exist
+        ipset create nestlo-egress hash:ip family inet -exist
+        ipset create nestlo-llm hash:ip family inet -exist
 
         for ipt in iptables ip6tables; do
-          $ipt -D OUTPUT -j agentos-egress 2>/dev/null || true
-          $ipt -F agentos-egress 2>/dev/null || $ipt -N agentos-egress
-          $ipt -A OUTPUT -j agentos-egress
-          $ipt -A agentos-egress -o lo -j RETURN
-          $ipt -A agentos-egress -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+          $ipt -D OUTPUT -j nestlo-egress 2>/dev/null || true
+          $ipt -F nestlo-egress 2>/dev/null || $ipt -N nestlo-egress
+          $ipt -A OUTPUT -j nestlo-egress
+          $ipt -A nestlo-egress -o lo -j RETURN
+          $ipt -A nestlo-egress -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
         done
       '' + lib.optionalString sandbox ''
         # Sandboxed agents: provider APIs only through the model gateway,
         # DNS only through the local resolver, no IPv6
-        iptables -A agentos-egress -m owner --uid-owner agentos-agent -m set --match-set agentos-llm dst -j REJECT
-        iptables -A agentos-egress -m owner --uid-owner agentos-agent -p udp --dport 53 -j REJECT
-        iptables -A agentos-egress -m owner --uid-owner agentos-agent -p tcp --dport 53 -j REJECT
-        ip6tables -A agentos-egress -m owner --uid-owner agentos-agent -j REJECT
+        iptables -A nestlo-egress -m owner --uid-owner nestlo-agent -m set --match-set nestlo-llm dst -j REJECT
+        iptables -A nestlo-egress -m owner --uid-owner nestlo-agent -p udp --dport 53 -j REJECT
+        iptables -A nestlo-egress -m owner --uid-owner nestlo-agent -p tcp --dport 53 -j REJECT
+        ip6tables -A nestlo-egress -m owner --uid-owner nestlo-agent -j REJECT
       '' + lib.optionalString containers ''
-        # Container-isolated agents (agentos0 bridge): the same egress policy
+        # Container-isolated agents (nestlo0 bridge): the same egress policy
         # in the FORWARD path. They may not reach provider APIs directly,
         # each other, or (with egress denied) anything outside the allowlist;
         # the host itself is limited to the gateway and DNS (networking module).
-        iptables -D FORWARD -i agentos0 -j agentos-fwd 2>/dev/null || true
-        iptables -F agentos-fwd 2>/dev/null || iptables -N agentos-fwd
-        iptables -I FORWARD 1 -i agentos0 -j agentos-fwd
-        iptables -A agentos-fwd -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-        iptables -A agentos-fwd -m set --match-set agentos-llm dst -j REJECT
+        iptables -D FORWARD -i nestlo0 -j nestlo-fwd 2>/dev/null || true
+        iptables -F nestlo-fwd 2>/dev/null || iptables -N nestlo-fwd
+        iptables -I FORWARD 1 -i nestlo0 -j nestlo-fwd
+        iptables -A nestlo-fwd -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+        iptables -A nestlo-fwd -m set --match-set nestlo-llm dst -j REJECT
         # Default deny: nothing back onto the bridge (other containers), the
         # cloud metadata service, the LAN or any non-public range, whatever
         # an allowlisted name resolves to. Gateway and DNS are INPUT traffic
-        # (agentos-in) and never reach this chain.
-        iptables -A agentos-fwd -o agentos0 -j REJECT
-        iptables -A agentos-fwd -d 169.254.169.254 -j REJECT
-        iptables -A agentos-fwd -d ${config.agentos.networking.agentNetCIDR} -j REJECT
+        # (nestlo-in) and never reach this chain.
+        iptables -A nestlo-fwd -o nestlo0 -j REJECT
+        iptables -A nestlo-fwd -d 169.254.169.254 -j REJECT
+        iptables -A nestlo-fwd -d ${config.nestlo.networking.agentNetCIDR} -j REJECT
         for net in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
                    172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/3; do
-          iptables -A agentos-fwd -d $net -j REJECT
+          iptables -A nestlo-fwd -d $net -j REJECT
         done
       '' + lib.optionalString (containers && deny) ''
-        iptables -A agentos-fwd -m set --match-set agentos-egress dst -j RETURN
-        iptables -A agentos-fwd -m limit --limit 5/min -j LOG --log-prefix "agentos-fwd-deny: "
-        iptables -A agentos-fwd -j REJECT
+        iptables -A nestlo-fwd -m set --match-set nestlo-egress dst -j RETURN
+        iptables -A nestlo-fwd -m limit --limit 5/min -j LOG --log-prefix "nestlo-fwd-deny: "
+        iptables -A nestlo-fwd -j REJECT
       '' + lib.optionalString (containers && !deny) ''
-        iptables -A agentos-fwd -j RETURN
+        iptables -A nestlo-fwd -j RETURN
       '' + lib.optionalString containers ''
-        ip6tables -D FORWARD -i agentos0 -j REJECT 2>/dev/null || true
-        ip6tables -I FORWARD 1 -i agentos0 -j REJECT
+        ip6tables -D FORWARD -i nestlo0 -j REJECT 2>/dev/null || true
+        ip6tables -I FORWARD 1 -i nestlo0 -j REJECT
       '' + lib.optionalString deny ''
         for ipt in iptables ip6tables; do
           # dnsmasq may talk to the upstream resolvers
-          $ipt -A agentos-egress -p udp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
-          $ipt -A agentos-egress -p tcp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
+          $ipt -A nestlo-egress -p udp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
+          $ipt -A nestlo-egress -p tcp --dport 53 -m owner --uid-owner dnsmasq -j RETURN
           # time sync
-          $ipt -A agentos-egress -p udp --dport 123 -j RETURN
+          $ipt -A nestlo-egress -p udp --dport 123 -j RETURN
         done
         # DHCP
-        iptables -A agentos-egress -p udp --dport 67:68 -j RETURN
-        ip6tables -A agentos-egress -p udp --dport 546:547 -j RETURN
-        ip6tables -A agentos-egress -p ipv6-icmp -j RETURN
+        iptables -A nestlo-egress -p udp --dport 67:68 -j RETURN
+        ip6tables -A nestlo-egress -p udp --dport 546:547 -j RETURN
+        ip6tables -A nestlo-egress -p ipv6-icmp -j RETURN
         # Addresses resolved for allowed domains
-        iptables -A agentos-egress -m set --match-set agentos-egress dst -j RETURN
+        iptables -A nestlo-egress -m set --match-set nestlo-egress dst -j RETURN
 
         for ipt in iptables ip6tables; do
-          $ipt -A agentos-egress -m limit --limit 5/min -j LOG --log-prefix "agentos-egress-deny: "
-          $ipt -A agentos-egress -j REJECT
+          $ipt -A nestlo-egress -m limit --limit 5/min -j LOG --log-prefix "nestlo-egress-deny: "
+          $ipt -A nestlo-egress -j REJECT
         done
       '';
 
       extraStopCommands = ''
-        iptables -D FORWARD -i agentos0 -j agentos-fwd 2>/dev/null || true
-        iptables -F agentos-fwd 2>/dev/null || true
-        iptables -X agentos-fwd 2>/dev/null || true
-        ip6tables -D FORWARD -i agentos0 -j REJECT 2>/dev/null || true
+        iptables -D FORWARD -i nestlo0 -j nestlo-fwd 2>/dev/null || true
+        iptables -F nestlo-fwd 2>/dev/null || true
+        iptables -X nestlo-fwd 2>/dev/null || true
+        ip6tables -D FORWARD -i nestlo0 -j REJECT 2>/dev/null || true
         for ipt in iptables ip6tables; do
-          $ipt -D OUTPUT -j agentos-egress 2>/dev/null || true
-          $ipt -F agentos-egress 2>/dev/null || true
-          $ipt -X agentos-egress 2>/dev/null || true
+          $ipt -D OUTPUT -j nestlo-egress 2>/dev/null || true
+          $ipt -F nestlo-egress 2>/dev/null || true
+          $ipt -X nestlo-egress 2>/dev/null || true
         done
       '';
     };
@@ -251,13 +251,13 @@ in
       "d ${toString cfg.auditLogPath} 0700 root root"
     ];
 
-    systemd.services.agentos-audit-rotator = lib.mkIf cfg.enableAuditLog {
-      description = "Rotate AgentOS audit logs";
+    systemd.services.nestlo-audit-rotator = lib.mkIf cfg.enableAuditLog {
+      description = "Rotate Nestlo audit logs";
       startAt = "daily";
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.logrotate}/sbin/logrotate --state=/var/lib/agentos/logrotate.state ${
-          pkgs.writeText "agentos-logrotate" ''
+        ExecStart = "${pkgs.logrotate}/sbin/logrotate --state=/var/lib/nestlo/logrotate.state ${
+          pkgs.writeText "nestlo-logrotate" ''
             ${toString cfg.auditLogPath}/*.log {
               daily
               rotate 30

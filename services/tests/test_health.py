@@ -7,10 +7,10 @@ import threading
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services import health as H
-from agentos_services.dashboard import serve as serve_dashboard
-from agentos_services.unixapi import call, serve_unix
+from nestlo_services import config as configmod
+from nestlo_services import health as H
+from nestlo_services.dashboard import serve as serve_dashboard
+from nestlo_services.unixapi import call, serve_unix
 from conftest import request
 from orchfix import cfg, clock, orch, runtime, systemctl, taskstore  # noqa: F401
 from test_daemon import make_daemon  # noqa: F401
@@ -35,7 +35,7 @@ def test_sd_notify_sends_datagram(notify_socket):
 
 def test_sd_notify_abstract_socket():
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-    name = "\0agentos-test-%d" % os.getpid()
+    name = "\0nestlo-test-%d" % os.getpid()
     sock.bind(name)
     sock.settimeout(2)
     try:
@@ -145,9 +145,9 @@ def test_gateway_metrics_count_responses_and_skip_probes(make_gateway):
     status, _, raw = request(gw, "GET", "/metrics")
     text = raw.decode()
     assert status == 200
-    assert 'agentos_gateway_responses_total{code="404"} 1' in text
+    assert 'nestlo_gateway_responses_total{code="404"} 1' in text
     assert 'code="200"' not in text                            # probes are not counted
-    assert "agentos_gateway_loop_detections_total 0" in text
+    assert "nestlo_gateway_loop_detections_total 0" in text
 
 
 # ── daemon ───────────────────────────────────────────────────────────────
@@ -156,10 +156,10 @@ def test_daemon_health_and_operational_metrics(make_daemon, store, tmp_path):
     assert daemon.health.respond("readyz")[0] == 200
     store.open_circuit("alice", 300)
     text = daemon.metrics()
-    assert "agentos_redis_up 1" in text
-    assert 'agentos_circuit_open{agent="alice"} 1' in text
-    assert "agentos_orchestrator_queue_oldest_age_seconds 0.0" in text
-    assert "agentos_state_disk_used_ratio" in text
+    assert "nestlo_redis_up 1" in text
+    assert 'nestlo_circuit_open{agent="alice"} 1' in text
+    assert "nestlo_orchestrator_queue_oldest_age_seconds 0.0" in text
+    assert "nestlo_state_disk_used_ratio" in text
 
 
 def test_daemon_readyz_fails_when_reaper_stalls(make_daemon):
@@ -176,7 +176,7 @@ def test_daemon_metrics_report_redis_down(make_daemon, store):
         raise ConnectionError("gone")
 
     store.r.ping = down
-    assert "agentos_redis_up 0" in daemon.metrics()
+    assert "nestlo_redis_up 0" in daemon.metrics()
 
 
 # ── dashboard ────────────────────────────────────────────────────────────

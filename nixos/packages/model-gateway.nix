@@ -2,9 +2,9 @@
 { rustPlatform }:
 
 rustPlatform.buildRustPackage {
-  pname = "agentos-model-gateway";
+  pname = "nestlo-model-gateway";
   version = "0.1.0";
   src = ./.;
   cargoHash = "";
-  meta.mainProgram = "agentos-model-gateway";
+  meta.mainProgram = "nestlo-model-gateway";
 }

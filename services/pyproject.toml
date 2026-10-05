@@ -3,36 +3,41 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentos-services"
+name = "nestlo-services"
 version = "0.4.0"
-description = "AgentOS model gateway, agent daemon, orchestrator and scheduler"
+description = "Nestlo model gateway, agent daemon, orchestrator and scheduler"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = ["redis>=5", "cryptography>=41"]
 
 [project.scripts]
-agentos-audit = "agentos_services.audit:main"
-agentos-model-gateway = "agentos_services.gateway:main"
-agentos-daemon = "agentos_services.daemon:main"
-agentos-dashboard = "agentos_services.dashboard:main"
-agentos-herdr = "agentos_services.herdr_bridge:main"
-agentos-herdr-plugins = "agentos_services.herdr_plugins:main"
-agentos-fleet = "agentos_services.fleet:main"
-agentos-market = "agentos_services.market:main"
-agentos-mcp-bus = "agentos_services.mcp_bus:main"
-agentos-gpu = "agentos_services.gpu:main"
-agentos-provenance = "agentos_services.provenance:main"
-agentos-netns = "agentos_services.netns:main"
-agentos-orchestrator = "agentos_services.orchestrator:main"
-agentos-task-runner = "agentos_services.taskrunner:main"
-agentos-scheduler = "agentos_services.scheduler:main"
-agentos-triggers = "agentos_services.triggers:main"
-agentos-factoryd = "agentos_services.factory:main"
-agentos-factory = "agentos_services.factory_cli:main"
-agentos-factory-scope = "agentos_services.scopecheck:main"
+nestlo-audit = "nestlo_services.audit:main"
+nestlo-model-gateway = "nestlo_services.gateway:main"
+nestlo-daemon = "nestlo_services.daemon:main"
+nestlo-a2a = "nestlo_services.a2a:main"
+nestlo-dashboard = "nestlo_services.dashboard:main"
+nestlo-herdr = "nestlo_services.herdr_bridge:main"
+nestlo-herdr-plugins = "nestlo_services.herdr_plugins:main"
+nestlo-tuios-bridge = "nestlo_services.tuios_bridge:main"
+nestlo-fleet = "nestlo_services.fleet:main"
+nestlo-market = "nestlo_services.market:main"
+nestlo-mcp-bus = "nestlo_services.mcp_bus:main"
+nestlo-gpu = "nestlo_services.gpu:main"
+nestlo-provenance = "nestlo_services.provenance:main"
+nestlo-netns = "nestlo_services.netns:main"
+nestlo-orchestrator = "nestlo_services.orchestrator:main"
+nestlo-task-runner = "nestlo_services.taskrunner:main"
+nestlo-scheduler = "nestlo_services.scheduler:main"
+nestlo-triggers = "nestlo_services.triggers:main"
+nestlo-factoryd = "nestlo_services.factory:main"
+nestlo-factory = "nestlo_services.factory_cli:main"
+nestlo-factory-scope = "nestlo_services.scopecheck:main"
+nestlo-cloudd = "nestlo_services.cloud.server:main"
+nestlo-cloud-vmd = "nestlo_services.cloud.vmd:main"
+nestlo-cloud-lobby = "nestlo_services.cloud.lobby:main"
 
 [tool.setuptools.packages.find]
-include = ["agentos_services*"]
+include = ["nestlo_services*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

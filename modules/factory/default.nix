@@ -1,18 +1,18 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Factory Module
+# Nestlo Factory Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# A software factory on top of the orchestrator (services/agentos_services/
+# A software factory on top of the orchestrator (services/nestlo_services/
 # factory.py, docs/factory.md). A work item (a GitHub issue or one made with
-# `agentos-factory`) flows through one line:
+# `nestlo-factory`) flows through one line:
 #
 #   planner -> builder -> verify -> reviewer -> fix loop -> QA against the
 #   acceptance criteria -> pull request (supervised) or auto-merge (dark)
 #
 #   - every step is an orchestrator task, so it is sandboxed, metered by the
 #     gateway and budgeted like any other task
-#   - the service runs as `agentos` and only talks to the orchestrator
-#     socket, the control-plane Redis and its own socket (group agentos)
+#   - the service runs as `nestlo` and only talks to the orchestrator
+#     socket, the control-plane Redis and its own socket (group nestlo)
 #   - `dark` merges without a human; it is refused unless the repository
 #     allows auto-merge, there is a verify command and a QA role, and a
 #     human plan approval or a hard scope guard bounds the change
@@ -20,10 +20,10 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.factory;
-  orch = config.agentos.orchestration;
-  publish = config.agentos.git-automation.publish;
-  obs = config.agentos.observability;
+  cfg = config.nestlo.factory;
+  orch = config.nestlo.orchestration;
+  publish = config.nestlo.git-automation.publish;
+  obs = config.nestlo.observability;
 
   repoType = lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+";
 
@@ -32,7 +32,7 @@ let
       agent = lib.mkOption {
         type = lib.types.str;
         default = defaults.agent or "claude";
-        description = "Agent that plays the role; it needs an entry in agentos.orchestration.taskCommands";
+        description = "Agent that plays the role; it needs an entry in nestlo.orchestration.taskCommands";
       };
       model = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
@@ -74,12 +74,12 @@ let
       repo = lib.mkOption {
         type = repoType;
         example = "acme/widgets";
-        description = "Repository (owner/name) the line delivers to; it must be listed in agentos.git-automation.publish.repos";
+        description = "Repository (owner/name) the line delivers to; it must be listed in nestlo.git-automation.publish.repos";
       };
       workspace = lib.mkOption {
         type = lib.types.str;
         example = "widgets";
-        description = "Workspace (name or path under agentos.runtime.workspaceRoot) holding a checkout of the repository";
+        description = "Workspace (name or path under nestlo.runtime.workspaceRoot) holding a checkout of the repository";
       };
       mode = lib.mkOption {
         type = lib.types.enum [ "supervised" "approval-first" "dark" ];
@@ -91,7 +91,7 @@ let
           also waits is set by `planApproval`.
           `dark`: after verify, review and QA pass, the pull request is
           merged without a human. Needs `allowAutoMerge` on the repository
-          under agentos.git-automation.publish.repos, a non-empty `verify`,
+          under nestlo.git-automation.publish.repos, a non-empty `verify`,
           a `qa` role, and either `planApproval != "never"` or
           `enforceScope = true`.
         '';
@@ -176,9 +176,9 @@ let
         example = lib.literalExpression "{ }";
         description = ''
           Take GitHub issues as items. Set to `{ }` for the defaults. A rule
-          for agentos.triggers is generated (issues opened/labeled with the
+          for nestlo.triggers is generated (issues opened/labeled with the
           label, `factory = "<line>"`) unless you define
-          `agentos.triggers.rules.factory-<line>` yourself; agentos.triggers
+          `nestlo.triggers.rules.factory-<line>` yourself; nestlo.triggers
           must be enabled for it to take effect.
         '';
       };
@@ -219,15 +219,15 @@ let
 
   # The CLI is a console script of the services package
   factoryCli = pkgs.writeShellApplication {
-    name = "agentos-factory";
+    name = "nestlo-factory";
     text = ''
-      exec ${pkgs.agentos.services}/bin/agentos-factory "$@"
+      exec ${pkgs.nestlo.services}/bin/nestlo-factory "$@"
     '';
   };
 in
 {
-  options.agentos.factory = {
-    enable = lib.mkEnableOption "the AgentOS software factory (planner, builder, verify, reviewer, QA, pull request)";
+  options.nestlo.factory = {
+    enable = lib.mkEnableOption "the Nestlo software factory (planner, builder, verify, reviewer, QA, pull request)";
 
     lines = lib.mkOption {
       type = lib.types.attrsOf lineType;
@@ -275,59 +275,59 @@ in
       assertions = [
         {
           assertion = orch.enable;
-          message = "agentos.factory runs its steps as orchestrator tasks; set agentos.orchestration.enable = true";
+          message = "nestlo.factory runs its steps as orchestrator tasks; set nestlo.orchestration.enable = true";
         }
         {
           assertion = cfg.lines != { };
-          message = "agentos.factory.enable needs at least one line in agentos.factory.lines";
+          message = "nestlo.factory.enable needs at least one line in nestlo.factory.lines";
         }
       ] ++ lib.concatMap
         (nl:
           let n = nl.name; l = nl.value; in [
             {
               assertion = publish.repos ? ${l.repo};
-              message = "agentos.factory.lines.${n}: repo ${l.repo} must be listed in agentos.git-automation.publish.repos (the factory publishes through it)";
+              message = "nestlo.factory.lines.${n}: repo ${l.repo} must be listed in nestlo.git-automation.publish.repos (the factory publishes through it)";
             }
             {
               assertion = lib.all (a: orch.taskCommands ? ${a}) (roleAgents l);
-              message = "agentos.factory.lines.${n}: every role agent needs a command in agentos.orchestration.taskCommands (missing: ${lib.concatStringsSep ", " (lib.filter (a: !(orch.taskCommands ? ${a})) (roleAgents l))})";
+              message = "nestlo.factory.lines.${n}: every role agent needs a command in nestlo.orchestration.taskCommands (missing: ${lib.concatStringsSep ", " (lib.filter (a: !(orch.taskCommands ? ${a})) (roleAgents l))})";
             }
             {
               assertion = l.mode != "dark" || allowAutoMerge l;
-              message = "agentos.factory.lines.${n}: mode \"dark\" merges without a human, so agentos.git-automation.publish.repos.\"${l.repo}\".allowAutoMerge must be true";
+              message = "nestlo.factory.lines.${n}: mode \"dark\" merges without a human, so nestlo.git-automation.publish.repos.\"${l.repo}\".allowAutoMerge must be true";
             }
             {
               assertion = l.mode != "dark" || l.verify != [ ];
-              message = "agentos.factory.lines.${n}: mode \"dark\" merges without a human, so it needs a non-empty `verify` command that proves the change works";
+              message = "nestlo.factory.lines.${n}: mode \"dark\" merges without a human, so it needs a non-empty `verify` command that proves the change works";
             }
             {
               assertion = l.mode != "dark" || l.roles.qa != null;
-              message = "agentos.factory.lines.${n}: mode \"dark\" merges without a human, so it needs a `roles.qa` that checks the acceptance criteria";
+              message = "nestlo.factory.lines.${n}: mode \"dark\" merges without a human, so it needs a `roles.qa` that checks the acceptance criteria";
             }
             {
               assertion = l.mode != "dark" || l.planApproval != "never" || l.enforceScope;
-              message = "agentos.factory.lines.${n}: mode \"dark\" merges without a human, so something must bound what it can touch: a human plan approval (planApproval = \"always\" or \"large\") or a hard scope guard (enforceScope = true)";
+              message = "nestlo.factory.lines.${n}: mode \"dark\" merges without a human, so something must bound what it can touch: a human plan approval (planApproval = \"always\" or \"large\") or a hard scope guard (enforceScope = true)";
             }
           ])
         lines;
 
-      agentos.services.settings.factory = {
-        socket = "/run/agentos-factory/factory.sock";
-        orchestrator_socket = "/run/agentos-orchestrator/orchestrator.sock";
+      nestlo.services.settings.factory = {
+        socket = "/run/nestlo-factory/factory.sock";
+        orchestrator_socket = "/run/nestlo-orchestrator/orchestrator.sock";
         tick_sec = cfg.tickSec;
         lease_sec = cfg.leaseSec;
         item_ttl_days = cfg.itemTtlDays;
         metrics_port = cfg.metricsPort;
-        scope_check = "${pkgs.agentos.services}/bin/agentos-factory-scope";
+        scope_check = "${pkgs.nestlo.services}/bin/nestlo-factory-scope";
         lines = lib.mapAttrs lineSettings cfg.lines;
       };
 
-      systemd.services.agentos-factory = {
-        description = "AgentOS software factory";
-        after = [ "redis-agentos.service" "agentos-orchestrator.service" ];
-        requires = [ "redis-agentos.service" "agentos-orchestrator.service" ];
+      systemd.services.nestlo-factory = {
+        description = "Nestlo software factory";
+        after = [ "redis-nestlo.service" "nestlo-orchestrator.service" ];
+        requires = [ "redis-nestlo.service" "nestlo-orchestrator.service" ];
         wantedBy = [ "multi-user.target" ];
-        restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+        restartTriggers = [ config.environment.etc."nestlo/services.toml".source ];
         path = [ pkgs.git ];
 
         serviceConfig = {
@@ -335,16 +335,16 @@ in
           NotifyAccess = "all";
           WatchdogSec = 60;
           TimeoutStartSec = 60;
-          # `agentos` is the group of the orchestrator socket, like the
+          # `nestlo` is the group of the orchestrator socket, like the
           # scheduler and the triggers; the service has no other privileges
-          User = "agentos";
-          Group = "agentos";
-          SupplementaryGroups = [ "redis-agentos" ];
-          ExecStart = "${pkgs.agentos.services}/bin/agentos-factoryd";
+          User = "nestlo";
+          Group = "nestlo";
+          SupplementaryGroups = [ "redis-nestlo" ];
+          ExecStart = "${pkgs.nestlo.services}/bin/nestlo-factoryd";
           Restart = "on-failure";
           RestartSec = 3;
-          # Control socket: the agentos group (operators, agentos-triggers), not agents
-          RuntimeDirectory = "agentos-factory";
+          # Control socket: the nestlo group (operators, nestlo-triggers), not agents
+          RuntimeDirectory = "nestlo-factory";
           RuntimeDirectoryMode = "0750";
           UMask = "0007";
 
@@ -368,15 +368,15 @@ in
 
     (lib.mkIf obs.enable {
       services.prometheus.scrapeConfigs = [{
-        job_name = "agentos-factory";
+        job_name = "nestlo-factory";
         static_configs = [{ targets = [ "127.0.0.1:${toString cfg.metricsPort}" ]; }];
       }];
     })
 
-    (lib.mkIf (obs.enable && config.agentos.dashboard.enable) {
-      agentos.services.settings.dashboard.links = lib.mkAfter [{
+    (lib.mkIf (obs.enable && config.nestlo.dashboard.enable) {
+      nestlo.services.settings.dashboard.links = lib.mkAfter [{
         name = "Factory items (Prometheus)";
-        url = "http://127.0.0.1:9001/graph?g0.expr=agentos_factory_items&g0.tab=0";
+        url = "http://127.0.0.1:9001/graph?g0.expr=nestlo_factory_items&g0.tab=0";
       }];
     })
   ]);

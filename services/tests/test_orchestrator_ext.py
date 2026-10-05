@@ -5,9 +5,9 @@ import threading
 
 import pytest
 
-from agentos_services import tasks as T
-from agentos_services.orchestrator import Orchestrator
-from agentos_services.unixapi import call, serve_unix
+from nestlo_services import tasks as T
+from nestlo_services.orchestrator import Orchestrator
+from nestlo_services.unixapi import call, serve_unix
 from orchfix import (cfg, clock, complete, orch, runtime, statuses, submit, systemctl,  # noqa: F401
                      taskstore)
 
@@ -1037,7 +1037,7 @@ def test_hand_started_agents_still_count_with_the_new_scheduler(cfg, taskstore, 
 
 # ── plumbing ─────────────────────────────────────────────────────────────
 def test_peer_credentials_are_set_per_request(orch, short_dir):
-    from agentos_services import unixapi
+    from nestlo_services import unixapi
     seen = []
     path = os.path.join(short_dir, "p.sock")
     server = serve_unix(path, lambda m, p, q, b: (seen.append(unixapi.peer_credentials()) or (200, {})))
@@ -1073,8 +1073,8 @@ def test_old_task_documents_with_missing_fields_are_scheduled(orch, systemctl):
 
 
 def test_openclaw_origin_is_reserved_for_the_bridge_user(orch, monkeypatch):
-    from agentos_services import orchestrator as O
-    from agentos_services.unixapi import ApiError
+    from nestlo_services import orchestrator as O
+    from nestlo_services.unixapi import ApiError
     body = {"agent": "fake", "workspace": "demo", "prompt": "p", "origin": "openclaw"}
     wf = {"origin": "openclaw", "nodes": {"a": {"agent": "fake", "workspace": "demo", "prompt": "p"}}}
     wf_node = {"nodes": {"a": {"agent": "fake", "workspace": "demo", "prompt": "p", "origin": "openclaw"}}}

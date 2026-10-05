@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Context & Memory Module
+# Nestlo Context & Memory Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Provides persistent memory and semantic search for agents:
@@ -12,11 +12,11 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.context;
+  cfg = config.nestlo.context;
 in
 {
-  options.agentos.context = {
-    enable = lib.mkEnableOption "AgentOS context and memory system";
+  options.nestlo.context = {
+    enable = lib.mkEnableOption "Nestlo context and memory system";
 
     vectorStore = lib.mkOption {
       type = lib.types.enum [ "qdrant" "pgvector" "lancedb" ];
@@ -70,22 +70,22 @@ in
     # ─ PostgreSQL with pgvector (alternative) ────────────────────────
     services.postgresql = lib.mkIf (cfg.vectorStore == "pgvector") {
       enable = true;
-      ensureDatabases = [ "agentos" ];
+      ensureDatabases = [ "nestlo" ];
       ensureUsers = [{
-        name = "agentos";
+        name = "nestlo";
         ensureDBOwnership = true;
       }];
       extensions = [ "pgvector" ];
     };
 
     # ─ Memory GC (clean up old memories) ─────────────────────────────
-    systemd.services.agentos-memory-gc = {
-      description = "AgentOS memory garbage collection";
+    systemd.services.nestlo-memory-gc = {
+      description = "Nestlo memory garbage collection";
       startAt = "daily";
 
       serviceConfig = {
         Type = "oneshot";
-        User = "agentos";
+        User = "nestlo";
         ExecStart = toString (pkgs.writeShellScript "memory-gc" ''
           set -euo pipefail
           RETENTION=${toString cfg.memoryRetentionDays}
@@ -107,7 +107,7 @@ in
 
     # ─ Memory CLI tools ──────────────────────────────────────────────
     environment.systemPackages = [
-      (pkgs.writeShellScriptBin "agentos-memory" ''
+      (pkgs.writeShellScriptBin "nestlo-memory" ''
         #!/usr/bin/env bash
         # Memory management CLI
         case "$1" in
@@ -134,13 +134,13 @@ in
             echo "Done."
             ;;
           *)
-            echo "Usage: agentos-memory <search|stats|forget>"
+            echo "Usage: nestlo-memory <search|stats|forget>"
             ;;
         esac
       '')
     ];
 
     # ─ Networking ────────────────────────────────────────────────────
-    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ cfg.qdrantPort ];
+    networking.firewall.interfaces.nestlo0.allowedTCPPorts = [ cfg.qdrantPort ];
   };
 }

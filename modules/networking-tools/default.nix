@@ -1,14 +1,14 @@
-# AgentOS Networking Tools Module
+# Nestlo Networking Tools Module
 # Network diagnostics and analysis
 { config, pkgs, lib, ... }:
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.networking-tools;
+  cfg = config.nestlo.networking-tools;
 in
 {
-  options.agentos.networking-tools = {
-    enable = lib.mkEnableOption "AgentOS networking tools";
+  options.nestlo.networking-tools = {
+    enable = lib.mkEnableOption "Nestlo networking tools";
   };
 
   config = lib.mkIf cfg.enable {

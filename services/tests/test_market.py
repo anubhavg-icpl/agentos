@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from agentos_services import market
+from nestlo_services import market
 
 REPO_INDEX = os.path.join(os.path.dirname(__file__), "..", "..", "marketplace", "index.json")
 
@@ -145,12 +145,12 @@ def env(tmp_path, monkeypatch):
         entry(name="mistral-vibe", description="Vibe", kind="nixpkgs", package="mistral-vibe", bin="vibe", commands=["vibe"], version="2.25.0"),
     ]}))
     (tmp_path / "agents.d").mkdir()
-    monkeypatch.setenv("AGENTOS_MARKET_NIX", "%s %s" % (shlex.quote(sys.executable), shlex.quote(str(script))))
+    monkeypatch.setenv("NESTLO_MARKET_NIX", "%s %s" % (shlex.quote(sys.executable), shlex.quote(str(script))))
     monkeypatch.setenv("FAKE_NIX_LOG", str(tmp_path / "nix.log"))
     monkeypatch.setenv("FAKE_NIX_OUT", str(out))
-    monkeypatch.setenv("AGENTOS_MARKET_INDEX", str(index))
-    monkeypatch.setenv("AGENTOS_AGENTS_D", str(tmp_path / "agents.d"))
-    monkeypatch.setenv("AGENTOS_MARKET_HOME", str(tmp_path / "market"))
+    monkeypatch.setenv("NESTLO_MARKET_INDEX", str(index))
+    monkeypatch.setenv("NESTLO_AGENTS_D", str(tmp_path / "agents.d"))
+    monkeypatch.setenv("NESTLO_MARKET_HOME", str(tmp_path / "market"))
     # the fake output lives in tmp, not the Nix store
     monkeypatch.setattr(market, "STORE_PATH_RE", re.compile(r"^%s/.+" % re.escape(str(tmp_path))))
     return tmp_path, out
@@ -173,7 +173,7 @@ def test_install_npm_registers_spawn_names(env, capsys):
     assert doc["marketplace"] == {"name": "kilo", "kind": "npm", "package": "@kilocode/cli",
                                   "version": "7.8.1", "profile_element": "kilo"}
     assert (tmp / "agents.d" / "kilo.json").stat().st_mode & 0o777 == 0o664
-    assert "agentos spawn kilo" in capsys.readouterr().out
+    assert "nestlo spawn kilo" in capsys.readouterr().out
 
 
 def test_install_nixpkgs_uses_nixpkgs_ref(env):
@@ -189,7 +189,7 @@ def test_install_nixpkgs_uses_nixpkgs_ref(env):
 def test_install_refuses_paths_outside_the_store(env, monkeypatch):
     tmp, _ = env
     monkeypatch.undo()  # drop the relaxed store pattern (and the env vars)
-    monkeypatch.setenv("AGENTOS_MARKET_INDEX", str(tmp / "index.json"))
+    monkeypatch.setenv("NESTLO_MARKET_INDEX", str(tmp / "index.json"))
     e = market.load_index()[0]
     with pytest.raises(market.MarketError, match="not under /nix/store"):
         market.registration(e, str(tmp / "store" / "x"))
@@ -245,7 +245,7 @@ def test_search_and_info(env, capsys):
 def test_invalid_index_is_rejected(tmp_path, monkeypatch, capsys):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"agents": [entry(version="latest")]}))
-    monkeypatch.setenv("AGENTOS_MARKET_INDEX", str(bad))
+    monkeypatch.setenv("NESTLO_MARKET_INDEX", str(bad))
     assert market.main(["search"]) == 2
     assert market.main(["validate"]) == 1
     assert "pinned" in capsys.readouterr().err

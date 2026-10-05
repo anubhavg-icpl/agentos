@@ -1,9 +1,9 @@
-# AgentOS networking module
+# Nestlo networking module
 # Model API gateway, agent bridge network and NAT
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.networking;
+  cfg = config.nestlo.networking;
   cidrParts = lib.splitString "/" cfg.agentNetCIDR;
   octets = lib.splitString "." (lib.head cidrParts);
   hostAddress = lib.concatStringsSep "." (lib.take 3 octets ++ [ "1" ]);
@@ -14,10 +14,10 @@ let
     in if m == null then null else lib.head m;
 
   gatewayUrl = "http://127.0.0.1:${toString cfg.modelGatewayPort}";
-  adminSocket = config.agentos.services.settings.gateway.admin_socket;
-  recordingsDir = "/var/lib/agentos/recordings";
+  adminSocket = config.nestlo.services.settings.gateway.admin_socket;
+  recordingsDir = "/var/lib/nestlo/recordings";
 
-  dlp = config.agentos.gateway.dlp;
+  dlp = config.nestlo.gateway.dlp;
   dlpDetectors = [
     "private_key" "aws_access_key" "aws_secret_key" "github_token" "slack_token" "api_key" "jwt"
     "provider_key" "credential_assignment" "high_entropy"
@@ -36,7 +36,7 @@ let
       if [ -n "$data" ]; then
         args+=(--data "$data")
       fi
-      out=$(curl "''${args[@]}" "http://localhost/_agentos/$path") \
+      out=$(curl "''${args[@]}" "http://localhost/_nestlo/$path") \
         || { echo "cannot reach the gateway admin socket $ADMIN_SOCKET" >&2; return 1; }
       code=''${out##*$'\n'}
       out=''${out%$'\n'*}
@@ -53,7 +53,7 @@ let
   '';
 
   replayCli = pkgs.writeShellApplication {
-    name = "agentos-replay";
+    name = "nestlo-replay";
     runtimeInputs = [ pkgs.curl pkgs.jq pkgs.coreutils pkgs.util-linux ];
     text = ''
       GATEWAY="${gatewayUrl}"
@@ -61,7 +61,7 @@ let
       ${adminApi}
       usage() {
         cat <<'EOF'
-      Usage: agentos-replay <command>
+      Usage: nestlo-replay <command>
 
         list                        Recorded sessions
         show <recording> [<seq>]    Requests of a recording, or one request/response in full
@@ -71,7 +71,7 @@ let
         status <id>                 Replay position of <id>
         record <id> [on|off]        Record (or stop recording) the requests of agent <id>
 
-      Recording all sessions is a NixOS option: agentos.networking.recordSessions.
+      Recording all sessions is a NixOS option: nestlo.networking.recordSessions.
       EOF
       }
 
@@ -88,7 +88,7 @@ let
           if [ $# -ge 3 ]; then
             [[ "$3" =~ ^[0-9]+$ ]] || { echo "invalid sequence number: $3" >&2; exit 1; }
             file="$RECORDINGS/$2/$(printf '%06d' "$((10#$3))").json"
-            [ -r "$file" ] || { echo "cannot read $file (operators need the agentos group)" >&2; exit 1; }
+            [ -r "$file" ] || { echo "cannot read $file (operators need the nestlo group)" >&2; exit 1; }
             jq . "$file"
           else
             api GET "recordings/$2" | jq -r '
@@ -113,13 +113,13 @@ let
           echo "in order, and cost nothing. A request that differs from the recording fails with"
           echo "409 replay_diverged."
           echo
-          echo "  export AGENTOS_AGENT_ID=$id"
+          echo "  export NESTLO_AGENT_ID=$id"
           echo "  export ANTHROPIC_BASE_URL=$GATEWAY/agent/$id:$token/anthropic"
-          echo "  export ANTHROPIC_API_KEY=agentos-managed"
+          echo "  export ANTHROPIC_API_KEY=nestlo-managed"
           echo "  export OPENAI_BASE_URL=$GATEWAY/agent/$id:$token/openai/v1"
-          echo "  export OPENAI_API_KEY=agentos-managed"
+          echo "  export OPENAI_API_KEY=nestlo-managed"
           echo
-          echo "'agentos spawn' chooses its own agent id, so start the agent in your own shell with the"
+          echo "'nestlo spawn' chooses its own agent id, so start the agent in your own shell with the"
           echo "variables above (in a workspace with the same starting state as the recorded run)."
           ;;
         stop)
@@ -153,7 +153,7 @@ let
   };
 
   msgCli = pkgs.writeShellApplication {
-    name = "agentos-msg";
+    name = "nestlo-msg";
     runtimeInputs = [ pkgs.curl pkgs.jq pkgs.coreutils ];
     text = ''
       ADMIN_SOCKET="${adminSocket}"
@@ -161,14 +161,14 @@ let
 
       usage() {
         cat <<'EOF'
-      Usage: agentos-msg <command>
+      Usage: nestlo-msg <command>
 
         send [--from <name>] <topic> <text...>   Publish a message ("@<agent-id>" = that agent's inbox)
         read <topic> [--after <cursor>] [--wait <sec>] [--json]
-                                                 Read a topic (any inbox needs the agentos group)
+                                                 Read a topic (any inbox needs the nestlo group)
         topics                                   Topics with messages
 
-      Needs membership in the agentos group (the command uses the gateway's
+      Needs membership in the nestlo group (the command uses the gateway's
       admin socket; agents talk on the bus with their own credentials).
       EOF
       }
@@ -178,11 +178,11 @@ let
         local method="$1" topic="$2" query="$3" data="''${4:-}" url out code
         local args=(-sS -X "$method" -H 'Content-Type: application/json' -w '\n%{http_code}' --max-time 90)
         if [ ! -w "$ADMIN_SOCKET" ]; then
-          echo "agentos-msg needs membership in the agentos group (admin socket $ADMIN_SOCKET)" >&2
+          echo "nestlo-msg needs membership in the nestlo group (admin socket $ADMIN_SOCKET)" >&2
           return 1
         fi
         args+=(--unix-socket "$ADMIN_SOCKET")
-        url="http://localhost/_agentos/bus/$topic$query"
+        url="http://localhost/_nestlo/bus/$topic$query"
         if [ -n "$data" ]; then
           args+=(--data "$data")
         fi
@@ -239,8 +239,8 @@ let
           fi
           ;;
         topics)
-          [ -w "$ADMIN_SOCKET" ] || { echo "listing topics needs membership in the agentos group" >&2; exit 1; }
-          curl -fsS --unix-socket "$ADMIN_SOCKET" http://localhost/_agentos/bus | jq -r '.topics[]'
+          [ -w "$ADMIN_SOCKET" ] || { echo "listing topics needs membership in the nestlo group" >&2; exit 1; }
+          curl -fsS --unix-socket "$ADMIN_SOCKET" http://localhost/_nestlo/bus | jq -r '.topics[]'
           ;;
         -h|--help|help|"") usage ;;
         *) usage; exit 1 ;;
@@ -249,8 +249,8 @@ let
   };
 in
 {
-  options.agentos.networking = {
-    enable = lib.mkEnableOption "AgentOS networking and the model gateway";
+  options.nestlo.networking = {
+    enable = lib.mkEnableOption "Nestlo networking and the model gateway";
 
     agentNetCIDR = lib.mkOption {
       type = lib.types.str;
@@ -278,7 +278,7 @@ in
       type = lib.types.str;
       default = hostAddress;
       readOnly = true;
-      description = "Address of the host on the agent bridge (agentos0): the .1 of agentNetCIDR";
+      description = "Address of the host on the agent bridge (nestlo0): the .1 of agentNetCIDR";
     };
 
     recordSessions = lib.mkOption {
@@ -286,10 +286,10 @@ in
       default = false;
       description = ''
         Record every request/response pair of every agent under
-        ${recordingsDir}/<agent-id>/<seq>.json (readable by the agentos
-        group), for `agentos-replay`. Recordings contain prompts and
-        completions, so they are kept private to the agentos group. Recording
-        can also be switched on per agent with `agentos-replay record <id>`.
+        ${recordingsDir}/<agent-id>/<seq>.json (readable by the nestlo
+        group), for `nestlo-replay`. Recordings contain prompts and
+        completions, so they are kept private to the nestlo group. Recording
+        can also be switched on per agent with `nestlo-replay record <id>`.
       '';
     };
 
@@ -338,7 +338,7 @@ in
               options = {
                 provider = lib.mkOption {
                   type = lib.types.str;
-                  description = "Name of another entry of agentos.networking.providers";
+                  description = "Name of another entry of nestlo.networking.providers";
                 };
                 model = lib.mkOption {
                   type = lib.types.nullOr lib.types.str;
@@ -368,7 +368,7 @@ in
             default = null;
             description = ''
               File holding the provider API key. When readable by the gateway,
-              agents get the placeholder key "agentos-managed" and the gateway
+              agents get the placeholder key "nestlo-managed" and the gateway
               injects the real one, so agents never see it.
             '';
           };
@@ -380,7 +380,7 @@ in
   };
 
   # ── Data loss prevention in the gateway (docs/dlp.md) ──────────────
-  options.agentos.gateway.dlp = {
+  options.nestlo.gateway.dlp = {
     mode = lib.mkOption {
       type = dlpMode;
       default = "off";
@@ -399,7 +399,7 @@ in
       example = [ "private_key" "aws_access_key" "github_token" "credit_card" ];
       description = ''
         Detectors to run: "all", or any of ${lib.concatStringsSep ", " dlpDetectors}.
-        provider_key matches the API keys configured in agentos.networking.providers.
+        provider_key matches the API keys configured in nestlo.networking.providers.
       '';
     };
 
@@ -450,11 +450,11 @@ in
 
   config = lib.mkIf cfg.enable {
     assertions = [{
-      assertion = config.agentos.runtime.enable;
-      message = "agentos.networking (the model gateway) needs agentos.runtime.enable";
+      assertion = config.nestlo.runtime.enable;
+      message = "nestlo.networking (the model gateway) needs nestlo.runtime.enable";
     }];
 
-    agentos.networking.providers = {
+    nestlo.networking.providers = {
       anthropic = {
         baseUrl = lib.mkDefault "https://api.anthropic.com";
         api = "anthropic";
@@ -468,15 +468,15 @@ in
     };
 
     # Only the gateway may reach the provider APIs from the agent user
-    agentos.security.gatewayOnlyDomains =
+    nestlo.security.gatewayOnlyDomains =
       lib.filter (h: h != null && h != "localhost" && builtins.match "[0-9.]+" h == null)
         (lib.mapAttrsToList (_: p: hostOf p.baseUrl) cfg.providers);
 
-    agentos.services.settings = {
+    nestlo.services.settings = {
       gateway = {
         listen = [ "127.0.0.1" hostAddress ];
         port = cfg.modelGatewayPort;
-        pricing_file = "/etc/agentos/pricing.json";
+        pricing_file = "/etc/nestlo/pricing.json";
         dlp = {
           inherit (dlp) mode detectors;
           scan_responses = dlp.scanResponses;
@@ -507,23 +507,23 @@ in
         }) cfg.providers;
     };
 
-    environment.etc."agentos/pricing.json".source = lib.mkDefault ../budget-controller/pricing.json;
+    environment.etc."nestlo/pricing.json".source = lib.mkDefault ../budget-controller/pricing.json;
 
     # Session recordings: written by the gateway, readable by operators only
-    systemd.tmpfiles.rules = [ "d ${recordingsDir} 0750 agentos agentos" ];
+    systemd.tmpfiles.rules = [ "d ${recordingsDir} 0750 nestlo nestlo" ];
 
     environment.systemPackages = [ replayCli msgCli ];
 
     # ─ Model gateway ──────────────────────────────────────────────────
-    systemd.services.agentos-model-gateway = {
-      description = "AgentOS model gateway (LLM proxy with budgets and rate limits)";
+    systemd.services.nestlo-model-gateway = {
+      description = "Nestlo model gateway (LLM proxy with budgets and rate limits)";
       # The bridge address must exist to bind to it (Restart retries otherwise)
-      after = [ "network.target" "redis-agentos.service" "network-addresses-agentos0.service" ];
-      requires = [ "redis-agentos.service" ];
+      after = [ "network.target" "redis-nestlo.service" "network-addresses-nestlo0.service" ];
+      requires = [ "redis-nestlo.service" ];
       wantedBy = [ "multi-user.target" ];
       restartTriggers = [
-        config.environment.etc."agentos/services.toml".source
-        config.environment.etc."agentos/pricing.json".source
+        config.environment.etc."nestlo/services.toml".source
+        config.environment.etc."nestlo/pricing.json".source
       ];
 
       serviceConfig = {
@@ -532,14 +532,14 @@ in
         # The service sends READY=1 once listening and WATCHDOG=1 while healthy
         WatchdogSec = 30;
         TimeoutStartSec = 60;
-        User = "agentos";
-        Group = "agentos";
-        SupplementaryGroups = [ "redis-agentos" ];
-        ExecStart = "${pkgs.agentos.services}/bin/agentos-model-gateway";
+        User = "nestlo";
+        Group = "nestlo";
+        SupplementaryGroups = [ "redis-nestlo" ];
+        ExecStart = "${pkgs.nestlo.services}/bin/nestlo-model-gateway";
         Restart = "on-failure";
         RestartSec = 3;
-        # Admin socket: reachable by the agentos group (operators), not agents
-        RuntimeDirectory = "agentos-gateway";
+        # Admin socket: reachable by the nestlo group (operators), not agents
+        RuntimeDirectory = "nestlo-gateway";
         RuntimeDirectoryMode = "0750";
         UMask = "0007";
 
@@ -547,7 +547,7 @@ in
         PrivateTmp = true;
         ProtectSystem = "strict";
         ProtectHome = true;
-        ReadWritePaths = [ "/var/lib/agentos/logs" recordingsDir ];
+        ReadWritePaths = [ "/var/lib/nestlo/logs" recordingsDir ];
         RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
@@ -559,8 +559,8 @@ in
     };
 
     # ─ Bridge + NAT for agent containers ──────────────────────────────
-    networking.bridges.agentos0.interfaces = [ ];
-    networking.interfaces.agentos0.ipv4.addresses = [{
+    networking.bridges.nestlo0.interfaces = [ ];
+    networking.interfaces.nestlo0.ipv4.addresses = [{
       address = hostAddress;
       inherit prefixLength;
     }];
@@ -569,23 +569,23 @@ in
     # the resolver. This chain comes before the global allowed ports (e.g.
     # SSH), which would otherwise apply to the bridge as well.
     networking.firewall.extraCommands = ''
-      iptables -D INPUT -i agentos0 -j agentos-in 2>/dev/null || true
-      iptables -F agentos-in 2>/dev/null || iptables -N agentos-in
-      iptables -I INPUT 1 -i agentos0 -j agentos-in
-      iptables -A agentos-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-      iptables -A agentos-in -d ${hostAddress} -p tcp --dport ${toString cfg.modelGatewayPort} -j ACCEPT
-      iptables -A agentos-in -d ${hostAddress} -p udp --dport 53 -j ACCEPT
-      iptables -A agentos-in -d ${hostAddress} -p tcp --dport 53 -j ACCEPT
-      iptables -A agentos-in -d ${hostAddress} -p icmp --icmp-type echo-request -j ACCEPT
-      iptables -A agentos-in -j REJECT
-      ip6tables -D INPUT -i agentos0 -j DROP 2>/dev/null || true
-      ip6tables -I INPUT 1 -i agentos0 -j DROP
+      iptables -D INPUT -i nestlo0 -j nestlo-in 2>/dev/null || true
+      iptables -F nestlo-in 2>/dev/null || iptables -N nestlo-in
+      iptables -I INPUT 1 -i nestlo0 -j nestlo-in
+      iptables -A nestlo-in -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+      iptables -A nestlo-in -d ${hostAddress} -p tcp --dport ${toString cfg.modelGatewayPort} -j ACCEPT
+      iptables -A nestlo-in -d ${hostAddress} -p udp --dport 53 -j ACCEPT
+      iptables -A nestlo-in -d ${hostAddress} -p tcp --dport 53 -j ACCEPT
+      iptables -A nestlo-in -d ${hostAddress} -p icmp --icmp-type echo-request -j ACCEPT
+      iptables -A nestlo-in -j REJECT
+      ip6tables -D INPUT -i nestlo0 -j DROP 2>/dev/null || true
+      ip6tables -I INPUT 1 -i nestlo0 -j DROP
     '';
     networking.firewall.extraStopCommands = ''
-      iptables -D INPUT -i agentos0 -j agentos-in 2>/dev/null || true
-      iptables -F agentos-in 2>/dev/null || true
-      iptables -X agentos-in 2>/dev/null || true
-      ip6tables -D INPUT -i agentos0 -j DROP 2>/dev/null || true
+      iptables -D INPUT -i nestlo0 -j nestlo-in 2>/dev/null || true
+      iptables -F nestlo-in 2>/dev/null || true
+      iptables -X nestlo-in 2>/dev/null || true
+      ip6tables -D INPUT -i nestlo0 -j DROP 2>/dev/null || true
     '';
 
     # The resolver answers on the bridge for containers (and, with egress
@@ -594,14 +594,14 @@ in
       settings.listen-address = [ hostAddress ];
     };
     systemd.services.dnsmasq = lib.mkIf config.services.dnsmasq.enable {
-      after = [ "network-addresses-agentos0.service" ];
-      wants = [ "network-addresses-agentos0.service" ];
+      after = [ "network-addresses-nestlo0.service" ];
+      wants = [ "network-addresses-nestlo0.service" ];
       serviceConfig.Restart = lib.mkDefault "on-failure";
     };
 
     networking.nat = {
       enable = true;
-      internalInterfaces = [ "agentos0" ];
+      internalInterfaces = [ "nestlo0" ];
       externalInterface = cfg.natExternalInterface;
     };
   };

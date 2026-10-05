@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Git Automation Module
+# Nestlo Git Automation Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Makes agents git-native:
@@ -16,11 +16,11 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.git-automation;
+  cfg = config.nestlo.git-automation;
 in
 {
-  options.agentos.git-automation = {
-    enable = lib.mkEnableOption "AgentOS git automation";
+  options.nestlo.git-automation = {
+    enable = lib.mkEnableOption "Nestlo git automation";
 
     autoBranch = lib.mkOption {
       type = lib.types.bool;
@@ -47,7 +47,7 @@ in
         Open a pull request for every orchestrator task that succeeds in a
         workspace listed under `publish.repos` and leaves changes on its
         `agent/<task-id>` branch. Without `publish.repos` it does nothing.
-        Tasks can also ask for a PR one by one (`agentos.triggers` rules with
+        Tasks can also ask for a PR one by one (`nestlo.triggers` rules with
         `publish = true`), whatever this is set to.
       '';
     };
@@ -96,7 +96,7 @@ in
       tokenFile = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
         default = null;
-        example = "/run/secrets/agentos-github-token";
+        example = "/run/secrets/nestlo-github-token";
         description = ''
           GitHub token with contents:write and pull_requests:write on the
           repositories above and nothing else (a fine-grained token). Passed
@@ -157,16 +157,16 @@ in
     assertions = [
       {
         assertion = cfg.publish.repos == { } || cfg.publish.tokenFile != null;
-        message = "agentos.git-automation.publish.repos needs agentos.git-automation.publish.tokenFile";
+        message = "nestlo.git-automation.publish.repos needs nestlo.git-automation.publish.tokenFile";
       }
       {
-        assertion = cfg.publish.repos == { } || config.agentos.orchestration.enable;
-        message = "agentos.git-automation.publish publishes orchestrator tasks; set agentos.orchestration.enable = true";
+        assertion = cfg.publish.repos == { } || config.nestlo.orchestration.enable;
+        message = "nestlo.git-automation.publish publishes orchestrator tasks; set nestlo.orchestration.enable = true";
       }
     ];
 
-    # Read by the root task runner (services/agentos_services/publish.py)
-    agentos.services.settings.publish = {
+    # Read by the root task runner (services/nestlo_services/publish.py)
+    nestlo.services.settings.publish = {
       auto = cfg.autoPR;
       api_url = cfg.publish.apiUrl;
       protected_branches = cfg.publish.protectedBranches;
@@ -179,7 +179,7 @@ in
     };
 
     # The token goes to the root helper only, as a credential
-    systemd.services."agentos-task-runner@" = lib.mkIf (cfg.publish.tokenFile != null) {
+    systemd.services."nestlo-task-runner@" = lib.mkIf (cfg.publish.tokenFile != null) {
       serviceConfig.LoadCredential = [ "github-token:${toString cfg.publish.tokenFile}" ];
       environment.SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
     };
@@ -189,8 +189,8 @@ in
       enable = true;
       config = {
         user = {
-          name = "AgentOS";
-          email = "agent@agentos.local";
+          name = "Nestlo";
+          email = "agent@nestlo.local";
         };
         init = {
           defaultBranch = "main";
@@ -208,11 +208,11 @@ in
     };
 
     # ─ Git hooks installer ───────────────────────────────────────────
-    environment.etc."agentos/git-hooks/pre-commit".source = pkgs.writeShellScript "pre-commit" ''
+    environment.etc."nestlo/git-hooks/pre-commit".source = pkgs.writeShellScript "pre-commit" ''
       #!/usr/bin/env bash
       set -euo pipefail
 
-      # AgentOS pre-commit hook
+      # Nestlo pre-commit hook
       # Runs quality checks before allowing commits
 
       RED='\033[0;31m'
@@ -221,9 +221,9 @@ in
 
       # Check if tests exist and run them
       if [ -f Makefile ] && grep -q "^test:" Makefile 2>/dev/null; then
-        echo "[agentos] Running tests..."
+        echo "[nestlo] Running tests..."
         if ! make test 2>&1; then
-          echo -e "''${RED}[agentos] Tests failed. Commit blocked.''${NC}"
+          echo -e "''${RED}[nestlo] Tests failed. Commit blocked.''${NC}"
           exit 1
         fi
       fi
@@ -231,7 +231,7 @@ in
       # Check for common issues
       # Block secrets from being committed
       if git diff --cached | grep -iE '(api_key|secret|password|token)\s*=\s*["\x27]' 2>/dev/null; then
-        echo -e "''${RED}[agentos] Possible secret detected. Commit blocked.''${NC}"
+        echo -e "''${RED}[nestlo] Possible secret detected. Commit blocked.''${NC}"
         echo "If this is a false positive, commit with --no-verify"
         exit 1
       fi
@@ -242,16 +242,16 @@ in
         if [ -f "$file" ]; then
           size=$(stat -c%s "$file" 2>/dev/null || echo 0)
           if [ "$size" -gt "$MAX_SIZE" ]; then
-            echo -e "''${RED}[agentos] File too large: $file ($((size / 1024 / 1024))MB). Commit blocked.''${NC}"
+            echo -e "''${RED}[nestlo] File too large: $file ($((size / 1024 / 1024))MB). Commit blocked.''${NC}"
             exit 1
           fi
         fi
       done
 
-      echo -e "''${GREEN}[agentos] Pre-commit checks passed.''${NC}"
+      echo -e "''${GREEN}[nestlo] Pre-commit checks passed.''${NC}"
     '';
 
-    environment.etc."agentos/git-hooks/prepare-commit-msg".source = pkgs.writeShellScript "prepare-commit-msg" ''
+    environment.etc."nestlo/git-hooks/prepare-commit-msg".source = pkgs.writeShellScript "prepare-commit-msg" ''
       #!/usr/bin/env bash
       # Auto-generate commit message if none provided
       COMMIT_MSG_FILE="$1"
@@ -284,13 +284,13 @@ in
       Insertions: ''${INSERTIONS:-0}
       Deletions: ''${DELETIONS:-0}
 
-      Generated by AgentOS
+      Generated by Nestlo
       EOF
     '';
 
     # ─ Git automation CLI ────────────────────────────────────────────
     environment.systemPackages = [
-      (pkgs.writeShellScriptBin "agentos-git" ''
+      (pkgs.writeShellScriptBin "nestlo-git" ''
         #!/usr/bin/env bash
         set -euo pipefail
 
@@ -313,8 +313,8 @@ in
             fi
             # Install hooks
             mkdir -p .git/hooks
-            cp /etc/agentos/git-hooks/pre-commit .git/hooks/pre-commit 2>/dev/null || true
-            cp /etc/agentos/git-hooks/prepare-commit-msg .git/hooks/prepare-commit-msg 2>/dev/null || true
+            cp /etc/nestlo/git-hooks/pre-commit .git/hooks/pre-commit 2>/dev/null || true
+            cp /etc/nestlo/git-hooks/prepare-commit-msg .git/hooks/prepare-commit-msg 2>/dev/null || true
             chmod +x .git/hooks/*
             ok "Agent git hooks installed"
             ;;
@@ -350,7 +350,7 @@ in
             # Orchestrator tasks are published by the task runner instead.
             TITLE="''${2:-Agent: automated changes}"
             BODY="## Summary
-            Automated changes by AgentOS agent.
+            Automated changes by Nestlo agent.
 
             ## Changes
             $(git log main..HEAD --oneline 2>/dev/null || git log master..HEAD --oneline 2>/dev/null)
@@ -358,7 +358,7 @@ in
             ## Diff
             $(git diff main..HEAD --stat 2>/dev/null || git diff master..HEAD --stat 2>/dev/null)
             ---
-            _Generated by AgentOS_"
+            _Generated by Nestlo_"
 
             if command -v gh &>/dev/null; then
               gh pr create --title "$TITLE" --body "$BODY" --fill 2>/dev/null || \
@@ -392,17 +392,17 @@ in
           hooks)
             # Install hooks in current repo
             mkdir -p .git/hooks
-            cp /etc/agentos/git-hooks/* .git/hooks/ 2>/dev/null || warn "No hooks found"
+            cp /etc/nestlo/git-hooks/* .git/hooks/ 2>/dev/null || warn "No hooks found"
             chmod +x .git/hooks/*
             ok "Hooks installed"
             ;;
 
           help|*)
             cat <<'HELP'
-        AgentOS Git Automation
+        Nestlo Git Automation
 
         USAGE:
-            agentos-git <COMMAND> [ARGS]
+            nestlo-git <COMMAND> [ARGS]
 
         COMMANDS:
             init                 Initialize workspace with agent hooks

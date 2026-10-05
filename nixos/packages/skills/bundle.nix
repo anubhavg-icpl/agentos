@@ -1,5 +1,5 @@
 # mkSkillBundle: every skill of the given packs flattened into one store
-# directory, so agentos.skills can link <skill> -> bundle/skills/<skill> into
+# directory, so nestlo.skills can link <skill> -> bundle/skills/<skill> into
 # each CLI's skills directory.
 #
 #   $out/skills/<skill>     symlink to the pack's skill directory
@@ -10,11 +10,11 @@
 
 packs:
 
-runCommand "agentos-skills-bundle" { nativeBuildInputs = [ jq ]; } ''
+runCommand "nestlo-skills-bundle" { nativeBuildInputs = [ jq ]; } ''
   mkdir -p $out/skills owners
   : > pack-files
   for pack in ${lib.concatMapStringsSep " " (p: "${p}") packs}; do
-    for meta in "$pack"/share/agentos/skills/*/pack.json; do
+    for meta in "$pack"/share/nestlo/skills/*/pack.json; do
       [ -e "$meta" ] || continue
       root=$(dirname "$meta")
       name=$(basename "$root")
@@ -23,7 +23,7 @@ runCommand "agentos-skills-bundle" { nativeBuildInputs = [ jq ]; } ''
         skill=$(basename "$dir")
         if [ -e "owners/$skill" ]; then
           echo "skill name collision: '$skill' is provided by the packs '$(cat "owners/$skill")' and '$name'" >&2
-          echo "disable one of them (agentos.skills.packs.<name>.enable = false)" >&2
+          echo "disable one of them (nestlo.skills.packs.<name>.enable = false)" >&2
           exit 1
         fi
         echo "$name" > "owners/$skill"

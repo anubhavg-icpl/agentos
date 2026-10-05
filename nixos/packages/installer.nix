@@ -1,42 +1,42 @@
-# AgentOS installer - used by the live ISO to install to disk
+# Nestlo installer - used by the live ISO to install to disk
 #
-# Partitions the target disk with the layout in nixos/hosts/agentos/disko.nix
-# (via disko-install), installs the `agentos` configuration, and installs an
+# Partitions the target disk with the layout in nixos/hosts/nestlo/disko.nix
+# (via disko-install), installs the `nestlo` configuration, and installs an
 # SSH public key for the `admin` user (the installed system only allows
 # key-based SSH login).
 #
-# With --desktop it installs the `agentos-desktop` configuration (window
+# With --desktop it installs the `nestlo-desktop` configuration (window
 # manager, IDEs, browser) and also asks for a local login password for admin.
 #
 # With --encrypt the root partition is a LUKS2 container (passphrase asked at
 # install and at every boot). TPM2 auto-unlock is a follow-up, see
-# nixos/hosts/agentos/disko.nix.
+# nixos/hosts/nestlo/disko.nix.
 { writeShellApplication, disko, coreutils, whois, openssh, util-linux, gnugrep }:
 
 writeShellApplication {
-  name = "agentos-install";
+  name = "nestlo-install";
   runtimeInputs = [ disko coreutils whois openssh util-linux gnugrep ];
   text = ''
     usage() {
       cat <<'USAGE'
-    Usage: agentos-install <disk> [--desktop] [--encrypt] [--ssh-key <public key>] [--flake <ref>]
+    Usage: nestlo-install <disk> [--desktop] [--encrypt] [--ssh-key <public key>] [--flake <ref>]
 
       <disk>        Target disk, e.g. /dev/sda or /dev/nvme0n1 (will be ERASED)
-      --desktop     Install the desktop edition (flake attr agentos-desktop)
+      --desktop     Install the desktop edition (flake attr nestlo-desktop)
                     and set a local login password for admin.
       --encrypt     Encrypt the root partition with LUKS2. You are asked for
                     a passphrase, needed at every boot.
       --ssh-key     Public key for the admin user. Defaults to the live
                     user's ~/.ssh/authorized_keys if present.
       --flake       Flake to install from
-                    (default: github:anubhavg-icpl/agentos)
+                    (default: github:anubhavg-icpl/nestlo)
     USAGE
     }
 
     DISK=""
     SSH_KEY=""
-    FLAKE="github:anubhavg-icpl/agentos"
-    HOST="agentos"
+    FLAKE="github:anubhavg-icpl/nestlo"
+    HOST="nestlo"
     DESKTOP=0
     ENCRYPT=0
 
@@ -45,7 +45,7 @@ writeShellApplication {
         --ssh-key) SSH_KEY="''${2:-}"; shift 2 ;;
         --flake)   FLAKE="''${2:-}"; shift 2 ;;
         --encrypt) ENCRYPT=1; shift ;;
-        --desktop) DESKTOP=1; HOST="agentos-desktop"; shift ;;
+        --desktop) DESKTOP=1; HOST="nestlo-desktop"; shift ;;
         -h|--help) usage; exit 0 ;;
         *)         DISK="$1"; shift ;;
       esac
@@ -65,7 +65,7 @@ writeShellApplication {
       exit 1
     fi
     if [ "$(id -u)" -ne 0 ]; then
-      echo "Run as root (sudo agentos-install ...)" >&2
+      echo "Run as root (sudo nestlo-install ...)" >&2
       exit 1
     fi
 
@@ -125,7 +125,7 @@ writeShellApplication {
     fi
 
     # The desktop has a local login: hash a password for admin. The system
-    # reads the hash from /etc/agentos/admin-password (hashedPasswordFile).
+    # reads the hash from /etc/nestlo/admin-password (hashedPasswordFile).
     extra_pw=()
     if [ "$DESKTOP" -eq 1 ]; then
       while :; do
@@ -136,7 +136,7 @@ writeShellApplication {
       done
       printf '%s\n' "$pw1" | mkpasswd -m yescrypt -s > "$pwfile"
       unset pw1 pw2
-      extra_pw=(--extra-files "$pwfile" /etc/agentos/admin-password)
+      extra_pw=(--extra-files "$pwfile" /etc/nestlo/admin-password)
     fi
 
     # LUKS2: the passphrase goes to a 0600 temp file that disko reads while
@@ -156,7 +156,7 @@ writeShellApplication {
       done
       printf '%s' "$lp1" > "$lukspw"
       unset lp1 lp2
-      extra_luks=(--system-config "{\"agentos\":{\"disk\":{\"encrypt\":true,\"luksPasswordFile\":\"$lukspw\"}}}")
+      extra_luks=(--system-config "{\"nestlo\":{\"disk\":{\"encrypt\":true,\"luksPasswordFile\":\"$lukspw\"}}}")
     fi
 
     disko-install \

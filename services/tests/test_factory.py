@@ -7,14 +7,14 @@ import os
 import fakeredis
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services import factory as F
-from agentos_services import factory_cli
-from agentos_services import rbac as rbacmod
-from agentos_services import scopecheck
-from agentos_services import unixapi
-from agentos_services.store import Store
-from agentos_services.unixapi import ApiError, serve_unix
+from nestlo_services import config as configmod
+from nestlo_services import factory as F
+from nestlo_services import factory_cli
+from nestlo_services import rbac as rbacmod
+from nestlo_services import scopecheck
+from nestlo_services import unixapi
+from nestlo_services.store import Store
+from nestlo_services.unixapi import ApiError, serve_unix
 
 
 def fresh_store():
@@ -641,7 +641,7 @@ def test_scope_guard_via_changed_files_and_verify_wrapper(store):
     e.tick()
     e.stage(PLAN)
     build = e.orch.live()[-1]
-    assert build["verify"]["cmd"] == ["agentos-factory-scope", "--allow", "src/**", "--allow", "tests/**",
+    assert build["verify"]["cmd"] == ["nestlo-factory-scope", "--allow", "src/**", "--allow", "tests/**",
                                       "--base", "main", "--", "make", "test"]
     e.stage("built", changed_files=["src/a.py", "docs/x.md", ".github/w.yml"], verify={"status": "passed", "output_tail": ""})
     it = e.item(iid)
@@ -748,24 +748,24 @@ def test_metrics_output(store):
     e.tick()
     e.costs[e.item(a)["tasks"]["plan"][0]] = 1.25
     text = e.fac.metrics()
-    for needle in ('agentos_factory_items{line="main",state="ready"} 1',
-                   'agentos_factory_items{line="other",state="planning"} 1',
-                   'agentos_factory_items{line="main",state="blocked"} 0',
-                   'agentos_factory_item_age_seconds{line="main",state="ready"}',
-                   'agentos_factory_wip{line="main",kind="open_prs"} 1',
-                   'agentos_factory_wip_limit{line="other",kind="in_flight"} 1',
-                   'agentos_factory_rework_rounds_count{line="main"} 1',
-                   'agentos_factory_rework_rounds_bucket{line="main",le="0"} 0',
-                   'agentos_factory_rework_rounds_bucket{line="main",le="1"} 1',
-                   'agentos_factory_lead_time_seconds_count{line="main"} 1',
-                   'agentos_factory_first_pass_yield{line="main"} 0',
-                   'agentos_factory_items_by_size{line="main",size="medium"} 1',
-                   'agentos_factory_blocked_total{line="main"} 0',
-                   'agentos_factory_state_seconds_total{line="main",state="building"}',
-                   "# TYPE agentos_factory_items gauge"):
+    for needle in ('nestlo_factory_items{line="main",state="ready"} 1',
+                   'nestlo_factory_items{line="other",state="planning"} 1',
+                   'nestlo_factory_items{line="main",state="blocked"} 0',
+                   'nestlo_factory_item_age_seconds{line="main",state="ready"}',
+                   'nestlo_factory_wip{line="main",kind="open_prs"} 1',
+                   'nestlo_factory_wip_limit{line="other",kind="in_flight"} 1',
+                   'nestlo_factory_rework_rounds_count{line="main"} 1',
+                   'nestlo_factory_rework_rounds_bucket{line="main",le="0"} 0',
+                   'nestlo_factory_rework_rounds_bucket{line="main",le="1"} 1',
+                   'nestlo_factory_lead_time_seconds_count{line="main"} 1',
+                   'nestlo_factory_first_pass_yield{line="main"} 0',
+                   'nestlo_factory_items_by_size{line="main",size="medium"} 1',
+                   'nestlo_factory_blocked_total{line="main"} 0',
+                   'nestlo_factory_state_seconds_total{line="main",state="building"}',
+                   "# TYPE nestlo_factory_items gauge"):
         assert needle in text, needle
     e.fac.update_cost(e.item(a))
-    assert 'agentos_factory_item_cost_usd_count{line="main"} 1' in text
+    assert 'nestlo_factory_item_cost_usd_count{line="main"} 1' in text
 
 
 def test_health_endpoints_and_metrics_server(env):
@@ -779,7 +779,7 @@ def test_health_endpoints_and_metrics_server(env):
         conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=5)
         conn.request("GET", "/metrics")
         resp = conn.getresponse()
-        assert resp.status == 200 and b"agentos_factory_items" in resp.read()
+        assert resp.status == 200 and b"nestlo_factory_items" in resp.read()
     finally:
         srv.shutdown()
         srv.server_close()

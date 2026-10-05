@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentos_services.loops import fingerprint
+from nestlo_services.loops import fingerprint
 from conftest import request
 
 ANTHROPIC = "/agent/a1/anthropic/v1/messages"
@@ -81,8 +81,8 @@ def test_window_expiry_and_admin_reset(make_gateway, store):
     now[0] += 1
     request(gw, "POST", ANTHROPIC, same)
     assert request(gw, "POST", ANTHROPIC, same)[0] == 429
-    assert request(gw, "DELETE", "/_agentos/loop/a1")[0] == 403          # admin socket only
-    assert request(gw, "DELETE", "/_agentos/loop/a1", admin=True)[0] == 200
+    assert request(gw, "DELETE", "/_nestlo/loop/a1")[0] == 403          # admin socket only
+    assert request(gw, "DELETE", "/_nestlo/loop/a1", admin=True)[0] == 200
     assert request(gw, "POST", ANTHROPIC, same)[0] == 200
 
 
@@ -117,7 +117,7 @@ def test_fingerprint_ignores_ids_and_timestamps():
 
 
 def test_alternation_run():
-    from agentos_services.loops import alternation_run
+    from nestlo_services.loops import alternation_run
     assert alternation_run([]) == 0 and alternation_run(["a"]) == 0
     assert alternation_run(["a", "a", "a"]) == 0               # a plain repeat is not an alternation
     assert alternation_run(["a", "b"]) == 2
@@ -149,7 +149,7 @@ def test_alternation_is_detected_and_reset(make_gateway, store, events):
     # an operator reset clears it as well
     for m in (b, a, b, a):
         request(gw, "POST", ANTHROPIC, m)
-    assert request(gw, "DELETE", "/_agentos/loop/a1", admin=True)[0] == 200
+    assert request(gw, "DELETE", "/_nestlo/loop/a1", admin=True)[0] == 200
     assert request(gw, "POST", ANTHROPIC, b)[0] == 200
 
 

@@ -3,11 +3,11 @@ import time
 
 import pytest
 
-from agentos_services.loops import fingerprint
-from agentos_services.routing import Router
-from agentos_services import config as configmod
-from agentos_services.store import BudgetRefused
-from agentos_services.usage import Pricing, apply_output_cap
+from nestlo_services.loops import fingerprint
+from nestlo_services.routing import Router
+from nestlo_services import config as configmod
+from nestlo_services.store import BudgetRefused
+from nestlo_services.usage import Pricing, apply_output_cap
 from conftest import PRICING, request
 
 ANTHROPIC = "/agent/a1/anthropic/v1/messages"

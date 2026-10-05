@@ -1,4 +1,4 @@
-# AgentOS agent skills module
+# Nestlo agent skills module
 #
 # Installs skill packs (nixos/packages/skills, docs/skills.md) for every agent
 # CLI on the system:
@@ -9,15 +9,15 @@
 #     every rebuild
 #   - the packs' tools in systemPackages and their MCP servers in the MCP
 #     registry
-#   - `agentos-skills list|doctor|path`
+#   - `nestlo-skills list|doctor|path`
 #
 # Which packs are on: a pack's own default (opt-in packs are off), turned on
-# by agentos.skills.enableAll or by agentos.skills.collections naming one of
+# by nestlo.skills.enableAll or by nestlo.skills.collections naming one of
 # the pack's collections; packs.<name>.enable set explicitly always wins.
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.skills;
+  cfg = config.nestlo.skills;
 
   allPacks = import ../../nixos/packages/skills { inherit pkgs; };
   enabledPacks = lib.filterAttrs (name: _: cfg.packs.${name}.enable) allPacks;
@@ -59,9 +59,9 @@ let
   bundle = pkgs.callPackage ../../nixos/packages/skills/bundle.nix { } packList;
   skillsCli = pkgs.callPackage ../../nixos/packages/skills/cli.nix { };
 
-  userNames = lib.unique (lib.optional cfg.includeAgentUser "agentos-agent" ++ cfg.users);
+  userNames = lib.unique (lib.optional cfg.includeAgentUser "nestlo-agent" ++ cfg.users);
   homeOf = user:
-    if user == "agentos-agent" then config.agentos.runtime.agentHome
+    if user == "nestlo-agent" then config.nestlo.runtime.agentHome
     else config.users.users.${user}.home;
 
   # skill name -> packs providing it
@@ -75,17 +75,17 @@ let
   # hook entries), concatenated per event
   claudeHooks = lib.zipAttrsWith (_: lib.concatLists) (map (p: p.claudeHooks or { }) packList);
 
-  ownedGlob = "/nix/store/*-agentos-skills-bundle/skills/*";
+  ownedGlob = "/nix/store/*-nestlo-skills-bundle/skills/*";
 
   # Runs as the user, so everything it creates belongs to the user and it can
   # only touch what the user can. It manages the links it owns (symlinks into
-  # an agentos-skills-bundle) and leaves any other file or directory, such as
+  # an nestlo-skills-bundle) and leaves any other file or directory, such as
   # a skill the user wrote, in place.
-  linkScript = pkgs.writeShellScript "agentos-skills-link" ''
+  linkScript = pkgs.writeShellScript "nestlo-skills-link" ''
     export PATH=${lib.makeBinPath [ pkgs.coreutils ]}
     bundle=${bundle}
     home="$1"
-    [ -d "$home" ] || { echo "agentos-skills: home $home does not exist, skipping" >&2; exit 0; }
+    [ -d "$home" ] || { echo "nestlo-skills: home $home does not exist, skipping" >&2; exit 0; }
 
     ours() {
       case "$(readlink "$1" 2>/dev/null)" in
@@ -114,7 +114,7 @@ let
 
     for rel in ${lib.concatStringsSep " " (lib.attrValues targetDirs)}; do
       dir="$home/$rel"
-      mkdir -p "$dir" || { echo "agentos-skills: cannot create $dir" >&2; continue; }
+      mkdir -p "$dir" || { echo "nestlo-skills: cannot create $dir" >&2; continue; }
       for entry in "$bundle"/skills/*; do
         [ -L "$entry" ] || continue
         link="$dir/$(basename "$entry")"
@@ -122,10 +122,10 @@ let
           if ours "$link"; then
             ln -sfn "$entry" "$link"
           else
-            echo "agentos-skills: $link is a link of yours, left alone" >&2
+            echo "nestlo-skills: $link is a link of yours, left alone" >&2
           fi
         elif [ -e "$link" ]; then
-          echo "agentos-skills: $link exists, left alone" >&2
+          echo "nestlo-skills: $link exists, left alone" >&2
         else
           ln -s "$entry" "$link"
         fi
@@ -134,9 +134,9 @@ let
   '';
 
   mkUnit = user: rec {
-    name = "agentos-skills-link-${user}";
+    name = "nestlo-skills-link-${user}";
     value = {
-      description = "Link AgentOS skills into the home of ${user}";
+      description = "Link Nestlo skills into the home of ${user}";
       wantedBy = [ "multi-user.target" ];
       after = [ "local-fs.target" "systemd-user-sessions.service" ];
       # a rebuild with different packs restarts the unit
@@ -155,8 +155,8 @@ let
   };
 in
 {
-  options.agentos.skills = {
-    enable = lib.mkEnableOption "AgentOS agent skill packs, linked into every agent CLI";
+  options.nestlo.skills = {
+    enable = lib.mkEnableOption "Nestlo agent skill packs, linked into every agent CLI";
 
     enableAll = lib.mkOption {
       type = lib.types.bool;
@@ -208,9 +208,9 @@ in
 
     includeAgentUser = lib.mkOption {
       type = lib.types.bool;
-      default = config.agentos.runtime.enable;
-      defaultText = lib.literalExpression "config.agentos.runtime.enable";
-      description = "Link the skills into the home of the sandboxed agent user (agentos-agent)";
+      default = config.nestlo.runtime.enable;
+      defaultText = lib.literalExpression "config.nestlo.runtime.enable";
+      description = "Link the skills into the home of the sandboxed agent user (nestlo-agent)";
     };
 
     users = lib.mkOption {
@@ -224,35 +224,35 @@ in
   config = lib.mkIf cfg.enable {
     # enableAll / collections switch packs on at mkDefault priority: above the
     # option default, below an explicit packs.<name>.enable
-    agentos.skills.packs = lib.mapAttrs
+    nestlo.skills.packs = lib.mapAttrs
       (_: pack: { enable = lib.mkIf (wanted pack) (lib.mkDefault true); })
       allPacks;
 
     warnings = lib.optional (skillCount > warnAbove)
-      ("agentos.skills: ${toString skillCount} skills are enabled. Every agent session lists each skill's name and "
+      ("nestlo.skills: ${toString skillCount} skills are enabled. Every agent session lists each skill's name and "
         + "description (about ${toString tokensPerSkill} tokens per skill), roughly ${toString (skillCount * tokensPerSkill / 1000)}k tokens "
         + "of context before any work, which also dilutes which skill the agent picks. Largest packs: "
         + lib.concatMapStringsSep ", " (b: "${b.pack} (${toString b.n})") biggest
-        + ". Turn packs off with agentos.skills.packs.<name>.enable = false or choose collections "
-        + "instead of agentos.skills.enableAll.");
+        + ". Turn packs off with nestlo.skills.packs.<name>.enable = false or choose collections "
+        + "instead of nestlo.skills.enableAll.");
 
     assertions = [
       {
         assertion = collisions == { };
-        message = "agentos.skills: skill names provided by more than one enabled pack: "
+        message = "nestlo.skills: skill names provided by more than one enabled pack: "
           + lib.concatStringsSep "; " (lib.mapAttrsToList (s: ps: "${s} (${lib.concatStringsSep ", " ps})") collisions)
-          + ". Disable one of the packs with agentos.skills.packs.<name>.enable = false.";
+          + ". Disable one of the packs with nestlo.skills.packs.<name>.enable = false.";
       }
       {
         assertion = lib.all (u: config.users.users ? ${u}) userNames;
-        message = "agentos.skills.users: unknown user(s): "
+        message = "nestlo.skills.users: unknown user(s): "
           + lib.concatStringsSep ", " (lib.filter (u: !(config.users.users ? ${u})) userNames);
       }
     ];
 
     environment.systemPackages = [ skillsCli ] ++ packList;
 
-    environment.etc."agentos/skills.json".text = builtins.toJSON {
+    environment.etc."nestlo/skills.json".text = builtins.toJSON {
       bundle = "${bundle}";
       users = map (u: { name = u; home = homeOf u; }) userNames;
       targets = targetDirs;
@@ -260,14 +260,14 @@ in
 
     # Claude Code reads drop-ins from the system managed-settings directory
     # (/etc/claude-code on Linux, per its managed settings documentation)
-    environment.etc."claude-code/managed-settings.d/50-agentos-skills.json" = lib.mkIf (claudeHooks != { }) {
+    environment.etc."claude-code/managed-settings.d/50-nestlo-skills.json" = lib.mkIf (claudeHooks != { }) {
       text = builtins.toJSON { hooks = claudeHooks; };
     };
 
     systemd.services = lib.listToAttrs (map mkUnit userNames);
 
-    # MCP servers shipped by the packs (they show up in `agentos-tools list`)
-    agentos.mcp-registry.extraToolServers = lib.foldl'
+    # MCP servers shipped by the packs (they show up in `nestlo-tools list`)
+    nestlo.mcp-registry.extraToolServers = lib.foldl'
       (acc: p: acc // lib.mapAttrs (_: server: { description = "MCP server of the ${p.pack} skill pack"; } // server) p.mcp)
       { }
       packList;

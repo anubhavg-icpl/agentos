@@ -4,9 +4,9 @@ import subprocess
 
 import pytest
 
-from agentos_services import scheduler as S
-from agentos_services import tasks as T
-from agentos_services.unixapi import call, serve_unix
+from nestlo_services import scheduler as S
+from nestlo_services import tasks as T
+from nestlo_services.unixapi import call, serve_unix
 from orchfix import cfg, clock, runtime  # noqa: F401
 
 

@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Databases Module
+# Nestlo Databases Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Pre-installs and auto-starts common databases so agents can work
@@ -9,11 +9,11 @@
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.databases;
+  cfg = config.nestlo.databases;
 in
 {
-  options.agentos.databases = {
-    enable = lib.mkEnableOption "AgentOS database services";
+  options.nestlo.databases = {
+    enable = lib.mkEnableOption "Nestlo database services";
 
     enablePostgres = lib.mkOption {
       type = lib.types.bool;
@@ -57,9 +57,9 @@ in
     services.postgresql = lib.mkIf cfg.enablePostgres {
       enable = true;
       package = pkgs.postgresql_16;
-      ensureDatabases = [ "agentos" "dev" "test" ];
+      ensureDatabases = [ "nestlo" "dev" "test" ];
       ensureUsers = [
-        { name = "agentos"; ensureDBOwnership = true; }
+        { name = "nestlo"; ensureDBOwnership = true; }
         { name = "admin"; ensureClauses.superuser = true; }
       ];
       authentication = pkgs.lib.mkOverride 10 ''
@@ -77,7 +77,7 @@ in
 
     # ─ Redis ─────────────────────────────────────────────────────────
     # A Redis for agents' own projects on localhost:6379, separate from
-    # the AgentOS control-plane Redis (redis-agentos, unix socket only)
+    # the Nestlo control-plane Redis (redis-nestlo, unix socket only)
     services.redis.servers.dev = lib.mkIf cfg.enableRedis {
       enable = true;
       port = 6379;
@@ -99,9 +99,9 @@ in
     services.mysql = lib.mkIf cfg.enableMySQL {
       enable = true;
       package = pkgs.mariadb;
-      ensureDatabases = [ "agentos" "dev" "test" ];
+      ensureDatabases = [ "nestlo" "dev" "test" ];
       ensureUsers = [
-        { name = "agentos"; ensurePermissions = { "*.*" = "ALL PRIVILEGES"; }; }
+        { name = "nestlo"; ensurePermissions = { "*.*" = "ALL PRIVILEGES"; }; }
       ];
     };
 
@@ -131,7 +131,7 @@ in
       ])
 
       # ─ Database management CLI ────────────────────────────────────
-      (pkgs.writeShellScriptBin "agentos-db" ''
+      (pkgs.writeShellScriptBin "nestlo-db" ''
         #!/usr/bin/env bash
         case "''${1:-status}" in
           status)
@@ -145,14 +145,14 @@ in
           connect)
             DB="''${2:-postgres}"
             case "$DB" in
-              postgres|pg) ${pkgs.postgresql_16}/bin/psql -U agentos -d agentos ;;
+              postgres|pg) ${pkgs.postgresql_16}/bin/psql -U nestlo -d nestlo ;;
               redis) ${pkgs.redis}/bin/redis-cli ;;
               sqlite) echo "Usage: sqlite3 <file>" ;;
               duckdb) ${pkgs.duckdb}/bin/duckdb ;;
               *) echo "Unknown database: $DB" ;;
             esac
             ;;
-          *) echo "Usage: agentos-db <status|connect>" ;;
+          *) echo "Usage: nestlo-db <status|connect>" ;;
         esac
       '')
     ]);

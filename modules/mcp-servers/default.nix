@@ -1,9 +1,9 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS MCP Server Registry — 36 Preconfigured MCP Servers
+# Nestlo MCP Server Registry — 36 Preconfigured MCP Servers
 # ═══════════════════════════════════════════════════════════════════════
 #
 # The Model Context Protocol (MCP) is how agents access external tools.
-# This module writes /etc/agentos/mcp-servers.json describing 35 MCP
+# This module writes /etc/nestlo/mcp-servers.json describing 35 MCP
 # servers. Every entry points at a package published on npm (run with
 # `npx -y`) or PyPI (run with `uvx`); nothing is pre-downloaded, so a
 # server is fetched the first time it starts.
@@ -27,11 +27,11 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.mcp-servers;
+  cfg = config.nestlo.mcp-servers;
 in
 {
-  options.agentos.mcp-servers = {
-    enable = lib.mkEnableOption "AgentOS MCP server registry (36 servers)";
+  options.nestlo.mcp-servers = {
+    enable = lib.mkEnableOption "Nestlo MCP server registry (36 servers)";
 
     enableCore = lib.mkOption {
       type = lib.types.bool;
@@ -90,7 +90,7 @@ in
 
   config = lib.mkIf cfg.enable {
     # ── MCP server registry config ───────────────────────────────────
-    environment.etc."agentos/mcp-servers.json".text = builtins.toJSON {
+    environment.etc."nestlo/mcp-servers.json".text = builtins.toJSON {
       servers = lib.flatten [
         # ════════════════════════════════════════════════════════════
         # CORE MCP SERVERS (10)
@@ -100,7 +100,7 @@ in
             name = "filesystem";
             description = "Read, write, search files in workspaces";
             command = "npx";
-            args = [ "-y" "@modelcontextprotocol/server-filesystem" "/var/lib/agentos/workspaces" ];
+            args = [ "-y" "@modelcontextprotocol/server-filesystem" "/var/lib/nestlo/workspaces" ];
             category = "core";
             port = null;
             env = { };
@@ -155,11 +155,11 @@ in
             enabled = true;
           }
           {
-            # Ships with AgentOS (no download); reads AGENTOS_AGENT_ID and the
-            # gateway URL from the environment `agentos spawn` sets.
-            name = "agentos-bus";
-            description = "Message other agents through the AgentOS gateway: send_message, read_messages";
-            command = "${pkgs.agentos.services}/bin/agentos-mcp-bus";
+            # Ships with Nestlo (no download); reads NESTLO_AGENT_ID and the
+            # gateway URL from the environment `nestlo spawn` sets.
+            name = "nestlo-bus";
+            description = "Message other agents through the Nestlo gateway: send_message, read_messages";
+            command = "${pkgs.nestlo.services}/bin/nestlo-mcp-bus";
             args = [ ];
             category = "core";
             port = null;
@@ -176,7 +176,7 @@ in
             name = "postgres";
             description = "PostgreSQL: query, schema, migrations";
             command = "npx";
-            args = [ "-y" "@modelcontextprotocol/server-postgres" "postgresql://agentos@localhost/agentos" ];
+            args = [ "-y" "@modelcontextprotocol/server-postgres" "postgresql://nestlo@localhost/nestlo" ];
             category = "database";
             enabled = true;
           }
@@ -184,7 +184,7 @@ in
             name = "sqlite";
             description = "SQLite: query, create, manage databases";
             command = "uvx";
-            args = [ "mcp-server-sqlite" "--db-path" "/var/lib/agentos/data/sqlite.db" ];
+            args = [ "mcp-server-sqlite" "--db-path" "/var/lib/nestlo/data/sqlite.db" ];
             category = "database";
             enabled = true;
           }
@@ -194,7 +194,7 @@ in
             command = "npx";
             args = [ "-y" "@benborla29/mcp-server-mysql" ];
             category = "database";
-            env = { MYSQL_HOST = "localhost"; MYSQL_USER = "agentos"; };
+            env = { MYSQL_HOST = "localhost"; MYSQL_USER = "nestlo"; };
             enabled = false;
           }
           {
@@ -451,18 +451,18 @@ in
         ])
 
         # ════════════════════════════════════════════════════════════
-        # PULLRUN (operators only; present with agentos.pullrun.enable)
+        # PULLRUN (operators only; present with nestlo.pullrun.enable)
         # ════════════════════════════════════════════════════════════
         # It can run any image as root, through a root daemon whose socket is
-        # only open to the agentos group (operators). The sandboxed agent
+        # only open to the nestlo group (operators). The sandboxed agent
         # user cannot connect, so this server is for operators' own tools
         # (an MCP client run by an operator), never for the agents spawned by
-        # `agentos spawn`. See docs/pullrun.md.
-        (lib.optional config.agentos.pullrun.enable {
+        # `nestlo spawn`. See docs/pullrun.md.
+        (lib.optional config.nestlo.pullrun.enable {
           name = "pullrun";
           description = "Pullrun: run OCI images as containers or microVMs (root; operators only)";
-          command = "${config.agentos.pullrun.package}/bin/pullrun";
-          args = [ "--direct=false" "--socket" config.agentos.pullrun.socket "mcp" ];
+          command = "${config.nestlo.pullrun.package}/bin/pullrun";
+          args = [ "--direct=false" "--socket" config.nestlo.pullrun.socket "mcp" ];
           category = "devops";
           operatorsOnly = true;
           enabled = true;
@@ -472,7 +472,7 @@ in
 
     # ── MCP registry management CLI ──────────────────────────────────
     environment.systemPackages = [
-      (pkgs.writeShellScriptBin "agentos-mcp" ''
+      (pkgs.writeShellScriptBin "nestlo-mcp" ''
         #!/usr/bin/env bash
         set -euo pipefail
 
@@ -486,8 +486,8 @@ in
         warn()  { echo -e "''${YELLOW}[WARN]''${NC} $*"; }
 
         # /etc is read-only (generated by Nix); runtime changes go to STATE.
-        DEFAULTS="/etc/agentos/mcp-servers.json"
-        STATE="/var/lib/agentos/mcp-servers.json"
+        DEFAULTS="/etc/nestlo/mcp-servers.json"
+        STATE="/var/lib/nestlo/mcp-servers.json"
         CONFIG="$DEFAULTS"
         [ -f "$STATE" ] && CONFIG="$STATE"
         save() {
@@ -502,7 +502,7 @@ in
           list)
             CATEGORY="''${2:-}"
             echo -e "''${BOLD}═══════════════════════════════════════════════════''${NC}"
-            echo -e "''${BOLD}         AgentOS MCP Server Registry                 ''${NC}"
+            echo -e "''${BOLD}         Nestlo MCP Server Registry                 ''${NC}"
             echo -e "''${BOLD}═══════════════════════════════════════════════════''${NC}"
             echo ""
 
@@ -530,7 +530,7 @@ in
           enable)
             SERVER="''${2:-}"
             if [ -z "$SERVER" ]; then
-              echo "Usage: agentos-mcp enable <server-name>"
+              echo "Usage: nestlo-mcp enable <server-name>"
               exit 1
             fi
             ${pkgs.jq}/bin/jq --arg n "$SERVER" '.servers |= map(if .name == $n then .enabled = true else . end)' "$CONFIG" | save
@@ -540,7 +540,7 @@ in
           disable)
             SERVER="''${2:-}"
             if [ -z "$SERVER" ]; then
-              echo "Usage: agentos-mcp disable <server-name>"
+              echo "Usage: nestlo-mcp disable <server-name>"
               exit 1
             fi
             ${pkgs.jq}/bin/jq --arg n "$SERVER" '.servers |= map(if .name == $n then .enabled = false else . end)' "$CONFIG" | save
@@ -550,7 +550,7 @@ in
           start)
             SERVER="''${2:-}"
             if [ -z "$SERVER" ]; then
-              echo "Usage: agentos-mcp start <server-name>"
+              echo "Usage: nestlo-mcp start <server-name>"
               exit 1
             fi
             info "Starting MCP server: $SERVER"
@@ -566,7 +566,7 @@ in
           test)
             SERVER="''${2:-}"
             if [ -z "$SERVER" ]; then
-              echo "Usage: agentos-mcp test <server-name>"
+              echo "Usage: nestlo-mcp test <server-name>"
               exit 1
             fi
             info "Testing MCP server: $SERVER"
@@ -581,7 +581,7 @@ in
           info)
             SERVER="''${2:-}"
             if [ -z "$SERVER" ]; then
-              echo "Usage: agentos-mcp info <server-name>"
+              echo "Usage: nestlo-mcp info <server-name>"
               exit 1
             fi
             ${pkgs.jq}/bin/jq --arg n "$SERVER" '.servers[] | select(.name == $n)' "$CONFIG"
@@ -614,10 +614,10 @@ in
 
           *)
             cat <<'HELP'
-        AgentOS MCP Server Registry
+        Nestlo MCP Server Registry
 
         USAGE:
-            agentos-mcp <COMMAND> [ARGS]
+            nestlo-mcp <COMMAND> [ARGS]
 
         COMMANDS:
             list [category]      List all servers (or filter by category)
@@ -646,6 +646,6 @@ in
       '')
     ];
 
-    networking.firewall.interfaces.agentos0.allowedTCPPorts = [ cfg.registryPort ];
+    networking.firewall.interfaces.nestlo0.allowedTCPPorts = [ cfg.registryPort ];
   };
 }

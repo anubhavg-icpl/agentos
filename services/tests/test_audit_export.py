@@ -10,8 +10,8 @@ import time
 
 import pytest
 
-from agentos_services import audit as A
-from agentos_services import audit_export as X
+from nestlo_services import audit as A
+from nestlo_services import audit_export as X
 
 
 class Clock:
@@ -55,7 +55,7 @@ def test_gateway_request_maps_to_api_activity(by_type):
     assert ev["activity_id"] == 1 and ev["type_uid"] == 600301
     assert ev["time"] == rec["ts"] and isinstance(ev["time"], int)
     assert ev["severity_id"] == 1 and ev["status_id"] == 1 and ev["status"] == "Success" and ev["status_code"] == "200"
-    assert ev["metadata"]["version"] == "1.3.0" and ev["metadata"]["product"]["name"] == "AgentOS"
+    assert ev["metadata"]["version"] == "1.3.0" and ev["metadata"]["product"]["name"] == "Nestlo"
     assert ev["metadata"]["uid"] == rec["hash"] and ev["metadata"]["sequence"] == rec["seq"]
     assert ev["actor"]["user"]["name"] == "a1"
     assert ev["api"]["operation"] == "gateway.request" and ev["api"]["response"]["code"] == 200
@@ -97,8 +97,8 @@ def by_type(tmp_path_factory):
 def test_syslog_message_is_rfc5424(by_type):
     rec = by_type["gateway.request"]
     msg = X.syslog_message(rec, "host1").decode()
-    m = re.match(r'^<(\d+)>1 (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z) host1 agentos-audit - gateway\.request '
-                 r'\[agentos@32473 seq="(\d+)" hash="([0-9a-f]{64})" type="gateway\.request" actor="a1"\] (\{.*\})$', msg)
+    m = re.match(r'^<(\d+)>1 (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z) host1 nestlo-audit - gateway\.request '
+                 r'\[nestlo@32473 seq="(\d+)" hash="([0-9a-f]{64})" type="gateway\.request" actor="a1"\] (\{.*\})$', msg)
     assert m, msg
     assert int(m.group(1)) == 13 * 8 + 6                      # facility "log audit", severity informational
     assert int(m.group(3)) == rec["seq"]
@@ -275,7 +275,7 @@ def test_splunk_hec_sink(adir, tmp_path, http_sink):
     token = tmp_path / "hec.token"
     token.write_text("abc-123\n")
     srv = http_sink()
-    sink = X.SplunkSink(srv.url + "/services/collector/event", str(token), index="agentos", host="node1")
+    sink = X.SplunkSink(srv.url + "/services/collector/event", str(token), index="nestlo", host="node1")
     sink.send(records(adir))
     req, = srv.requests
     assert req["path"] == "/services/collector/event"
@@ -283,7 +283,7 @@ def test_splunk_hec_sink(adir, tmp_path, http_sink):
     events = [json.loads(line) for line in req["body"].decode().splitlines()]
     assert len(events) == 4
     first = events[0]
-    assert first["host"] == "node1" and first["index"] == "agentos" and first["sourcetype"] == "agentos:audit:ocsf"
+    assert first["host"] == "node1" and first["index"] == "nestlo" and first["sourcetype"] == "nestlo:audit:ocsf"
     assert first["time"] == pytest.approx(1_800_000_000.0) and first["event"]["class_uid"] == 6003
     assert [e["event"]["metadata"]["sequence"] for e in events] == [1, 2, 3, 4]
 
@@ -310,7 +310,7 @@ def test_otlp_logs_sink(adir, tmp_path, http_sink):
     doc = json.loads(req["body"])
     res, = doc["resourceLogs"]
     attrs = {a["key"]: a["value"] for a in res["resource"]["attributes"]}
-    assert attrs["service.name"] == {"stringValue": "agentos-audit"}
+    assert attrs["service.name"] == {"stringValue": "nestlo-audit"}
     logs = res["scopeLogs"][0]["logRecords"]
     assert len(logs) == 4
     first = logs[0]

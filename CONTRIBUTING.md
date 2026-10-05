@@ -1,13 +1,13 @@
-# Contributing to AgentOS
+# Contributing to Nestlo
 
-Thanks for your interest in improving AgentOS! This is an operating system for coding agents, and we welcome contributions of all kinds.
+Thanks for your interest in improving Nestlo! This is an operating system for coding agents, and we welcome contributions of all kinds.
 
 ## Getting Started
 
 ```bash
 # Clone
-git clone https://github.com/anubhavg-icpl/agentos.git
-cd agentos
+git clone https://github.com/anubhavg-icpl/nestlo.git
+cd nestlo
 
 # Enter dev shell
 nix develop
@@ -40,10 +40,10 @@ templates/        Agent workspace template
 ## Adding a New Module
 
 1. Create `modules/your-module/default.nix`
-2. Define options under `agentos.your-module`
+2. Define options under `nestlo.your-module`
 3. Implement config under `config = lib.mkIf cfg.enable`
 4. Add import to `modules/default.nix`
-5. Enable in `nixos/hosts/agentos/default.nix`
+5. Enable in `nixos/hosts/nestlo/default.nix`
 6. Write a CLI tool if the module needs one
 7. Document in `docs/FEATURES.md`
 8. Commit with: `modules: add <module-name>`
@@ -52,7 +52,7 @@ templates/        Agent workspace template
 
 1. Add the agent package to `agents/default.nix`
 2. Add it to the `all-agents` meta-package
-3. Map its name(s) to its command in `agentos.runtime.agents` (modules/runtime)
+3. Map its name(s) to its command in `nestlo.runtime.agents` (modules/runtime)
 4. Document in `docs/AGENTS.md`
 5. Commit with: `agents: add <agent-name>`
 

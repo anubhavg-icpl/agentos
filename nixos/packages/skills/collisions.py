@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collision analysis of the AgentOS skill packs.
+"""Collision analysis of the Nestlo skill packs.
 
     python3 nixos/packages/skills/collisions.py [--system x86_64-linux] [--flake .]
 
@@ -9,8 +9,8 @@ small derived source trees are) and
 reports:
 
   1. name collisions: a skill directory name installed by more than one pack.
-     agentos.skills fails to evaluate when two enabled packs share a name, and
-     `agentos.skills.enableAll` enables every pack, so this must be empty.
+     nestlo.skills fails to evaluate when two enabled packs share a name, and
+     `nestlo.skills.enableAll` enables every pack, so this must be empty.
   2. duplicates: the same SKILL.md text installed under different names or by
      different packs (candidates to drop from the less canonical pack).
   3. per-pack skill counts, and the total.

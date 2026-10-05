@@ -27,11 +27,11 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
       - name: Build the toplevel
-        run: nix build -L --out-link toplevel .#nixosConfigurations.agentos.config.system.build.toplevel
+        run: nix build -L --out-link toplevel .#nixosConfigurations.nestlo.config.system.build.toplevel
 
       - name: Scan with vulnix (from the pinned nixpkgs)
         run: |
-          vulnix_pkg=$(nix build --no-link --print-out-paths .#nixosConfigurations.agentos.pkgs.vulnix)
+          vulnix_pkg=$(nix build --no-link --print-out-paths .#nixosConfigurations.nestlo.pkgs.vulnix)
           # vulnix exits non-zero when it finds something; the report is the product
           "$vulnix_pkg/bin/vulnix" --json "$(readlink -f toplevel)" > vulnix.json || true
           test -s vulnix.json || echo '[]' > vulnix.json

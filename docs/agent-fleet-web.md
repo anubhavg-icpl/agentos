@@ -1,12 +1,12 @@
 # agent-fleet web UIs
 
-Two static web pages from [agent-fleet](https://github.com/anubhavg-icpl/agent-fleet), packaged and served by AgentOS:
+Two static web pages from [agent-fleet](https://github.com/anubhavg-icpl/agent-fleet), packaged and served by Nestlo:
 
 - **chat**: an AI chat that runs entirely in the browser. llama.cpp runs as WebAssembly (wllama 3.6.1) in a Web Worker; five small open GGUF models (Qwen, Llama) are selectable. It is also a PWA.
 - **hub**: the agent-fleet overview page.
 
 ```nix
-agentos.dashboard.agentFleetWeb = {
+nestlo.dashboard.agentFleetWeb = {
   enable = true;
   # port = 8484;
   # deployTool = true;   # adds agent-fleet-deploy, see below
@@ -23,18 +23,18 @@ ssh -L 8484:127.0.0.1:8484 admin@host
 
 Then open <http://127.0.0.1:8484/chat/> or <http://127.0.0.1:8484/hub/>. The chat only works from a secure context, which `http://127.0.0.1` is; a tunnel to a non-loopback name is not, so keep the tunnel on `127.0.0.1`.
 
-When the web dashboard runs, its header shows links to both pages (`/api/links`, configured through `agentos.services.settings.dashboard.links`). On the desktop edition (`agentos.desktop.enable`) an "agent-fleet Chat" launcher opens the chat in the default browser.
+When the web dashboard runs, its header shows links to both pages (`/api/links`, configured through `nestlo.services.settings.dashboard.links`). On the desktop edition (`nestlo.desktop.enable`) an "agent-fleet Chat" launcher opens the chat in the default browser.
 
 ## What loads from where
 
 | Resource | Source |
 |:---|:---|
-| Page, scripts, styles, images | the AgentOS host (`pkgs.agentos.agent-fleet-web`) |
+| Page, scripts, styles, images | the Nestlo host (`pkgs.nestlo.agent-fleet-web`) |
 | wllama JS and WebAssembly (and its compatibility build) | the host: vendored from the npm tarballs of `@wllama/wllama` and `@wllama/wllama-compat` 3.6.1, pinned by hash. Upstream loads them from `cdn.jsdelivr.net`; the import paths are rewritten at build time |
 | GGUF model weights | **the visitor's browser downloads them from `huggingface.co`** (and its CDN hosts) on first use of a model, then caches them. This is the only runtime request to a third party. The chat sends no prompts anywhere: inference is local to the browser |
 | Hub links | plain anchors to GitHub and Hugging Face, followed only on click |
 
-Each model is a few hundred MB to a few GB. The machine running the *browser* needs access to huggingface.co, not the AgentOS host.
+Each model is a few hundred MB to a few GB. The machine running the *browser* needs access to huggingface.co, not the Nestlo host.
 
 ## Server details
 
@@ -48,7 +48,7 @@ The CSP and COOP/COEP headers cannot be exercised by the VM test (it has no brow
 
 ## Publishing to Hugging Face (`deployTool`)
 
-`agentos.dashboard.agentFleetWeb.deployTool = true` adds `agent-fleet-deploy` to the system packages. It is `deploy.py` from agent-fleet with `huggingface_hub` from nixpkgs. **It publishes to Hugging Face**: it creates or updates the static Spaces `chat` and `agent-hub` (and with `--docker`, Docker Spaces that need a paid plan) under the account of the token you give it. Run it only with a token you want to use for that.
+`nestlo.dashboard.agentFleetWeb.deployTool = true` adds `agent-fleet-deploy` to the system packages. It is `deploy.py` from agent-fleet with `huggingface_hub` from nixpkgs. **It publishes to Hugging Face**: it creates or updates the static Spaces `chat` and `agent-hub` (and with `--docker`, Docker Spaces that need a paid plan) under the account of the token you give it. Run it only with a token you want to use for that.
 
 ```
 export HF_TOKEN=hf_...        # a write token; or put it in the state file below

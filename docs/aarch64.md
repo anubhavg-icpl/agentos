@@ -5,17 +5,17 @@ The server, VM and ISO hosts and the desktop host are built for both
 
 | x86_64 | aarch64 |
 |---|---|
-| `agentos` | `agentos-aarch64` |
-| `agentos-vm` | `agentos-vm-aarch64` |
-| `agentos-iso` | `agentos-iso-aarch64` |
-| `agentos-desktop` | `agentos-desktop-aarch64` |
-| `agentos-desktop-vm` | (x86_64 only) |
-| `agentos-desktop-iso` | (x86_64 only) |
+| `nestlo` | `nestlo-aarch64` |
+| `nestlo-vm` | `nestlo-vm-aarch64` |
+| `nestlo-iso` | `nestlo-iso-aarch64` |
+| `nestlo-desktop` | `nestlo-desktop-aarch64` |
+| `nestlo-desktop-vm` | (x86_64 only) |
+| `nestlo-desktop-iso` | (x86_64 only) |
 
 `packages.aarch64-linux` has `iso-image` and `vm-image`, next to the agent
 packages. The desktop VM and live ISO are x86_64 only (each configuration
 adds evaluation memory to `nix flake check`); install the desktop on ARM with
-`agentos-install --desktop` from the aarch64 ISO. `agentos-install` picks the
+`nestlo-install --desktop` from the aarch64 ISO. `nestlo-install` picks the
 `-aarch64` configuration on its own when run on an ARM machine.
 
 Building for ARM needs an aarch64 builder or `boot.binfmt.emulatedSystems`

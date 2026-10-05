@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Circuit Breaker & Rate Limiter Module
+# Nestlo Circuit Breaker & Rate Limiter Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Protects the system from runaway agents:
@@ -9,16 +9,16 @@
 #   - Loop detection: an agent that keeps sending the same request is refused
 #     (model gateway, 429 loop_detected) and a loop_detected event is published
 #   - Resource limits on each sandboxed agent's systemd unit: memory, CPU,
-#     number of processes (set by `agentos spawn`)
+#     number of processes (set by `nestlo spawn`)
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.circuit-breaker;
-  adminSocket = config.agentos.services.settings.gateway.admin_socket;
+  cfg = config.nestlo.circuit-breaker;
+  adminSocket = config.nestlo.services.settings.gateway.admin_socket;
 
   breakerCli = pkgs.writeShellApplication {
-    name = "agentos-breaker";
+    name = "nestlo-breaker";
     runtimeInputs = [ pkgs.curl pkgs.jq ];
     text = ''
       case "''${1:-status}" in
@@ -29,17 +29,17 @@ let
           echo "Agent limits:    ${toString cfg.maxMemoryMB} MB memory, ${toString cfg.maxCpuPercent}% of all CPUs, ${toString cfg.maxProcesses} processes"
           ;;
         reset)
-          [ $# -eq 2 ] || { echo "Usage: agentos-breaker reset <agent-id>" >&2; exit 1; }
-          curl -fsS --unix-socket "${adminSocket}" -X DELETE "http://localhost/_agentos/circuit/$2" \
+          [ $# -eq 2 ] || { echo "Usage: nestlo-breaker reset <agent-id>" >&2; exit 1; }
+          curl -fsS --unix-socket "${adminSocket}" -X DELETE "http://localhost/_nestlo/circuit/$2" \
             | jq -r '"Circuit for \(.agent): \(.circuit)"'
           ;;
         reset-loop)
-          [ $# -eq 2 ] || { echo "Usage: agentos-breaker reset-loop <agent-id>" >&2; exit 1; }
-          curl -fsS --unix-socket "${adminSocket}" -X DELETE "http://localhost/_agentos/loop/$2" \
+          [ $# -eq 2 ] || { echo "Usage: nestlo-breaker reset-loop <agent-id>" >&2; exit 1; }
+          curl -fsS --unix-socket "${adminSocket}" -X DELETE "http://localhost/_nestlo/loop/$2" \
             | jq -r '"Loop detection for \(.agent): \(.loop)"'
           ;;
         *)
-          echo "Usage: agentos-breaker <status|reset <agent-id>|reset-loop <agent-id>>" >&2
+          echo "Usage: nestlo-breaker <status|reset <agent-id>|reset-loop <agent-id>>" >&2
           exit 1
           ;;
       esac
@@ -47,8 +47,8 @@ let
   };
 in
 {
-  options.agentos.circuit-breaker = {
-    enable = lib.mkEnableOption "AgentOS circuit breaker and rate limiter";
+  options.nestlo.circuit-breaker = {
+    enable = lib.mkEnableOption "Nestlo circuit breaker and rate limiter";
 
     maxApiCallsPerMinute = lib.mkOption {
       type = lib.types.int;
@@ -131,7 +131,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    agentos.services.settings.limits = {
+    nestlo.services.settings.limits = {
       max_requests_per_minute = cfg.maxApiCallsPerMinute;
       max_consecutive_failures = cfg.maxConsecutiveFailures;
       cooldown_sec = cfg.cooldownPeriodSec;
@@ -142,7 +142,7 @@ in
       max_auth_failures_per_minute = cfg.maxAuthFailuresPerMinute;
     };
 
-    agentos.runtime.agentLimits = {
+    nestlo.runtime.agentLimits = {
       memory_mb = cfg.maxMemoryMB;
       cpu_percent = cfg.maxCpuPercent;
       tasks_max = cfg.maxProcesses;

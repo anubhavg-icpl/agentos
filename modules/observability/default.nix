@@ -1,15 +1,15 @@
-# AgentOS observability module
+# Nestlo observability module
 # OpenTelemetry, tracing, cost tracking, decision logs
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.observability;
+  cfg = config.nestlo.observability;
 in
 {
   imports = [ ./alerts.nix ];
 
-  options.agentos.observability = {
-    enable = lib.mkEnableOption "AgentOS observability";
+  options.nestlo.observability = {
+    enable = lib.mkEnableOption "Nestlo observability";
 
     otelCollectorPort = lib.mkOption {
       type = lib.types.port;
@@ -101,7 +101,7 @@ in
       retentionTime = "${toString cfg.retentionDays}d";
       scrapeConfigs = [
         {
-          job_name = "agentos-daemon";
+          job_name = "nestlo-daemon";
           static_configs = [{
             targets = [ "localhost:9950" ];
           }];
@@ -143,8 +143,8 @@ in
         security = {
           admin_user = "admin";
           disable_gravatar = true;
-          # Generated per machine on first boot (agentos-grafana-secret)
-          secret_key = "$__file{/var/lib/agentos-grafana/secret_key}";
+          # Generated per machine on first boot (nestlo-grafana-secret)
+          secret_key = "$__file{/var/lib/nestlo-grafana/secret_key}";
         } // lib.optionalAttrs (cfg.grafanaAdminPasswordFile != null) {
           admin_password = "$__file{${cfg.grafanaAdminPasswordFile}}";
         };
@@ -169,27 +169,27 @@ in
       };
     };
 
-    systemd.services.agentos-grafana-secret = {
+    systemd.services.nestlo-grafana-secret = {
       description = "Generate the Grafana secret key";
       wantedBy = [ "grafana.service" ];
       before = [ "grafana.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        StateDirectory = "agentos-grafana";
+        StateDirectory = "nestlo-grafana";
         StateDirectoryMode = "0750";
       };
       script = ''
-        f=/var/lib/agentos-grafana/secret_key
+        f=/var/lib/nestlo-grafana/secret_key
         if [ ! -s "$f" ]; then
           umask 077
           ${pkgs.openssl}/bin/openssl rand -hex 32 > "$f"
         fi
-        chown grafana:grafana "$f" /var/lib/agentos-grafana
+        chown grafana:grafana "$f" /var/lib/nestlo-grafana
       '';
     };
 
     # Grafana is bound to localhost and not opened in the firewall:
-    #   ssh -L 2342:localhost:2342 admin@agentos
+    #   ssh -L 2342:localhost:2342 admin@nestlo
   };
 }

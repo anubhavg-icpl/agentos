@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from agentos_services import mcp_bus
-from agentos_services.mcp_bus import BusServer, derive_base
+from nestlo_services import mcp_bus
+from nestlo_services.mcp_bus import BusServer, derive_base
 
 
 def rpc(method, params=None, mid=1):
@@ -35,9 +35,9 @@ def server():
 def test_derive_base():
     env = {"ANTHROPIC_BASE_URL": "http://127.0.0.1:8080/agent/a-1/anthropic"}
     assert derive_base(env) == ("http://127.0.0.1:8080/agent/a-1", "a-1")
-    env = {"OPENAI_BASE_URL": "http://127.0.0.1:8080/agent/o1/openai/v1", "AGENTOS_AGENT_ID": "o1"}
+    env = {"OPENAI_BASE_URL": "http://127.0.0.1:8080/agent/o1/openai/v1", "NESTLO_AGENT_ID": "o1"}
     assert derive_base(env) == ("http://127.0.0.1:8080/agent/o1", "o1")
-    env = {"AGENTOS_GATEWAY_URL": "http://gw:9/", "AGENTOS_AGENT_ID": "x"}
+    env = {"NESTLO_GATEWAY_URL": "http://gw:9/", "NESTLO_AGENT_ID": "x"}
     assert derive_base(env) == ("http://gw:9/agent/x", "x")
     with pytest.raises(ValueError):
         derive_base({})
@@ -47,7 +47,7 @@ def test_initialize_and_lists(server):
     srv, _ = server
     res = srv.handle(rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {}}))
     assert res["id"] == 1 and res["result"]["protocolVersion"] == "2025-03-26"
-    assert res["result"]["serverInfo"]["name"] == "agentos-bus" and "tools" in res["result"]["capabilities"]
+    assert res["result"]["serverInfo"]["name"] == "nestlo-bus" and "tools" in res["result"]["capabilities"]
     tools = srv.handle(rpc("tools/list", mid=2))["result"]["tools"]
     assert [t["name"] for t in tools] == ["send_message", "read_messages"]
     assert tools[0]["inputSchema"]["required"] == ["topic", "text"]
@@ -115,7 +115,7 @@ def test_end_to_end_against_the_gateway(make_gateway):
 
 
 def test_main_needs_configuration(monkeypatch, capsys):
-    for var in ("AGENTOS_AGENT_ID", "AGENTOS_GATEWAY_URL", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):
+    for var in ("NESTLO_AGENT_ID", "NESTLO_GATEWAY_URL", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"):
         monkeypatch.delenv(var, raising=False)
     assert mcp_bus.main() == 1
-    assert "AGENTOS_AGENT_ID" in capsys.readouterr().err
+    assert "NESTLO_AGENT_ID" in capsys.readouterr().err

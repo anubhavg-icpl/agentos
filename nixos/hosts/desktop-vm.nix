@@ -1,7 +1,7 @@
 # The desktop as a QEMU/KVM guest (see packages.desktop-vm-image): log in
 # automatically as admin. There is no fixed password. On first boot a random
 # one is generated, shown on the VM console (login prompt) and kept in
-# /var/lib/agentos/first-boot-password (root only) until you change it. It is
+# /var/lib/nestlo/first-boot-password (root only) until you change it. It is
 # marked expired (`chage -d 0`), so the first interactive login (lock screen,
 # tty, `su`) forces a new one. Because an expired password blocks autologin,
 # the first boot lands on the login screen; later boots log in automatically.
@@ -9,13 +9,13 @@
 { lib, pkgs, ... }:
 
 let
-  stateDir = "/var/lib/agentos";
+  stateDir = "/var/lib/nestlo";
   stateFile = "${stateDir}/first-boot-password";
   doneFile = "${stateDir}/.first-boot-done";
-  issueFile = "/run/issue.d/50-agentos-password.issue";
+  issueFile = "/run/issue.d/50-nestlo-password.issue";
 in
 {
-  agentos.desktop.autologin = {
+  nestlo.desktop.autologin = {
     enable = true;
     user = "admin";
   };
@@ -26,7 +26,7 @@ in
   # here admin has one, so use it.
   security.sudo.wheelNeedsPassword = lib.mkForce true;
 
-  systemd.services.agentos-first-boot-password = {
+  systemd.services.nestlo-first-boot-password = {
     description = "Set a random first-boot password for admin";
     wantedBy = [ "multi-user.target" ];
     before = [
@@ -57,7 +57,7 @@ in
         pw="$(cat ${stateFile})"
         {
           echo
-          echo "AgentOS desktop VM: first-boot password for 'admin': $pw"
+          echo "Nestlo desktop VM: first-boot password for 'admin': $pw"
           echo "You must change it at the first login (also kept in ${stateFile}, root only)."
           echo
         } | tee ${issueFile} > /dev/console || true

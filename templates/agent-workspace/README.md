@@ -1,6 +1,6 @@
 # Project Workspace
 
-This workspace is managed by AgentOS.
+This workspace is managed by Nestlo.
 
 ## Quick start
 
@@ -8,8 +8,8 @@ This workspace is managed by AgentOS.
 # Enter the dev shell
 nix develop
 
-# Spawn an agent (requires AgentOS host)
-agentos spawn claude-code --workspace .
+# Spawn an agent (requires Nestlo host)
+nestlo spawn claude-code --workspace .
 
 # Or run agents directly (standalone)
 claude

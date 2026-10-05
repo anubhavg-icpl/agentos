@@ -2,16 +2,16 @@
 #
 #   nix build .#checks.x86_64-linux.container
 #
-# Spawns a fake agent with `agentos spawn --isolation container` and checks,
+# Spawns a fake agent with `nestlo spawn --isolation container` and checks,
 # from inside the agent and from the host, that it runs in its own mount,
 # PID, hostname and network namespaces, reaches the model gateway (and
 # through it the mock LLM) at the bridge address 10.200.0.1:8080, cannot
 # reach the host's other services, cannot write outside its workspace, and
 # that the network namespace and veth are removed when the unit ends.
 #
-# There is no GPU in the VM: `agentos gpu` and `spawn --gpu` are checked for
+# There is no GPU in the VM: `nestlo gpu` and `spawn --gpu` are checked for
 # graceful absence only.
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 let
   # Mock of the Anthropic Messages API
@@ -75,12 +75,12 @@ let
       yesno touch "$HOME/ok.txt" > write-home.txt
       yesno touch /etc/escape > write-etc.txt
       yesno touch /nix/store/escape > write-store.txt
-      yesno touch /var/lib/agentos/escape > write-agentos.txt
+      yesno touch /var/lib/nestlo/escape > write-nestlo.txt
       yesno touch /usr/escape > write-usr.txt
-      yesno test -e /run/redis-agentos/redis.sock > sees-redis.txt
-      yesno test -e /run/agentos-gateway/admin.sock > sees-admin.txt
-      yesno test -e /var/lib/agentos/state > sees-state.txt
-      yesno test -e /etc/agentos/services.toml > sees-config.txt
+      yesno test -e /run/redis-nestlo/redis.sock > sees-redis.txt
+      yesno test -e /run/nestlo-gateway/admin.sock > sees-admin.txt
+      yesno test -e /var/lib/nestlo/state > sees-state.txt
+      yesno test -e /etc/nestlo/services.toml > sees-config.txt
 
       # Tools
       git rev-parse --git-dir > git.txt 2>&1 || echo failed > git.txt
@@ -88,11 +88,11 @@ let
       curl --version | grep -c https > curl-https.txt || true
 
       # Network: the gateway and the LLM behind it are reachable ...
-      curl -s -m 5 -o /dev/null -w '%{http_code}' http://10.200.0.1:8080/_agentos/health > gateway-health.txt || true
+      curl -s -m 5 -o /dev/null -w '%{http_code}' http://10.200.0.1:8080/_nestlo/health > gateway-health.txt || true
       # ... but not with admin rights, and nothing else on the host is
       curl -s -m 5 -o /dev/null -w '%{http_code}' -X PUT -d '{"daily_usd": 999}' \
-        http://10.200.0.1:8080/_agentos/budget/anyone > gateway-admin.txt || true
-      curl -s -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/_agentos/health > loopback-gateway.txt || true
+        http://10.200.0.1:8080/_nestlo/budget/anyone > gateway-admin.txt || true
+      curl -s -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/_nestlo/health > loopback-gateway.txt || true
       curl -s -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:9999/ > loopback-llm.txt || true
       curl -s -m 3 -o /dev/null -w '%{http_code}' http://10.200.0.1:7777/ > host-service.txt || true
       curl -s -m 3 -o /dev/null -w '%{http_code}' http://10.200.0.1:9950/metrics > host-metrics.txt || true
@@ -116,11 +116,11 @@ let
   };
 in
 pkgs.testers.runNixOSTest {
-  name = "agentos-container";
+  name = "nestlo-container";
   globalTimeout = 3600;
 
   nodes.machine = { ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 3072;
     virtualisation.cores = 2;
@@ -131,7 +131,7 @@ pkgs.testers.runNixOSTest {
     };
     security.sudo.wheelNeedsPassword = false;
 
-    agentos = {
+    nestlo = {
       runtime = {
         enable = true;
         agents.fake = "fake-agent";
@@ -140,7 +140,7 @@ pkgs.testers.runNixOSTest {
         enable = true;
         providers.anthropic = {
           baseUrl = "http://127.0.0.1:9999";
-          keyFile = "/etc/agentos-test/anthropic.key";
+          keyFile = "/etc/nestlo-test/anthropic.key";
         };
         providers.openai.baseUrl = "http://127.0.0.1:9999";
       };
@@ -152,10 +152,10 @@ pkgs.testers.runNixOSTest {
       };
     };
 
-    environment.etc."agentos-test/anthropic.key" = {
+    environment.etc."nestlo-test/anthropic.key" = {
       text = "sk-test-real-key";
       mode = "0440";
-      group = "agentos";
+      group = "nestlo";
     };
 
     environment.systemPackages = [ fakeAgent pkgs.iproute2 ];
@@ -163,7 +163,7 @@ pkgs.testers.runNixOSTest {
 
     systemd.services.mock-llm = {
       wantedBy = [ "multi-user.target" ];
-      before = [ "agentos-model-gateway.service" ];
+      before = [ "nestlo-model-gateway.service" ];
       serviceConfig = {
         ExecStart = "${mockLlm}/bin/mock-llm";
         StateDirectory = "mock-llm";
@@ -178,20 +178,20 @@ pkgs.testers.runNixOSTest {
   testScript = ''
     import json
 
-    ws = "/var/lib/agentos/workspaces/demo"
+    ws = "/var/lib/nestlo/workspaces/demo"
 
     def admin(cmd):
         return machine.succeed(f"su - admin -c {json.dumps(cmd)}")
 
     def state_ids():
-        return set(machine.succeed("ls /var/lib/agentos/state | grep '[.]json$' || true").split())
+        return set(machine.succeed("ls /var/lib/nestlo/state | grep '[.]json$' || true").split())
 
     def spawn(*args):
         """Start an agent in the background; returns its id."""
         before = state_ids()
         machine.succeed(
             "setsid -f su - admin -c "
-            f"'cd {ws} && agentos spawn fake {' '.join(args)}' "
+            f"'cd {ws} && nestlo spawn fake {' '.join(args)}' "
             ">/tmp/spawn.log 2>&1 </dev/null"
         )
         retry(lambda _: bool(state_ids() - before), timeout_seconds=60)
@@ -207,54 +207,54 @@ pkgs.testers.runNixOSTest {
         return {
             "netns": machine.succeed("ip netns list").strip(),
             "veth": machine.succeed("ip -o link show type veth").strip(),
-            "state": machine.succeed("ls /run/agentos/net 2>/dev/null || true").strip(),
+            "state": machine.succeed("ls /run/nestlo/net 2>/dev/null || true").strip(),
         }
 
     machine.wait_for_unit("multi-user.target")
-    for unit in ["redis-agentos.service", "agentos-model-gateway.service",
-                 "agentos-daemon.service", "mock-llm.service", "host-service.service", "dnsmasq.service"]:
+    for unit in ["redis-nestlo.service", "nestlo-model-gateway.service",
+                 "nestlo-daemon.service", "mock-llm.service", "host-service.service", "dnsmasq.service"]:
         machine.wait_for_unit(unit)
     machine.wait_for_open_port(8080)
 
     with subtest("the gateway also listens on the agent bridge"):
-        machine.succeed("ip -4 addr show agentos0 | grep -q 10.200.0.1")
-        out = machine.succeed("curl -fsS http://10.200.0.1:8080/_agentos/health")
+        machine.succeed("ip -4 addr show nestlo0 | grep -q 10.200.0.1")
+        out = machine.succeed("curl -fsS http://10.200.0.1:8080/_nestlo/health")
         assert json.loads(out)["providers"]["anthropic"]["managed_key"], out
-        machine.succeed("curl -fsS http://127.0.0.1:8080/_agentos/health")
+        machine.succeed("curl -fsS http://127.0.0.1:8080/_nestlo/health")
 
-    admin("agentos workspace create demo")
+    admin("nestlo workspace create demo")
 
     with subtest("GPU absence is handled gracefully"):
-        assert "No GPUs" in admin("agentos gpu")
-        status, out = machine.execute(f"su - admin -c 'cd {ws} && agentos spawn fake --gpu' 2>&1")
+        assert "No GPUs" in admin("nestlo gpu")
+        status, out = machine.execute(f"su - admin -c 'cd {ws} && nestlo spawn fake --gpu' 2>&1")
         print(out)
         assert status != 0 and "GPU" in out, (status, out)
-        machine.fail("systemctl list-units --all 'agentos-agent-*' | grep -q agentos-agent")
+        machine.fail("systemctl list-units --all 'nestlo-agent-*' | grep -q nestlo-agent")
 
     with subtest("bad isolation modes are refused"):
-        machine.fail(f"su - admin -c 'cd {ws} && agentos spawn fake --isolation vm'")
-        machine.fail(f"su - admin -c 'cd {ws} && agentos spawn fake --unsandboxed --isolation container'")
+        machine.fail(f"su - admin -c 'cd {ws} && nestlo spawn fake --isolation vm'")
+        machine.fail(f"su - admin -c 'cd {ws} && nestlo spawn fake --unsandboxed --isolation container'")
 
     with subtest("spawn a container-isolated agent"):
         agent = spawn("--isolation", "container", "--budget", "3")
         print("agent id:", agent)
         wait_probes()
-        state = json.loads(machine.succeed(f"cat /var/lib/agentos/state/{agent}.json"))
+        state = json.loads(machine.succeed(f"cat /var/lib/nestlo/state/{agent}.json"))
         assert state["isolation"] == "container" and state["sandboxed"], state
         assert "isolation: container" in machine.succeed("cat /tmp/spawn.log")
 
     with subtest("own root filesystem: read-only except workspace and home"):
-        assert ws_file("whoami.txt") == "agentos-agent"
+        assert ws_file("whoami.txt") == "nestlo-agent"
         assert ws_file("write-workspace.txt") == "yes"
         assert ws_file("write-home.txt") == "yes"
-        for name in ["etc", "store", "agentos", "usr"]:
+        for name in ["etc", "store", "nestlo", "usr"]:
             assert ws_file(f"write-{name}.txt") == "no", name
         # the control plane is not part of the container's view
         for name in ["redis", "admin", "state", "config"]:
             assert ws_file(f"sees-{name}.txt") == "no", name
         rootdir = ws_file("rootdir.txt").split()
         assert "home" not in rootdir and "root" not in rootdir, rootdir
-        machine.fail("test -e /var/lib/agentos/escape")
+        machine.fail("test -e /var/lib/nestlo/escape")
 
     with subtest("tools work inside: git and the TLS trust store"):
         assert ws_file("git.txt") == ".git"
@@ -270,9 +270,9 @@ pkgs.testers.runNixOSTest {
         procs = ws_file("ps.txt").splitlines()
         print("processes seen by the agent:", procs)
         assert 0 < len(procs) <= 12, procs
-        assert not any(w in p for p in procs for w in ("redis", "python", "dnsmasq", "sshd", "agentos")), procs
-        # `agentos shell` enters the same namespaces
-        out = admin(f"printf 'ps -A -o comm=\\nreadlink /proc/self/ns/pid\\nreadlink /proc/self/ns/net\\n' | agentos shell {agent}")
+        assert not any(w in p for p in procs for w in ("redis", "python", "dnsmasq", "sshd", "nestlo")), procs
+        # `nestlo shell` enters the same namespaces
+        out = admin(f"printf 'ps -A -o comm=\\nreadlink /proc/self/ns/pid\\nreadlink /proc/self/ns/net\\n' | nestlo shell {agent}")
         print(out)
         assert "dnsmasq" not in out and "redis" not in out, out
         assert seen["pid"] in out and seen["net"] in out, (seen, out)
@@ -285,8 +285,8 @@ pkgs.testers.runNixOSTest {
         assert ws_file("resolv.txt") == "nameserver 10.200.0.1"
         base = ws_file("base-url.txt")
         assert base.startswith(f"http://10.200.0.1:8080/agent/{agent}:") and base.endswith("/anthropic"), base
-        assert f"agentos-{agent}" in machine.succeed("ip netns list")
-        machine.succeed("ip -o link show type veth | grep -q agentos0")
+        assert f"nestlo-{agent}" in machine.succeed("ip netns list")
+        machine.succeed("ip -o link show type veth | grep -q nestlo0")
         machine.succeed("bridge -d link | grep -q 'isolated on'")
 
     with subtest("reaches the gateway and the mock LLM through it"):
@@ -294,7 +294,7 @@ pkgs.testers.runNixOSTest {
         assert ws_file("llm.txt") == "200"
         seen = [json.loads(l) for l in machine.succeed("cat /var/lib/mock-llm/requests.jsonl").splitlines()]
         assert seen and all(r["key"] == "sk-test-real-key" for r in seen), seen
-        spend = json.loads(admin("agentos budget status --json"))["agents"][agent]
+        spend = json.loads(admin("nestlo budget status --json"))["agents"][agent]
         assert spend["usd"] > 0, spend
 
     with subtest("cannot reach anything else on the host"):
@@ -306,61 +306,61 @@ pkgs.testers.runNixOSTest {
         assert ws_file("rawsock.txt") == "no"
         assert ws_file("packet-sock.txt") == "no"
         assert ws_file("metadata.txt") in ("000", ""), ws_file("metadata.txt")
-        fwd = machine.succeed("iptables -S agentos-fwd")
-        assert "-d 169.254.169.254/32 -j REJECT" in fwd and "-o agentos0 -j REJECT" in fwd, fwd
+        fwd = machine.succeed("iptables -S nestlo-fwd")
+        assert "-d 169.254.169.254/32 -j REJECT" in fwd and "-o nestlo0 -j REJECT" in fwd, fwd
         for net in ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]:
             assert f"-d {net} -j REJECT" in fwd, net
         # the unit carries the syscall and namespace restrictions
-        props = machine.succeed(f"systemctl show agentos-agent-{agent}.service -p RestrictNamespaces -p MemorySwapMax -p MemoryDenyWriteExecute")
+        props = machine.succeed(f"systemctl show nestlo-agent-{agent}.service -p RestrictNamespaces -p MemorySwapMax -p MemoryDenyWriteExecute")
         assert "RestrictNamespaces=yes" in props and "MemorySwapMax=0" in props, props
         assert "MemoryDenyWriteExecute=no" in props, props
         # the same service is reachable from the host itself
         machine.succeed("curl -fsS -m 5 http://10.200.0.1:7777/ >/dev/null")
-        rules = machine.succeed("iptables -S agentos-fwd")
+        rules = machine.succeed("iptables -S nestlo-fwd")
         print(rules)
-        assert "agentos-llm" in rules and "REJECT" in rules
-        assert "agentos-in" in machine.succeed("iptables -S INPUT")
+        assert "nestlo-llm" in rules and "REJECT" in rules
+        assert "nestlo-in" in machine.succeed("iptables -S INPUT")
 
     with subtest("two containers get different addresses"):
         other = spawn("--isolation", "container")
-        machine.wait_until_succeeds(f"test -s /run/agentos/net/{other}/ip", timeout=60)
-        ips = {machine.succeed(f"cat /run/agentos/net/{a}/ip").strip() for a in (agent, other)}
+        machine.wait_until_succeeds(f"test -s /run/nestlo/net/{other}/ip", timeout=60)
+        ips = {machine.succeed(f"cat /run/nestlo/net/{a}/ip").strip() for a in (agent, other)}
         assert len(ips) == 2, ips
-        admin(f"agentos kill {other}")
-        machine.wait_until_fails(f"test -e /run/agentos/net/{other}", timeout=30)
+        admin(f"nestlo kill {other}")
+        machine.wait_until_fails(f"test -e /run/nestlo/net/{other}", timeout=30)
 
     with subtest("namespace and veth are removed when the agent is stopped"):
-        admin(f"agentos kill {agent}")
-        machine.wait_until_fails(f"systemctl is-active agentos-agent-{agent}.service", timeout=30)
+        admin(f"nestlo kill {agent}")
+        machine.wait_until_fails(f"systemctl is-active nestlo-agent-{agent}.service", timeout=30)
         machine.wait_until_succeeds("test -z \"$(ip netns list)\"", timeout=30)
         left = leftovers()
         print(left)
         assert left == {"netns": "", "veth": "", "state": ""}, left
 
     with subtest("stale namespaces and veths are swept"):
-        machine.succeed("ip netns add agentos-stale-1")
+        machine.succeed("ip netns add nestlo-stale-1")
         machine.succeed("ip link add avhdeadbeef type veth peer name avcdeadbeef")
-        machine.succeed("$(jq -r .container.netns_helper /etc/agentos/runtime.json) sweep")
-        assert "agentos-stale-1" not in machine.succeed("ip netns list")
+        machine.succeed("$(jq -r .container.netns_helper /etc/nestlo/runtime.json) sweep")
+        assert "nestlo-stale-1" not in machine.succeed("ip netns list")
         machine.fail("ip link show avhdeadbeef")
 
     with subtest("namespace and veth are removed when the agent exits by itself"):
         machine.succeed(f"rm -f {ws}/done.txt")
         short = spawn("--isolation", "container", "--", "1")
         wait_probes()
-        machine.wait_until_fails(f"systemctl is-active agentos-agent-{short}.service", timeout=60)
+        machine.wait_until_fails(f"systemctl is-active nestlo-agent-{short}.service", timeout=60)
         machine.wait_until_succeeds("test -z \"$(ip netns list)\"", timeout=30)
         assert leftovers() == {"netns": "", "veth": "", "state": ""}, leftovers()
-        machine.wait_until_succeeds(f"test -f /var/lib/agentos/state/history/{short}.json", timeout=60)
+        machine.wait_until_succeeds(f"test -f /var/lib/nestlo/state/history/{short}.json", timeout=60)
 
     with subtest("sandbox mode is unchanged"):
         machine.succeed(f"rm -f {ws}/done.txt")
         plain = spawn()
         wait_probes()
-        assert json.loads(machine.succeed(f"cat /var/lib/agentos/state/{plain}.json"))["isolation"] == "sandbox"
+        assert json.loads(machine.succeed(f"cat /var/lib/nestlo/state/{plain}.json"))["isolation"] == "sandbox"
         base = ws_file("base-url.txt")
         assert base.startswith(f"http://127.0.0.1:8080/agent/{plain}:") and base.endswith("/anthropic"), base
         assert leftovers()["netns"] == ""
-        admin(f"agentos kill {plain}")
+        admin(f"nestlo kill {plain}")
   '';
 }

@@ -12,10 +12,10 @@ import time
 import fakeredis
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services.gateway import serve
-from agentos_services.store import Store
-from agentos_services.usage import Pricing
+from nestlo_services import config as configmod
+from nestlo_services.gateway import serve
+from nestlo_services.store import Store
+from nestlo_services.usage import Pricing
 
 PRICING = {
     "models": {

@@ -1,6 +1,6 @@
-# AgentOS — Pre-installed Coding Agents
+# Nestlo — Pre-installed Coding Agents
 
-The 20 agents below are pre-installed on every AgentOS system through the
+The 20 agents below are pre-installed on every Nestlo system through the
 `all-agents` package (`agents/default.nix`). Each one has the same base tools
 (git, gh, ripgrep, fd, jq, …) on its `PATH`.
 
@@ -48,7 +48,7 @@ in favour of Antigravity CLI (nixpkgs prints a warning when evaluating it).
 
 ### Gateway routing per agent
 
-`agentos spawn` exports `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` (see
+`nestlo spawn` exports `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` (see
 `nixos/packages/cli.nix`); an agent is metered only if it honours one of them.
 
 | Agent | Base URL variable | Notes |
@@ -90,32 +90,32 @@ aider --model sonnet
 droid                     # first run downloads @factory/cli from npm
 ```
 
-### Through `agentos spawn` (sandboxed, metered)
+### Through `nestlo spawn` (sandboxed, metered)
 
 ```bash
-agentos workspace create api --from https://github.com/me/api.git
-agentos spawn claude --workspace api --budget 5
-agentos spawn aider --workspace api -- --model sonnet   # args after -- go to the agent
-agentos list
-agentos logs <agent-id>
+nestlo workspace create api --from https://github.com/me/api.git
+nestlo spawn claude --workspace api --budget 5
+nestlo spawn aider --workspace api -- --model sonnet   # args after -- go to the agent
+nestlo list
+nestlo logs <agent-id>
 ```
 
-`agentos spawn` does the following:
+`nestlo spawn` does the following:
 
 1. It creates an `agent/<agent-id>` branch in the workspace and registers the
    agent with the daemon.
-2. It starts the agent as the `agentos-agent` user in a transient systemd unit
-   (`agentos-agent-<id>.service`). The agent can write only to its workspace
+2. It starts the agent as the `nestlo-agent` user in a transient systemd unit
+   (`nestlo-agent-<id>.service`). The agent can write only to its workspace
    and its own home. It runs under memory, CPU and process limits, has no
    sudo, and cannot reach the control plane.
 3. It points `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` at the model gateway,
    which meters every call and enforces the agent's budget. The agent user
    cannot reach those providers any other way.
-4. It passes the placeholder key `agentos-managed` when the gateway holds the
+4. It passes the placeholder key `nestlo-managed` when the gateway holds the
    provider key. Otherwise it passes your `ANTHROPIC_API_KEY` /
    `OPENAI_API_KEY` through.
 
-Agents keep their logins and settings in `/var/lib/agentos/agent-home`, which
+Agents keep their logins and settings in `/var/lib/nestlo/agent-home`, which
 is shared by every sandboxed run. The interactive `claude` login works there.
 
 `--unsandboxed` runs the agent as you, in any directory. That run has no
@@ -135,8 +135,8 @@ Each agent reads its provider's usual environment variable or login flow:
 | `GITHUB_TOKEN` | Copilot CLI |
 | `FACTORY_API_KEY` | Factory Droid |
 
-With `agentos.secrets-manager` set up (see [FEATURES.md](FEATURES.md)), keys
-are decrypted to `/run/secrets/<NAME>`, readable by the `agentos` group. The
+With `nestlo.secrets-manager` set up (see [FEATURES.md](FEATURES.md)), keys
+are decrypted to `/run/secrets/<NAME>`, readable by the `nestlo` group. The
 gateway reads `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` from there by default,
 so sandboxed agents never see them.
 
@@ -145,12 +145,12 @@ so sandboxed agents never see them.
 ## Installing agents elsewhere
 
 ```bash
-nix profile install github:anubhavg-icpl/agentos#claude-code
-nix run github:anubhavg-icpl/agentos#codex
+nix profile install github:anubhavg-icpl/nestlo#claude-code
+nix run github:anubhavg-icpl/nestlo#codex
 
 # Every agent
-nix profile install github:anubhavg-icpl/agentos#all-agents
+nix profile install github:anubhavg-icpl/nestlo#all-agents
 
 # Only the 16 reproducible, Nix-built agents
-nix profile install github:anubhavg-icpl/agentos#nix-agents
+nix profile install github:anubhavg-icpl/nestlo#nix-agents
 ```

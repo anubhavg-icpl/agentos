@@ -8,11 +8,11 @@ import urllib.error
 
 import pytest
 
-from agentos_services import policy as policymod
-from agentos_services import publish as P
-from agentos_services import tasks as T
-from agentos_services.orchestrator import Orchestrator
-from agentos_services.taskrunner import TaskRunner
+from nestlo_services import policy as policymod
+from nestlo_services import publish as P
+from nestlo_services import tasks as T
+from nestlo_services.orchestrator import Orchestrator
+from nestlo_services.taskrunner import TaskRunner
 from orchfix import cfg, clock, complete, orch, runtime, submit, systemctl, taskstore  # noqa: F401
 from test_publish import IDENT, REPO, TOKEN, FakeResp, sh
 from test_taskrunner import env, queue  # noqa: F401

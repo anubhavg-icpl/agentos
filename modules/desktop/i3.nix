@@ -20,7 +20,7 @@ let
     c.workspaces;
 
   i3Config = pkgs.writeText "i3-config" ''
-    # AgentOS i3 configuration (generated; copy to ~/.config/i3/config to customise)
+    # Nestlo i3 configuration (generated; copy to ~/.config/i3/config to customise)
     set $mod Mod4
     set $term ${c.terminal}
 
@@ -59,8 +59,8 @@ let
     bindsym Print exec --no-startup-id ${lib.getExe pkgs.flameshot} gui
     bindsym $mod+Shift+s exec --no-startup-id ${lib.getExe pkgs.flameshot} gui
 
-    # Dashboard: `agentos status` lives in a hidden terminal (scratchpad)
-    for_window [class="^agentos-dash$"] floating enable, resize set 1100 640, move position center, move scratchpad
+    # Dashboard: `nestlo status` lives in a hidden terminal (scratchpad)
+    for_window [class="^nestlo-dash$"] floating enable, resize set 1100 640, move position center, move scratchpad
     bindsym $mod+grave scratchpad show
     bindsym $mod+Shift+minus move scratchpad
     bindsym $mod+minus scratchpad show
@@ -145,7 +145,7 @@ let
 
     # ── Autostart ───────────────────────────────────────────────────
     exec_always --no-startup-id ${lib.getExe pkgs.feh} --no-fehbg --bg-fill ${cfg.wallpaper}
-    exec --no-startup-id ${c.seed}/bin/agentos-desktop-seed
+    exec --no-startup-id ${c.seed}/bin/nestlo-desktop-seed
     ${lib.optionalString cfg.compositor "exec --no-startup-id ${lib.getExe pkgs.picom} --config ${c.picomConfig}"}
     exec --no-startup-id ${lib.getExe pkgs.dunst}
     exec --no-startup-id ${c.polkitAgent}
@@ -154,7 +154,7 @@ let
     ${lib.optionalString cfg.bluetooth "exec --no-startup-id ${pkgs.blueman}/bin/blueman-applet"}
     exec --no-startup-id ${pkgs.xorg.xset}/bin/xset s 600 10
     exec --no-startup-id ${pkgs.xss-lock}/bin/xss-lock --transfer-sleep-lock -- ${pkgs.i3lock}/bin/i3lock --nofork --color ${c.hex p.bg}
-    exec --no-startup-id ${c.terminal} --class agentos-dash --title "AgentOS" -e ${c.dashboard}/bin/agentos-dashboard
+    exec --no-startup-id ${c.terminal} --class nestlo-dash --title "Nestlo" -e ${c.dashboard}/bin/nestlo-dashboard
   '';
 in
 {

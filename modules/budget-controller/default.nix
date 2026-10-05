@@ -1,33 +1,33 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Budget & Cost Controller Module
+# Nestlo Budget & Cost Controller Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Budgets are enforced by the model gateway (agentos.networking):
+# Budgets are enforced by the model gateway (nestlo.networking):
 #   - every LLM response is priced from token usage (pricing.json)
 #   - per-agent and global daily caps (UTC days); requests over the cap get
 #     HTTP 402 before they reach the provider
-#   - alerts at configurable thresholds (sent through agentos-notify targets)
+#   - alerts at configurable thresholds (sent through nestlo-notify targets)
 #   - auto-shutdown: the agent daemon stops a sandboxed agent's unit when it
 #     exceeds its budget
 #
-# Sandboxed agents (run as agentos-agent) cannot reach provider APIs except
+# Sandboxed agents (run as nestlo-agent) cannot reach provider APIs except
 # through the gateway, so they cannot bypass the cap.
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.budget-controller;
-  adminSocket = config.agentos.services.settings.gateway.admin_socket;
-  gatewayUrl = "http://127.0.0.1:${toString config.agentos.networking.modelGatewayPort}";
+  cfg = config.nestlo.budget-controller;
+  adminSocket = config.nestlo.services.settings.gateway.admin_socket;
+  gatewayUrl = "http://127.0.0.1:${toString config.nestlo.networking.modelGatewayPort}";
 
   budgetCli = pkgs.writeShellApplication {
-    name = "agentos-budget";
+    name = "nestlo-budget";
     runtimeInputs = [ pkgs.curl pkgs.jq pkgs.coreutils pkgs.util-linux ];
     text = ''
       GATEWAY="${gatewayUrl}"
       ADMIN_SOCKET="${adminSocket}"
 
-      get() { curl -fsS "$GATEWAY/_agentos/$1"; }
+      get() { curl -fsS "$GATEWAY/_nestlo/$1"; }
       admin() {
         local method="$1" path="$2"
         local args=(-fsS --unix-socket "$ADMIN_SOCKET" -X "$method" -H 'Content-Type: application/json')
@@ -35,15 +35,15 @@ let
           args+=(--data "$3")
         fi
         if [ ! -w "$ADMIN_SOCKET" ]; then
-          echo "Cannot write to $ADMIN_SOCKET: changing budgets needs membership in the agentos group" >&2
+          echo "Cannot write to $ADMIN_SOCKET: changing budgets needs membership in the nestlo group" >&2
           exit 1
         fi
-        curl "''${args[@]}" "http://localhost/_agentos/$path"
+        curl "''${args[@]}" "http://localhost/_nestlo/$path"
       }
 
       usage() {
         cat <<'EOF'
-      Usage: agentos-budget <command>
+      Usage: nestlo-budget <command>
 
         status [--json]            Spend per agent today (UTC) and limits
         set <agent-id> <usd>       Set an agent's daily budget
@@ -107,8 +107,8 @@ let
   };
 in
 {
-  options.agentos.budget-controller = {
-    enable = lib.mkEnableOption "AgentOS budget controller";
+  options.nestlo.budget-controller = {
+    enable = lib.mkEnableOption "Nestlo budget controller";
 
     defaultDailyBudgetUSD = lib.mkOption {
       type = lib.types.float;
@@ -227,13 +227,13 @@ in
 
   config = lib.mkIf cfg.enable {
     assertions = [{
-      assertion = config.agentos.networking.enable;
-      message = "agentos.budget-controller is enforced by the model gateway; enable agentos.networking";
+      assertion = config.nestlo.networking.enable;
+      message = "nestlo.budget-controller is enforced by the model gateway; enable nestlo.networking";
     }];
 
-    environment.etc."agentos/pricing.json".source = cfg.pricingFile;
+    environment.etc."nestlo/pricing.json".source = cfg.pricingFile;
 
-    agentos.services.settings.budget = {
+    nestlo.services.settings.budget = {
       default_daily_usd = cfg.defaultDailyBudgetUSD;
       global_daily_usd = cfg.globalDailyBudgetUSD;
       alert_thresholds = cfg.alertThresholds;
@@ -244,7 +244,7 @@ in
 
     # Routing never crosses providers: the gateway refuses a rewrite whose
     # target model belongs to another vendor in pricing.json.
-    agentos.services.settings.routing = {
+    nestlo.services.settings.routing = {
       inherit (cfg.routing) strategy rewrites;
       agents = cfg.routing.agentRewrites;
       groups = cfg.routing.equivalenceGroups;

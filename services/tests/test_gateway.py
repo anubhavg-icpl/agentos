@@ -10,7 +10,7 @@ ANTHROPIC = "/agent/a1/anthropic/v1/messages"
 
 def test_health(make_gateway):
     gw = make_gateway()
-    status, _, body = request(gw, "GET", "/_agentos/health")
+    status, _, body = request(gw, "GET", "/_nestlo/health")
     assert status == 200
     health = json.loads(body)
     assert health["providers"]["anthropic"]["managed_key"] is True
@@ -20,7 +20,7 @@ def test_health(make_gateway):
 def test_proxies_and_prices_json(make_gateway, upstream, store, tmp_path):
     gw = make_gateway()
     status, headers, body = request(gw, "POST", ANTHROPIC, {"model": "claude-test", "max_tokens": 5},
-                                    {"x-api-key": "agentos-managed", "anthropic-version": "2023-06-01"})
+                                    {"x-api-key": "nestlo-managed", "anthropic-version": "2023-06-01"})
     assert status == 200
     assert json.loads(body)["content"][0]["text"] == "hi"
     seen = upstream.requests[-1]
@@ -77,7 +77,7 @@ def test_unmanaged_path(make_gateway, store):
 
 def test_budget_blocks_and_alerts(make_gateway, store, events):
     gw = make_gateway()
-    status, _, _ = request(gw, "PUT", "/_agentos/budget/a1", {"daily_usd": 5}, admin=True)
+    status, _, _ = request(gw, "PUT", "/_nestlo/budget/a1", {"daily_usd": 5}, admin=True)
     assert status == 200
     assert request(gw, "POST", ANTHROPIC, {"model": "claude-test"})[0] == 200   # $3: 60%
     assert request(gw, "POST", ANTHROPIC, {"model": "claude-test"})[0] == 200   # $6: over
@@ -90,19 +90,19 @@ def test_budget_blocks_and_alerts(make_gateway, store, events):
     kinds = [e["type"] for e in got]
     assert kinds.count("budget_exceeded") == 1                       # deduplicated
     assert [e["threshold"] for e in got if e["type"] == "budget_threshold"] == [50, 80, 95]
-    snap = json.loads(request(gw, "GET", "/_agentos/spend")[2])
+    snap = json.loads(request(gw, "GET", "/_nestlo/spend")[2])
     assert snap["agents"]["a1"]["limit_usd"] == 5.0
     assert snap["agents"]["a1"]["requests"] == {"2xx": 2, "4xx": 1}
 
 
 def test_budget_writes_need_admin_socket(make_gateway, store):
     gw = make_gateway()
-    status, _, body = request(gw, "PUT", "/_agentos/budget/a1", {"daily_usd": 1000})
+    status, _, body = request(gw, "PUT", "/_nestlo/budget/a1", {"daily_usd": 1000})
     assert status == 403
     assert store.limit("a1", 50.0) == 50.0
-    assert request(gw, "PUT", "/_agentos/budget/a1", {"daily_usd": -1}, admin=True)[0] == 400
-    assert request(gw, "PUT", "/_agentos/budget/a1", {"nope": 1}, admin=True)[0] == 400
-    assert request(gw, "DELETE", "/_agentos/budget/a1", admin=True)[0] == 200
+    assert request(gw, "PUT", "/_nestlo/budget/a1", {"daily_usd": -1}, admin=True)[0] == 400
+    assert request(gw, "PUT", "/_nestlo/budget/a1", {"nope": 1}, admin=True)[0] == 400
+    assert request(gw, "DELETE", "/_nestlo/budget/a1", admin=True)[0] == 200
 
 
 def test_global_budget(make_gateway):
@@ -132,7 +132,7 @@ def test_circuit_breaker(make_gateway, upstream, events):
     status, headers, _ = request(gw, "POST", ANTHROPIC, {"model": "claude-test"})
     assert status == 503 and int(headers["Retry-After"]) > 0
     assert [e["type"] for e in events.drain()] == ["circuit_open"]
-    assert request(gw, "DELETE", "/_agentos/circuit/a1", admin=True)[0] == 200
+    assert request(gw, "DELETE", "/_nestlo/circuit/a1", admin=True)[0] == 200
     assert request(gw, "POST", ANTHROPIC, {"model": "claude-test"})[0] == 200
 
 
@@ -160,7 +160,7 @@ def test_unreachable_upstream(make_gateway, store):
     ("/nowhere", 404),
     ("/agent/a1/nosuch/v1/messages", 404),
     ("/agent/..%2Fetc/anthropic/v1/messages", 400),
-    ("/_agentos/budget/a1", 403),
+    ("/_nestlo/budget/a1", 403),
 ])
 def test_bad_paths(make_gateway, path, status):
     gw = make_gateway()

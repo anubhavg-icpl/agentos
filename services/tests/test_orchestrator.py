@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from agentos_services import tasks as T
-from agentos_services.unixapi import call, serve_unix
+from nestlo_services import tasks as T
+from nestlo_services.unixapi import call, serve_unix
 from orchfix import (cfg, clock, complete, orch, runtime, statuses, submit, systemctl,  # noqa: F401
                      taskstore)
 
@@ -198,7 +198,7 @@ def test_non_isolated_tasks_never_share_a_working_tree(orch, systemctl):
 
 
 def test_hand_started_agents_count_against_the_runtime_limit(cfg, taskstore, runtime, clock, systemctl):
-    from agentos_services.orchestrator import Orchestrator
+    from nestlo_services.orchestrator import Orchestrator
     runtime["max_agents"] = 3
     orch = Orchestrator(cfg, taskstore, runtime=runtime, clock=clock, runner=systemctl,
                         agents_running=lambda exclude: 2)      # two agents started by hand
@@ -289,7 +289,7 @@ def test_api_roundtrip(orch, short_dir, systemctl):
 
 
 def test_publish_block_is_validated():
-    from agentos_services.tasks import validate_publish, ValidationError as VE
+    from nestlo_services.tasks import validate_publish, ValidationError as VE
     assert validate_publish(None) is None
     assert validate_publish({"repo": "acme/widgets", "title": "t"}) == {"repo": "acme/widgets", "title": "t"}
     for bad in ({"repo": "nope"}, {"url": "x"}, {"title": 1}, {"body": "x" * 60001}, "acme/widgets"):

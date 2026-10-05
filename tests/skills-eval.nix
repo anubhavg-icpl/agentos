@@ -20,7 +20,7 @@ let
   list = lib.attrValues packs;
   bundle = pkgs.callPackage ../nixos/packages/skills/bundle.nix { } list;
 in
-pkgs.runCommand "agentos-skills-eval"
+pkgs.runCommand "nestlo-skills-eval"
 {
   nativeBuildInputs = [ pkgs.jq pkgs.gnugrep pkgs.gawk ];
   inherit bundle;
@@ -33,7 +33,7 @@ pkgs.runCommand "agentos-skills-eval"
     nskills=0
 
     for pack in $packs; do
-      for meta in "$pack"/share/agentos/skills/*/pack.json; do
+      for meta in "$pack"/share/nestlo/skills/*/pack.json; do
         [ -e "$meta" ] || fail "$pack has no pack.json"
         root=$(dirname "$meta")
         pname=$(basename "$root")

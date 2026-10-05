@@ -35,7 +35,7 @@ let
 in
 lib.callPackageWith (pkgs // {
   inherit sources;
-  discover = d // { findSkills = args: throw ("AGENTOS-LOCK:" + builtins.toJSON (d.findSkills args)); };
+  discover = d // { findSkills = args: throw ("NESTLO-LOCK:" + builtins.toJSON (d.findSkills args)); };
   mkSkillPack = a: builtins.seq a.skills null;
 }) ./nixos/packages/skills/packs/PACK.nix { }
 """
@@ -44,13 +44,13 @@ for pack in packs:
     r = subprocess.run(["nix", "eval", "--option", "allow-import-from-derivation", "true",
                         "--impure", "--expr", EXPR.replace("PACK", pack)],
                        capture_output=True, text=True)
-    i = r.stderr.find("AGENTOS-LOCK:")
+    i = r.stderr.find("NESTLO-LOCK:")
     if i < 0 and r.returncode == 0:
         print("%s: does not call findSkills, no lock needed" % pack)
         continue
     if i < 0:
         sys.exit("%s: no discovery result:\n%s" % (pack, r.stderr[-3000:]))
-    data, _ = json.JSONDecoder().raw_decode(r.stderr[i + len("AGENTOS-LOCK:"):])
+    data, _ = json.JSONDecoder().raw_decode(r.stderr[i + len("NESTLO-LOCK:"):])
     (out / ("%s.json" % pack)).write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
     print("%s: %d skills" % (pack, len(data)))
 PY

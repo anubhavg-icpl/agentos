@@ -1,17 +1,17 @@
-# End-to-end test of the AgentOS agent service layer.
+# End-to-end test of the Nestlo agent service layer.
 #
 #   nix build .#checks.x86_64-linux.e2e
 #
 # Boots a VM with the runtime, gateway, budget, circuit-breaker,
 # notification and security modules, points the Anthropic provider at a mock
-# API, and drives a fake agent through `agentos spawn`:
+# API, and drives a fake agent through `nestlo spawn`:
 #
-#   spawn (sandboxed, agentos-agent user) -> model gateway (key injection,
+#   spawn (sandboxed, nestlo-agent user) -> model gateway (key injection,
 #   pricing) -> budget exceeded -> daemon stops the agent -> webhook
 #
 # plus checks on the sandbox, the control-plane isolation and the egress
 # firewall.
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 let
   # Mock of the Anthropic Messages API (+ a webhook sink)
@@ -67,8 +67,8 @@ let
       echo "$ANTHROPIC_API_KEY" > key-seen.txt
       echo "$ANTHROPIC_BASE_URL" > base-url.txt
       echo "written by the agent" > notes.txt
-      if touch /var/lib/agentos/escape 2>/dev/null; then echo yes; else echo no; fi > escaped.txt
-      if curl -s -m 5 --unix-socket /run/redis-agentos/redis.sock http://x/ >/dev/null 2>&1; then echo yes; else echo no; fi > redis.txt
+      if touch /var/lib/nestlo/escape 2>/dev/null; then echo yes; else echo no; fi > escaped.txt
+      if curl -s -m 5 --unix-socket /run/redis-nestlo/redis.sock http://x/ >/dev/null 2>&1; then echo yes; else echo no; fi > redis.txt
       # Kernel-surface hardening: no user namespaces, no raw sockets, no cloud metadata
       yesno unshare -U true > userns.txt
       yesno python3 -c 'import socket; socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)' > rawsock.txt
@@ -87,11 +87,11 @@ let
   };
 in
 pkgs.testers.runNixOSTest {
-  name = "agentos-e2e";
+  name = "nestlo-e2e";
   globalTimeout = 3600;
 
   nodes.machine = { lib, ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 3072;
     virtualisation.cores = 2;
@@ -102,7 +102,7 @@ pkgs.testers.runNixOSTest {
     };
     security.sudo.wheelNeedsPassword = false;
 
-    agentos = {
+    nestlo = {
       runtime = {
         enable = true;
         agents.fake = "fake-agent";
@@ -111,7 +111,7 @@ pkgs.testers.runNixOSTest {
         enable = true;
         providers.anthropic = {
           baseUrl = "http://127.0.0.1:9999";
-          keyFile = "/etc/agentos-test/anthropic.key";
+          keyFile = "/etc/nestlo-test/anthropic.key";
         };
         providers.openai.baseUrl = "http://127.0.0.1:9999";
       };
@@ -130,17 +130,17 @@ pkgs.testers.runNixOSTest {
       };
     };
 
-    environment.etc."agentos-test/anthropic.key" = {
+    environment.etc."nestlo-test/anthropic.key" = {
       text = "sk-test-real-key";
       mode = "0440";
-      group = "agentos";
+      group = "nestlo";
     };
 
     environment.systemPackages = [ fakeAgent pkgs.redis pkgs.ipset ];
 
     systemd.services.mock-llm = {
       wantedBy = [ "multi-user.target" ];
-      before = [ "agentos-model-gateway.service" ];
+      before = [ "nestlo-model-gateway.service" ];
       serviceConfig = {
         ExecStart = "${mockLlm}/bin/mock-llm";
         StateDirectory = "mock-llm";
@@ -158,51 +158,51 @@ pkgs.testers.runNixOSTest {
         return machine.fail(f"su - admin -c {json.dumps(cmd)}")
 
     machine.wait_for_unit("multi-user.target")
-    for unit in ["redis-agentos.service", "agentos-model-gateway.service",
-                 "agentos-daemon.service", "mock-llm.service"]:
+    for unit in ["redis-nestlo.service", "nestlo-model-gateway.service",
+                 "nestlo-daemon.service", "mock-llm.service"]:
         machine.wait_for_unit(unit)
     machine.wait_for_open_port(8080)
     machine.wait_for_open_port(9950)
 
     with subtest("gateway health reports the managed key"):
-        health = json.loads(machine.succeed("curl -fsS http://127.0.0.1:8080/_agentos/health"))
+        health = json.loads(machine.succeed("curl -fsS http://127.0.0.1:8080/_nestlo/health"))
         assert health["providers"]["anthropic"]["managed_key"], health
 
     with subtest("workspace creation"):
-        admin("agentos workspace create demo")
-        machine.succeed("test -d /var/lib/agentos/workspaces/demo/.git")
+        admin("nestlo workspace create demo")
+        machine.succeed("test -d /var/lib/nestlo/workspaces/demo/.git")
 
     with subtest("spawn a sandboxed agent with a $3 budget"):
         machine.succeed(
             "setsid -f su - admin -c "
-            "'cd /var/lib/agentos/workspaces/demo && agentos spawn fake --budget 3 -- 5' "
+            "'cd /var/lib/nestlo/workspaces/demo && nestlo spawn fake --budget 3 -- 5' "
             ">/tmp/spawn.log 2>&1 </dev/null"
         )
-        machine.wait_until_succeeds("ls /var/lib/agentos/state/fake-*.json", timeout=60)
-        agent_id = machine.succeed("basename /var/lib/agentos/state/fake-*.json .json").strip()
+        machine.wait_until_succeeds("ls /var/lib/nestlo/state/fake-*.json", timeout=60)
+        agent_id = machine.succeed("basename /var/lib/nestlo/state/fake-*.json .json").strip()
         print("agent id:", agent_id)
 
     with subtest("budget exceeded -> daemon stops the agent"):
-        machine.wait_until_succeeds(f"test -f /var/lib/agentos/state/history/{agent_id}.json", timeout=180)
-        state = json.loads(machine.succeed(f"cat /var/lib/agentos/state/history/{agent_id}.json"))
+        machine.wait_until_succeeds(f"test -f /var/lib/nestlo/state/history/{agent_id}.json", timeout=180)
+        state = json.loads(machine.succeed(f"cat /var/lib/nestlo/state/history/{agent_id}.json"))
         print(state)
         assert state["status"] == "killed", state
         assert "budget" in state["reason"], state
-        machine.fail(f"systemctl is-active agentos-agent-{agent_id}.service")
-        requests = machine.succeed("cat /var/lib/agentos/workspaces/demo/requests.txt").split("\n")
+        machine.fail(f"systemctl is-active nestlo-agent-{agent_id}.service")
+        requests = machine.succeed("cat /var/lib/nestlo/workspaces/demo/requests.txt").split("\n")
         codes = [line.split()[1] for line in requests if line.strip()]
         print("request codes:", codes)
         assert codes[:2] == ["200", "200"], codes
         assert all(c == "402" for c in codes[2:]), codes
 
     with subtest("spend was priced and recorded"):
-        budget = json.loads(admin("agentos budget status --json"))
+        budget = json.loads(admin("nestlo budget status --json"))
         spent = budget["agents"][agent_id]["usd"]
         assert abs(spent - 4.0) < 1e-6, budget
         assert budget["agents"][agent_id]["limit_usd"] == 3.0, budget
         # the agent's token was revoked when the daemon reaped it, so its
         # credentials no longer work at all
-        base = machine.succeed("cat /var/lib/agentos/workspaces/demo/base-url.txt").strip()
+        base = machine.succeed("cat /var/lib/nestlo/workspaces/demo/base-url.txt").strip()
         assert base.startswith(f"http://127.0.0.1:8080/agent/{agent_id}:"), base
         post = ("curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' "
                 "-d '{}' ")
@@ -211,8 +211,8 @@ pkgs.testers.runNixOSTest {
         # reaching the provider
         token = "e2e-" + "0" * 60
         digest = machine.succeed(f"printf %s {token} | sha256sum | cut -d' ' -f1").strip()
-        admin("curl -fsS --unix-socket /run/agentos-gateway/admin.sock -X PUT "
-              f"-d '{{\"token_sha256\": \"{digest}\"}}' http://x/_agentos/agents/{agent_id}")
+        admin("curl -fsS --unix-socket /run/nestlo-gateway/admin.sock -X PUT "
+              f"-d '{{\"token_sha256\": \"{digest}\"}}' http://x/_nestlo/agents/{agent_id}")
         code = machine.succeed(post + f"http://127.0.0.1:8080/agent/{agent_id}:{token}/anthropic/v1/messages")
         assert code == "402", code
         # without the token (or with a made-up id) the gateway does not serve
@@ -226,10 +226,10 @@ pkgs.testers.runNixOSTest {
             )
             assert code in ("401", "403"), (path, code)
 
-    with subtest("agent ran sandboxed as agentos-agent with a managed key"):
-        ws = "/var/lib/agentos/workspaces/demo"
-        assert machine.succeed(f"cat {ws}/whoami.txt").strip() == "agentos-agent"
-        assert machine.succeed(f"cat {ws}/key-seen.txt").strip() == "agentos-managed"
+    with subtest("agent ran sandboxed as nestlo-agent with a managed key"):
+        ws = "/var/lib/nestlo/workspaces/demo"
+        assert machine.succeed(f"cat {ws}/whoami.txt").strip() == "nestlo-agent"
+        assert machine.succeed(f"cat {ws}/key-seen.txt").strip() == "nestlo-managed"
         assert machine.succeed(f"cat {ws}/escaped.txt").strip() == "no"
         assert machine.succeed(f"cat {ws}/redis.txt").strip() == "no"
         # kernel-surface hardening of the unit (SystemCallFilter, RestrictNamespaces, ...)
@@ -237,7 +237,7 @@ pkgs.testers.runNixOSTest {
         assert machine.succeed(f"cat {ws}/rawsock.txt").strip() == "no"
         assert machine.succeed(f"cat {ws}/packet-sock.txt").strip() == "no"
         assert machine.succeed(f"cat {ws}/metadata.txt").strip() in ("000", "")
-        machine.fail("test -e /var/lib/agentos/escape")
+        machine.fail("test -e /var/lib/nestlo/escape")
         # the provider saw the real key, never the placeholder
         seen = [json.loads(l) for l in machine.succeed("cat /var/lib/mock-llm/requests.jsonl").splitlines()]
         assert seen and all(r["key"] == "sk-test-real-key" for r in seen), seen
@@ -247,18 +247,18 @@ pkgs.testers.runNixOSTest {
         assert admin(f"git -C {ws} branch --show-current").strip() == f"agent/{agent_id}"
 
     with subtest("CLI views"):
-        out = admin("agentos list")
+        out = admin("nestlo list")
         print(out)
         assert agent_id in out and "killed" in out
-        logs = admin(f"agentos logs {agent_id}")
+        logs = admin(f"nestlo logs {agent_id}")
         print(logs)
         assert "claude-sonnet-5-5" in logs and "402" in logs
-        print(admin("agentos status"))
+        print(admin("nestlo status"))
 
     with subtest("metrics"):
         metrics = machine.succeed("curl -fsS http://127.0.0.1:9950/metrics")
-        assert f'agentos_agent_spend_usd_today{{agent="{agent_id}"}} 4.0' in metrics, metrics
-        assert "agentos_agents_running 0" in metrics, metrics
+        assert f'nestlo_agent_spend_usd_today{{agent="{agent_id}"}} 4.0' in metrics, metrics
+        assert "nestlo_agents_running 0" in metrics, metrics
 
     with subtest("notifications reached the webhook"):
         machine.wait_until_succeeds("grep -q agent_killed /var/lib/mock-llm/hooks.jsonl", timeout=30)
@@ -267,30 +267,30 @@ pkgs.testers.runNixOSTest {
         assert {"budget_exceeded", "agent_killed", "budget_threshold"} <= kinds, kinds
 
     with subtest("control plane is closed to the agent user"):
-        machine.fail("su -s /bin/sh agentos-agent -c 'sudo -n true'")
-        machine.fail("su -s /bin/sh agentos-agent -c 'redis-cli -s /run/redis-agentos/redis.sock ping'")
-        machine.fail("su -s /bin/sh agentos-agent -c "
-                     "'curl -fsS --unix-socket /run/agentos-gateway/admin.sock -X PUT "
-                     "-d {\"daily_usd\":999} http://x/_agentos/budget/me'")
+        machine.fail("su -s /bin/sh nestlo-agent -c 'sudo -n true'")
+        machine.fail("su -s /bin/sh nestlo-agent -c 'redis-cli -s /run/redis-nestlo/redis.sock ping'")
+        machine.fail("su -s /bin/sh nestlo-agent -c "
+                     "'curl -fsS --unix-socket /run/nestlo-gateway/admin.sock -X PUT "
+                     "-d {\"daily_usd\":999} http://x/_nestlo/budget/me'")
         # budget changes over TCP are refused
         code = machine.succeed(
             "curl -s -o /dev/null -w '%{http_code}' -X PUT -d '{\"daily_usd\": 999}' "
-            "http://127.0.0.1:8080/_agentos/budget/anyone"
+            "http://127.0.0.1:8080/_nestlo/budget/anyone"
         )
         assert code == "403", code
         # the operator can
-        assert "$7" in admin("agentos budget set someone 7")
+        assert "$7" in admin("nestlo budget set someone 7")
 
     with subtest("egress allowlist"):
         machine.fail("getent hosts example.com")
-        rules = machine.succeed("iptables -S agentos-egress")
+        rules = machine.succeed("iptables -S nestlo-egress")
         print(rules)
-        assert "--uid-owner" in rules and "agentos-llm" in rules and "REJECT" in rules
-        machine.succeed("ipset list agentos-llm")
-        machine.succeed("ipset list agentos-egress")
+        assert "--uid-owner" in rules and "nestlo-llm" in rules and "REJECT" in rules
+        machine.succeed("ipset list nestlo-llm")
+        machine.succeed("ipset list nestlo-egress")
 
     with subtest("unknown agents and workspaces outside the root are refused"):
-        fail_as_admin("agentos spawn nosuchagent")
-        fail_as_admin("mkdir -p ~/elsewhere && cd ~/elsewhere && agentos spawn fake")
+        fail_as_admin("nestlo spawn nosuchagent")
+        fail_as_admin("mkdir -p ~/elsewhere && cd ~/elsewhere && nestlo spawn fake")
   '';
 }

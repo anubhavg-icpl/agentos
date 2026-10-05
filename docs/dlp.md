@@ -5,7 +5,7 @@ The gateway can check every request body for secrets and personal data before
 it is forwarded to a model provider.
 
 ```nix
-agentos.gateway.dlp = {
+nestlo.gateway.dlp = {
   mode = "mask";                       # off | log | mask | block
   detectors = [ "all" ];               # or a list, see the table
   scanResponses = false;               # non-streaming responses only
@@ -17,8 +17,8 @@ agentos.gateway.dlp = {
 };
 ```
 
-The options live next to the other gateway options (`agentos.networking`) and
-are written to `[gateway.dlp]` in `/etc/agentos/services.toml`. The longest
+The options live next to the other gateway options (`nestlo.networking`) and
+are written to `[gateway.dlp]` in `/etc/nestlo/services.toml`. The longest
 matching prefix in `overrides` wins; an override inherits the global
 `detectors` and `scanResponses` unless it sets them.
 
@@ -29,7 +29,7 @@ matching prefix in `overrides` wins; an override inherits the global
 | `off` | Not scanned. |
 | `log` | Forwarded unchanged. The detector types and counts are recorded in the audit log (`dlp.detection`), the gateway log (`dlp` field) and the service log. |
 | `mask` | Every match is replaced by `[REDACTED:<type>]`, JSON bodies are re-serialised so the provider receives valid JSON, and the masked body is what is recorded when session recording is on. |
-| `block` | Refused with `403`, error type `dlp_blocked`, message `request blocked by AgentOS DLP policy: detected aws_access_key, email`. Nothing is sent to the provider. |
+| `block` | Refused with `403`, error type `dlp_blocked`, message `request blocked by Nestlo DLP policy: detected aws_access_key, email`. Nothing is sent to the provider. |
 
 **Matched values are never stored or reported**: audit events, log lines and
 error messages carry detector names and counts only.
@@ -47,7 +47,7 @@ Secrets:
 | `slack_token` | `xoxb-`, `xoxp-`, ... |
 | `api_key` | `sk-ant-...`, `sk-...` (OpenAI style), Stripe live keys, Google `AIza...`, GitLab `glpat-`, npm, SendGrid |
 | `jwt` | three-part JSON web tokens |
-| `provider_key` | the exact API keys configured in `agentos.networking.providers.*.keyFile` (re-read every 30 s) |
+| `provider_key` | the exact API keys configured in `nestlo.networking.providers.*.keyFile` (re-read every 30 s) |
 | `credential_assignment` | `password = "..."`, `api_key: '...'` and similar with a quoted value of 12+ characters that is not a path, variable reference, placeholder or kebab-case word |
 | `high_entropy` | a 32-200 character token of mixed case and digits with at least 4.25 bits of entropy per character; excludes hex digests and commit ids, UUIDs, SRI hashes (`sha512-...`), paths and camelCase identifiers |
 
@@ -109,5 +109,5 @@ findings still appear in the gateway log and the service journal.
 * Masking changes what the model sees; a masked key in a shell command the
   model writes back will not work. Prefer fixing the source (keep secrets out
   of the workspace and the environment the agent can read).
-* Detector lists are code (`services/agentos_services/dlp.py`); extend them
+* Detector lists are code (`services/nestlo_services/dlp.py`); extend them
   there with a test.

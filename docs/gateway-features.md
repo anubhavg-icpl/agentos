@@ -1,28 +1,28 @@
 # Model gateway features
 
-Features of the model gateway (`agentos-model-gateway`), all applied to
+Features of the model gateway (`nestlo-model-gateway`), all applied to
 requests that agents send through `http://127.0.0.1:8080/agent/<id>/<provider>/...`.
 
 | Feature | Where it is configured | Admin endpoint / CLI |
 |:---|:---|:---|
-| [Loop detection](#loop-detection) | `agentos.circuit-breaker` | `agentos-breaker reset-loop <id>` |
-| [Model routing](#model-routing) | `agentos.budget-controller.routing` | `agentos budget routing [<agent> <provider> <model>]` |
-| [Record and replay](#record-and-replay) | `agentos.networking.recordSessions` | `agentos-replay` |
-| [Message bus](#message-bus) | always on | `agentos-msg`, MCP server `agentos-bus` |
-| [Budget reservation](#budget-reservation) | `agentos.budget-controller` | |
-| [Agent tokens and the 401 throttle](#agent-tokens-and-the-401-throttle) | `agentos.circuit-breaker` | |
+| [Loop detection](#loop-detection) | `nestlo.circuit-breaker` | `nestlo-breaker reset-loop <id>` |
+| [Model routing](#model-routing) | `nestlo.budget-controller.routing` | `nestlo budget routing [<agent> <provider> <model>]` |
+| [Record and replay](#record-and-replay) | `nestlo.networking.recordSessions` | `nestlo-replay` |
+| [Message bus](#message-bus) | always on | `nestlo-msg`, MCP server `nestlo-bus` |
+| [Budget reservation](#budget-reservation) | `nestlo.budget-controller` | |
+| [Agent tokens and the 401 throttle](#agent-tokens-and-the-401-throttle) | `nestlo.circuit-breaker` | |
 | [Failing closed](#failing-closed) | always on | |
-| [Providers](#providers) | `agentos.networking.providers` | |
+| [Providers](#providers) | `nestlo.networking.providers` | |
 | [Cache pricing and unreadable usage](#cache-pricing-and-unreadable-usage) | `pricing.json` | |
-| [Fallbacks](#fallbacks) | `agentos.networking.providers.<name>.fallbacks` | |
-| DLP on request bodies | `agentos.gateway.dlp` | see [dlp.md](dlp.md) |
-| Audit events for requests, refusals and auth failures | `agentos.audit` | see [audit.md](audit.md) |
+| [Fallbacks](#fallbacks) | `nestlo.networking.providers.<name>.fallbacks` | |
+| DLP on request bodies | `nestlo.gateway.dlp` | see [dlp.md](dlp.md) |
+| Audit events for requests, refusals and auth failures | `nestlo.audit` | see [audit.md](audit.md) |
 
-The gateway reads its settings from `/etc/agentos/services.toml`; the NixOS
+The gateway reads its settings from `/etc/nestlo/services.toml`; the NixOS
 options below generate the `[limits]`, `[routing]`, `[recording]` and `[bus]`
 tables. Admin endpoints are served on the admin socket only
-(`/run/agentos-gateway/admin.sock`, group `agentos`), so the sandboxed
-`agentos-agent` user cannot reach them.
+(`/run/nestlo-gateway/admin.sock`, group `nestlo`), so the sandboxed
+`nestlo-agent` user cannot reach them.
 
 ## Loop detection
 
@@ -51,7 +51,7 @@ loop_detected`, and the first refusal publishes a `loop_detected` event with
 disables it; values below 4 are treated as 0.
 
 ```nix
-agentos.circuit-breaker = {
+nestlo.circuit-breaker = {
   enableLoopDetection = true;   # default
   loopRepeatThreshold = 5;      # default
   loopWindowSec = 600;          # default
@@ -59,7 +59,7 @@ agentos.circuit-breaker = {
 };
 ```
 
-`agentos-breaker reset-loop <agent-id>` clears an agent's state. A growing
+`nestlo-breaker reset-loop <agent-id>` clears an agent's state. A growing
 conversation never matches itself, so normal tool loops are not affected.
 Requests without `messages` or `input` (for example model listings) are not
 fingerprinted.
@@ -79,7 +79,7 @@ They are applied in this order:
    unless that model is not cheaper than the current one.
 
 ```nix
-agentos.budget-controller.routing = {
+nestlo.budget-controller.routing = {
   strategy = "cheapest";
   rewrites."claude-opus-5-5" = "claude-sonnet-5-5";
   agentRewrites."ci-"."claude-sonnet-5-5" = "claude-haiku-4-5";
@@ -95,20 +95,20 @@ A request is never routed to another vendor's model: the target's `provider`
 in `pricing.json` must equal the requested model's. A rule that would cross
 vendors is skipped with a log warning. The routed model is what the provider
 receives and what the request is priced with. The request log
-(`/var/lib/agentos/logs/<agent>.log`) records `original_model`,
+(`/var/lib/nestlo/logs/<agent>.log`) records `original_model`,
 `routed_model` and `route_reason` for routed requests.
 
-`agentos budget routing` prints the configured rules. With
+`nestlo budget routing` prints the configured rules. With
 `<agent> <provider> <model>` it shows how that request would be routed right now
 (the agent's current budget use counts).
 
 ## Record and replay
 
-With `agentos.networking.recordSessions = true` the gateway stores every
-request/response pair at `/var/lib/agentos/recordings/<agent-id>/<seq>.json`
-(`<seq>` is `000001`, `000002`, ...). The directory is `0750 agentos:agentos`,
-so operators in the `agentos` group can read it. Recording a single agent:
-`agentos-replay record <agent-id>` (and `... off`).
+With `nestlo.networking.recordSessions = true` the gateway stores every
+request/response pair at `/var/lib/nestlo/recordings/<agent-id>/<seq>.json`
+(`<seq>` is `000001`, `000002`, ...). The directory is `0750 nestlo:nestlo`,
+so operators in the `nestlo` group can read it. Recording a single agent:
+`nestlo-replay record <agent-id>` (and `... off`).
 
 A file holds the request method, path and body (with a canonical SHA-256 of the
 body), and the response status, a subset of headers (`content-type`,
@@ -120,17 +120,17 @@ completions, so treat them like the workspace.
 Replay answers an agent from a recording:
 
 ```
-agentos-replay list                    # recorded sessions
-agentos-replay show <recording> [seq]  # requests of a session, or one in full
-agentos-replay start <recording> [id]  # register replay for a new agent id
-agentos-replay status <id>
-agentos-replay stop <id>
+nestlo-replay list                    # recorded sessions
+nestlo-replay show <recording> [seq]  # requests of a session, or one in full
+nestlo-replay start <recording> [id]  # register replay for a new agent id
+nestlo-replay status <id>
+nestlo-replay stop <id>
 ```
 
 `start` registers the replay through the admin socket
-(`PUT /_agentos/replay/<agent> {"recording": "<agent-id>"}`) and prints the
+(`PUT /_nestlo/replay/<agent> {"recording": "<agent-id>"}`) and prints the
 environment to run the agent with (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, and
-the `agentos-managed` keys). `agentos spawn` chooses its own agent id, so start
+the `nestlo-managed` keys). `nestlo spawn` chooses its own agent id, so start
 the agent in your own shell with those variables, in a workspace that matches
 the recorded run.
 
@@ -140,7 +140,7 @@ recorded one (method, path, canonical body hash); otherwise the gateway answers
 `409` with error type `replay_diverged` and `error.details` (sequence number,
 expected and received hashes) and does not advance. After the last recorded
 request it answers `409 replay_exhausted`. Replayed responses carry an
-`X-AgentOS-Replay: <recording>/<seq>` header and are logged with `replayed`.
+`X-Nestlo-Replay: <recording>/<seq>` header and are logged with `replayed`.
 
 The hash covers the body the client sent, before routing. An agent that puts
 timestamps or random ids in its prompts diverges on its first changed request;
@@ -166,17 +166,17 @@ The sender is taken from the URL, like the agent id in every gateway path:
 agents share the loopback listener, so a hostile agent can pose as another.
 Treat the bus as a coordination channel between agents you trust equally.
 
-For operators: `agentos-msg send [--from <name>] <topic> <text>`,
-`agentos-msg read <topic> [--after <cursor>] [--wait <sec>] [--json]`,
-`agentos-msg topics`. Group members use the admin socket; others can send and
+For operators: `nestlo-msg send [--from <name>] <topic> <text>`,
+`nestlo-msg read <topic> [--after <cursor>] [--wait <sec>] [--json]`,
+`nestlo-msg topics`. Group members use the admin socket; others can send and
 read shared topics over TCP as agent `operator`.
 
-For agents: the MCP server `agentos-bus` (registered in
-`/etc/agentos/mcp-servers.json`, command `agentos-mcp-bus`) provides the tools
+For agents: the MCP server `nestlo-bus` (registered in
+`/etc/nestlo/mcp-servers.json`, command `nestlo-mcp-bus`) provides the tools
 `send_message(topic, text)` and `read_messages(topic?, after?, wait?)` (topic
-defaults to the agent's inbox). It reads `AGENTOS_AGENT_ID` and the gateway
-address from the environment `agentos spawn` sets (`ANTHROPIC_BASE_URL` has the
-shape `http://127.0.0.1:8080/agent/<id>/anthropic`; `AGENTOS_GATEWAY_URL`
+defaults to the agent's inbox). It reads `NESTLO_AGENT_ID` and the gateway
+address from the environment `nestlo spawn` sets (`ANTHROPIC_BASE_URL` has the
+shape `http://127.0.0.1:8080/agent/<id>/anthropic`; `NESTLO_GATEWAY_URL`
 overrides it).
 
 ## Budget reservation
@@ -190,7 +190,7 @@ replaced by the actual cost, so concurrent requests cannot overshoot a
 budget. Requests to a zero-cost provider reserve nothing.
 
 ```nix
-agentos.budget-controller = {
+nestlo.budget-controller = {
   reserveBudget = true;      # default
   defaultMaxTokens = 4096;   # default
 };
@@ -198,8 +198,8 @@ agentos.budget-controller = {
 
 ## Agent tokens and the 401 throttle
 
-Agents authenticate with the token `agentos spawn` registers. It can be sent
-in the URL (`/agent/<id>:<token>/...`) or in the `x-agentos-token` header.
+Agents authenticate with the token `nestlo spawn` registers. It can be sent
+in the URL (`/agent/<id>:<token>/...`) or in the `x-nestlo-token` header.
 The header is preferred: the token then stays out of URLs, access logs and
 the request log, and the gateway never logs a token. Operators on the admin
 socket may omit it.
@@ -210,7 +210,7 @@ Failed authentications are counted per client address and minute. Beyond
 guessing.
 
 ```nix
-agentos.circuit-breaker.maxAuthFailuresPerMinute = 20;
+nestlo.circuit-breaker.maxAuthFailuresPerMinute = 20;
 ```
 
 ## Failing closed
@@ -222,7 +222,7 @@ proxying unmetered traffic.
 
 ## Providers
 
-Each entry of `agentos.networking.providers` names an adapter with `api`:
+Each entry of `nestlo.networking.providers` names an adapter with `api`:
 
 | `api` | Provider | Key header |
 |:---|:---|:---|
@@ -253,11 +253,11 @@ Cost routing can send requests to such a provider: map a model to it with
 provider is not sent to it, and routing never crosses wire formats.
 
 ```nix
-agentos.networking.providers.local = {
+nestlo.networking.providers.local = {
   baseUrl = "http://127.0.0.1:11434";
   api = "openai-compatible";      # zeroCost defaults to true
 };
-agentos.networking.providers.lan = {
+nestlo.networking.providers.lan = {
   baseUrl = "http://10.0.0.5:8000";
   api = "openai";
   zeroCost = true;
@@ -285,7 +285,7 @@ retried once a response has started. The log records `fallback_provider` or
 `fallbacks_failed`.
 
 ```nix
-agentos.networking.providers.openai.fallbacks =
+nestlo.networking.providers.openai.fallbacks =
   [ "azure" { provider = "local"; model = "llama3.1"; } ];
 ```
 

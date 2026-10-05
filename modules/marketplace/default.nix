@@ -1,38 +1,38 @@
-# AgentOS agent marketplace
+# Nestlo agent marketplace
 #
-# `agentos-market` searches a registry of community coding agents
+# `nestlo-market` searches a registry of community coding agents
 # (marketplace/index.json) and installs them into the operator's nix profile.
-# An installed agent is registered in /var/lib/agentos/agents.d/<name>.json so
-# `agentos spawn <name>` can run it in the sandbox. See docs/marketplace.md.
+# An installed agent is registered in /var/lib/nestlo/agents.d/<name>.json so
+# `nestlo spawn <name>` can run it in the sandbox. See docs/marketplace.md.
 #
-# The directory is writable by operators (group `agentos`) and read-only for
+# The directory is writable by operators (group `nestlo`) and read-only for
 # the sandboxed agent user, which cannot register commands for itself.
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.marketplace;
+  cfg = config.nestlo.marketplace;
 in
 {
-  options.agentos.marketplace = {
-    enable = lib.mkEnableOption "agentos-market, the community agent registry";
+  options.nestlo.marketplace = {
+    enable = lib.mkEnableOption "nestlo-market, the community agent registry";
 
     index = lib.mkOption {
       type = lib.types.path;
       default = ../../marketplace/index.json;
-      description = "Registry file installed as /etc/agentos/marketplace.json";
+      description = "Registry file installed as /etc/nestlo/marketplace.json";
     };
   };
 
   config = lib.mkIf cfg.enable {
     assertions = [{
-      assertion = config.agentos.runtime.enable;
-      message = "agentos.marketplace needs agentos.runtime.enable";
+      assertion = config.nestlo.runtime.enable;
+      message = "nestlo.marketplace needs nestlo.runtime.enable";
     }];
 
-    environment.etc."agentos/marketplace.json".source = cfg.index;
+    environment.etc."nestlo/marketplace.json".source = cfg.index;
     systemd.tmpfiles.rules = [
-      "d /var/lib/agentos/agents.d 2775 root agentos"
+      "d /var/lib/nestlo/agents.d 2775 root nestlo"
     ];
-    environment.systemPackages = [ pkgs.agentos.services ];
+    environment.systemPackages = [ pkgs.nestlo.services ];
   };
 }

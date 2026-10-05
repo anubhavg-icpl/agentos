@@ -1,0 +1,239 @@
+"""Provider adapters: how the gateway talks to each kind of LLM API.
+
+A provider in services.toml names its adapter with `api`:
+
+  anthropic          Messages API, and the OpenAI-compatible v1/chat/completions
+                     endpoint (usage in the OpenAI format). x-api-key header.
+  openai             Chat Completions / Responses. Authorization: Bearer.
+  openai-compatible  Local servers speaking the OpenAI wire format (ollama,
+                     llama.cpp, vLLM, LM Studio). No key is needed and every
+                     model costs $0 unless the provider sets zero_cost = false.
+  azure-openai       Azure OpenAI. api-key header, deployments in the path
+                     (/openai/deployments/<name>/chat/completions), and an
+                     api-version query that the provider may set
+                     (api_version = "2024-10-21").
+  gemini             Google Generative Language API. x-goog-api-key header,
+                     usageMetadata in responses, the model in the path
+                     (/v1beta/models/<model>:generateContent).
+
+An adapter decides four things: where the credential goes (inject_key), which
+model a request is for (request_model/set_model, because Azure and Gemini put
+it in the URL), small request edits (prepare, query_for), and which usage
+format the responses use (wire, read by usage.UsageParser).
+
+Not supported yet: AWS Bedrock (needs SigV4 request signing and the binary
+event-stream framing) and Google Vertex AI (needs OAuth access tokens minted
+from a service account). Both fit this interface, but not without credential
+handling that does not belong in the gateway's request path yet.
+"""
+
+import re
+import urllib.parse
+
+from . import config as configmod
+
+AUTH_HEADERS = ("authorization", "x-api-key", "api-key", "x-goog-api-key")
+
+
+def _find(headers, name):
+    for key in headers:
+        if key.lower() == name:
+            return key
+    return None
+
+
+class Adapter:
+    name = "openai"
+    wire = "openai"
+    free = False            # models cost $0 by default
+    model_in_path = False
+
+    def __init__(self, prov=None):
+        self.prov = prov or {}
+
+    @property
+    def zero_cost(self):
+        value = self.prov.get("zero_cost")
+        return self.free if value is None else bool(value)
+
+    def inject_key(self, headers, key):
+        if not key:
+            return
+        name = _find(headers, "authorization") or "Authorization"
+        if headers.get(name, "") in ("", "Bearer " + configmod.MANAGED_KEY):
+            headers[name] = "Bearer " + key
+
+    def strip_credentials(self, headers):
+        """Drop the client's credentials (used before talking to another provider)."""
+        for name in [k for k in headers if k.lower() in AUTH_HEADERS]:
+            del headers[name]
+
+    def request_model(self, payload, rest):
+        return payload.get("model") if isinstance(payload, dict) else None
+
+    def set_model(self, payload, rest, model):
+        """Point the request at `model`; returns the (possibly new) path parts."""
+        if isinstance(payload, dict):
+            payload["model"] = model
+        return rest
+
+    def prepare(self, payload, rest_path):
+        """Edit a JSON request body in place; True if it changed."""
+        return False
+
+    def query_for(self, query):
+        return query
+
+    def wire_for(self, rest_path):
+        """Wire format of requests to and responses from `rest_path`."""
+        return self.wire
+
+
+def _chat_completions(rest_path):
+    return rest_path.rstrip("/").endswith("chat/completions")
+
+
+def _ask_stream_usage(payload, rest_path):
+    """Ask for usage on streamed Chat Completions so they can be priced."""
+    if (payload.get("stream") is True and _chat_completions(rest_path)
+            and "stream_options" not in payload):
+        payload["stream_options"] = {"include_usage": True}
+        return True
+    return False
+
+
+class Anthropic(Adapter):
+    """Messages API, and Anthropic's OpenAI-compatible Chat Completions
+    endpoint (v1/chat/completions), which OpenAI-only clients such as Agent
+    Orca's model router use. Both take the key in x-api-key."""
+    name = wire = "anthropic"
+
+    def inject_key(self, headers, key):
+        if not key:
+            return
+        auth = _find(headers, "authorization")
+        if auth and headers[auth] == "Bearer " + configmod.MANAGED_KEY:
+            del headers[auth]       # an OpenAI client's placeholder
+            auth = None
+        name = _find(headers, "x-api-key")
+        current = headers.get(name, "") if name else ""
+        if current == configmod.MANAGED_KEY or (not current and auth is None):
+            headers[name or "x-api-key"] = key
+
+    def wire_for(self, rest_path):
+        return "openai" if _chat_completions(rest_path) else self.wire
+
+    def prepare(self, payload, rest_path):
+        return _ask_stream_usage(payload, rest_path)
+
+
+class OpenAI(Adapter):
+    name = wire = "openai"
+
+    def prepare(self, payload, rest_path):
+        return _ask_stream_usage(payload, rest_path)
+
+
+class OpenAICompatible(OpenAI):
+    name = "openai-compatible"
+    free = True
+
+    def inject_key(self, headers, key):
+        # Local servers do not need the caller's credentials, and must never
+        # receive the ones meant for another provider: send only the key
+        # configured for this provider, if any.
+        self.strip_credentials(headers)
+        if key:
+            headers["Authorization"] = "Bearer " + key
+
+
+class AzureOpenAI(OpenAI):
+    name = "azure-openai"
+    model_in_path = True
+
+    def inject_key(self, headers, key):
+        if not key:
+            return
+        name = _find(headers, "api-key")
+        current = headers.get(name, "") if name else ""
+        if current == configmod.MANAGED_KEY or (not current and _find(headers, "authorization") is None):
+            headers[name or "api-key"] = key
+
+    def _deployment(self, rest):
+        for i, part in enumerate(rest[:-1]):
+            if part == "deployments":
+                return i + 1
+        return None
+
+    def request_model(self, payload, rest):
+        i = self._deployment(rest)
+        if i is not None:
+            return rest[i]
+        return super().request_model(payload, rest)
+
+    def set_model(self, payload, rest, model):
+        i = self._deployment(rest)
+        if i is None:
+            return super().set_model(payload, rest, model)
+        return rest[:i] + [model] + rest[i + 1:]
+
+    def query_for(self, query):
+        version = self.prov.get("api_version")
+        if version and "api-version" not in urllib.parse.parse_qs(query or ""):
+            query = (query + "&" if query else "") + "api-version=" + urllib.parse.quote(str(version))
+        return query
+
+
+class Gemini(Adapter):
+    name = wire = "gemini"
+    model_in_path = True
+    _MODEL = re.compile(r"^(?P<model>[^:]+)(?P<method>:[A-Za-z]+)?$")
+
+    def inject_key(self, headers, key):
+        if not key:
+            return
+        name = _find(headers, "x-goog-api-key")
+        current = headers.get(name, "") if name else ""
+        if current in ("", configmod.MANAGED_KEY) and _find(headers, "authorization") is None:
+            headers[name or "x-goog-api-key"] = key
+
+    def _index(self, rest):
+        for i, part in enumerate(rest[:-1]):
+            if part == "models":
+                return i + 1
+        return None
+
+    def request_model(self, payload, rest):
+        i = self._index(rest)
+        if i is None:
+            return None
+        m = self._MODEL.match(rest[i])
+        return m.group("model") if m else None
+
+    def set_model(self, payload, rest, model):
+        i = self._index(rest)
+        if i is None:
+            return rest
+        m = self._MODEL.match(rest[i])
+        return rest[:i] + [model + ((m.group("method") or "") if m else "")] + rest[i + 1:]
+
+    def query_for(self, query):
+        # Older Google clients send the key as ?key=; the managed placeholder
+        # must not reach Google (inject_key supplies the header instead)
+        if not query:
+            return query
+        pairs = [(k, v) for k, v in urllib.parse.parse_qsl(query, keep_blank_values=True)
+                 if not (k == "key" and v == configmod.MANAGED_KEY)]
+        return urllib.parse.urlencode(pairs)
+
+
+ADAPTERS = {cls.name: cls for cls in (Anthropic, OpenAI, OpenAICompatible, AzureOpenAI, Gemini)}
+
+
+def adapter_for(prov):
+    """Adapter for a provider table from services.toml."""
+    api = prov.get("api", "openai")
+    try:
+        return ADAPTERS[api](prov)
+    except KeyError:
+        raise ValueError("unknown provider api %r (known: %s)" % (api, ", ".join(sorted(ADAPTERS))))

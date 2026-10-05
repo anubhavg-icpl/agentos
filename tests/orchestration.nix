@@ -11,7 +11,7 @@
 #   ({nodes.<name>.result}) -> swarm of 2 (own worktree and branch each) ->
 #   timeout / cancel / failed dependency -> a schedule firing -> what the
 #   orchestrator user may and may not do
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 let
   # Mock of the Anthropic Messages API: $2 per request at claude-sonnet-5-5 prices
@@ -50,14 +50,14 @@ let
     runtimeInputs = [ pkgs.curl pkgs.coreutils ];
     text = ''
       prompt="$1"
-      echo "user=$(id -un) task=$AGENTOS_TASK_ID cwd=$PWD branch=$AGENTOS_BRANCH"
+      echo "user=$(id -un) task=$NESTLO_TASK_ID cwd=$PWD branch=$NESTLO_BRANCH"
       echo "prompt=[$prompt]"
       code=$(curl -s -o /dev/null -w '%{http_code}' \
         -H "x-api-key: $ANTHROPIC_API_KEY" -H 'content-type: application/json' \
         -d '{"model": "claude-sonnet-5-5", "max_tokens": 16, "messages": []}' \
         "$ANTHROPIC_BASE_URL/v1/messages")
       echo "gateway=$code key=$ANTHROPIC_API_KEY"
-      printf '%s\n' "$prompt" > "note-$AGENTOS_TASK_ID.txt"
+      printf '%s\n' "$prompt" > "note-$NESTLO_TASK_ID.txt"
       case "$prompt" in
         *SLEEP*) sleep 600 ;;
         *FAIL*) exit 3 ;;
@@ -67,11 +67,11 @@ let
   };
 in
 pkgs.testers.runNixOSTest {
-  name = "agentos-orchestration";
+  name = "nestlo-orchestration";
   globalTimeout = 3600;
 
   nodes.machine = { ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 3072;
     virtualisation.cores = 2;
@@ -84,7 +84,7 @@ pkgs.testers.runNixOSTest {
     users.users.ops.isNormalUser = true;
     security.sudo.wheelNeedsPassword = false;
 
-    agentos = {
+    nestlo = {
       runtime = {
         enable = true;
         operators = [ "admin" "ops" ];
@@ -94,7 +94,7 @@ pkgs.testers.runNixOSTest {
         enable = true;
         providers.anthropic = {
           baseUrl = "http://127.0.0.1:9999";
-          keyFile = "/etc/agentos-test/anthropic.key";
+          keyFile = "/etc/nestlo-test/anthropic.key";
         };
         providers.openai.baseUrl = "http://127.0.0.1:9999";
       };
@@ -115,17 +115,17 @@ pkgs.testers.runNixOSTest {
       };
     };
 
-    environment.etc."agentos-test/anthropic.key" = {
+    environment.etc."nestlo-test/anthropic.key" = {
       text = "sk-test-real-key";
       mode = "0440";
-      group = "agentos";
+      group = "nestlo";
     };
 
     environment.systemPackages = [ fakeTaskAgent pkgs.jq ];
 
     systemd.services.mock-llm = {
       wantedBy = [ "multi-user.target" ];
-      before = [ "agentos-model-gateway.service" ];
+      before = [ "nestlo-model-gateway.service" ];
       serviceConfig.ExecStart = "${mockLlm}/bin/mock-llm";
     };
   };
@@ -140,28 +140,28 @@ pkgs.testers.runNixOSTest {
         return as_user("ops", cmd)
 
     def submit(*args):
-        out = ops("agentos-task submit --agent fake " + " ".join(args) + " 2>/dev/null")
+        out = ops("nestlo-task submit --agent fake " + " ".join(args) + " 2>/dev/null")
         return out.split()
 
     def show(task_id):
-        return json.loads(ops(f"agentos-task show {task_id} --json"))
+        return json.loads(ops(f"nestlo-task show {task_id} --json"))
 
     def wait_for(task_id, statuses, timeout=180):
         machine.wait_until_succeeds(
-            f"su - ops -c 'agentos-task show {task_id} --json' | jq -e '[.status] | inside({json.dumps(statuses)})'",
+            f"su - ops -c 'nestlo-task show {task_id} --json' | jq -e '[.status] | inside({json.dumps(statuses)})'",
             timeout=timeout,
         )
         return show(task_id)
 
     machine.wait_for_unit("multi-user.target")
-    for unit in ["redis-agentos.service", "agentos-model-gateway.service", "agentos-daemon.service",
-                 "agentos-orchestrator.service", "agentos-scheduler.service", "mock-llm.service"]:
+    for unit in ["redis-nestlo.service", "nestlo-model-gateway.service", "nestlo-daemon.service",
+                 "nestlo-orchestrator.service", "nestlo-scheduler.service", "mock-llm.service"]:
         machine.wait_for_unit(unit)
     machine.wait_for_open_port(8080)
-    machine.wait_until_succeeds("test -S /run/agentos-orchestrator/orchestrator.sock")
-    machine.wait_until_succeeds("test -S /run/agentos-scheduler/scheduler.sock")
+    machine.wait_until_succeeds("test -S /run/nestlo-orchestrator/orchestrator.sock")
+    machine.wait_until_succeeds("test -S /run/nestlo-scheduler/scheduler.sock")
     for name in ["demo", "swarm", "sched"]:
-        as_user("admin", f"agentos workspace create {name}")
+        as_user("admin", f"nestlo workspace create {name}")
 
     with subtest("a single task runs sandboxed, metered and budgeted, without sudo"):
         machine.fail("su - ops -c 'sudo -n true'")
@@ -170,12 +170,12 @@ pkgs.testers.runNixOSTest {
         print(task)
         assert task["status"] == "succeeded", task
         out = task["result"]["output_tail"]
-        assert "user=agentos-agent" in out and f"task={tid}" in out, out
-        assert "gateway=200 key=agentos-managed" in out, out
+        assert "user=nestlo-agent" in out and f"task={tid}" in out, out
+        assert "gateway=200 key=nestlo-managed" in out, out
         assert task["result"]["branch"] == f"agent/{tid}", task
-        assert "prompt=[hello there]" in ops(f"agentos-task logs {tid}")
-        machine.succeed(f"test -f /var/lib/agentos/workspaces/demo/note-{tid}.txt")
-        budget = json.loads(ops("agentos budget status --json"))
+        assert "prompt=[hello there]" in ops(f"nestlo-task logs {tid}")
+        machine.succeed(f"test -f /var/lib/nestlo/workspaces/demo/note-{tid}.txt")
+        budget = json.loads(ops("nestlo budget status --json"))
         assert abs(budget["agents"][tid]["usd"] - 2.0) < 1e-6, budget
         assert budget["agents"][tid]["limit_usd"] == 5.0, budget
 
@@ -196,8 +196,8 @@ pkgs.testers.runNixOSTest {
         machine.sleep(5)
         t = show(gated)
         assert t["status"] == "awaiting_approval" and t["started_at"] is None, t
-        machine.fail(f"systemctl is-active agentos-task-runner@{gated}.service")
-        machine.fail(f"test -e /var/lib/agentos/tasks/{gated}.log")
+        machine.fail(f"systemctl is-active nestlo-task-runner@{gated}.service")
+        machine.fail(f"test -e /var/lib/nestlo/tasks/{gated}.log")
         # a task awaiting approval holds no worker slot: both slots stay free for other work
         (free_a,) = submit("--workspace swarm --isolate --prompt 'EMIT slot a'")
         (free_b,) = submit("--workspace swarm --isolate --prompt 'EMIT slot b'")
@@ -205,20 +205,20 @@ pkgs.testers.runNixOSTest {
             assert wait_for(i, ["succeeded", "failed"])["status"] == "succeeded"
         assert show(gated)["status"] == "awaiting_approval"
         # approving something that is not gated, or a task that does not exist, is refused
-        machine.fail(f"su - ops -c 'agentos-task approve {free_a}'")
-        machine.fail("su - ops -c 'agentos-task approve task-nosuch'")
-        ops(f"agentos-task approve {gated} --note 'looks fine'")
+        machine.fail(f"su - ops -c 'nestlo-task approve {free_a}'")
+        machine.fail("su - ops -c 'nestlo-task approve task-nosuch'")
+        ops(f"nestlo-task approve {gated} --note 'looks fine'")
         t = wait_for(gated, ["succeeded", "failed"])
         assert t["status"] == "succeeded", t
         # the approver is the kernel-reported caller, with the time and the note
         assert t["approval"]["decision"] == "approved" and t["approval"]["by"] == "ops", t
         assert t["approval"]["note"] == "looks fine" and t["approval"]["at"] <= t["started_at"], t
-        machine.fail(f"su - ops -c 'agentos-task approve {gated}'")
+        machine.fail(f"su - ops -c 'nestlo-task approve {gated}'")
         # rejecting cancels the task and what depends on it
-        ops(f"agentos-task reject {rejected} --note 'not today'")
+        ops(f"nestlo-task reject {rejected} --note 'not today'")
         assert show(rejected)["status"] == "cancelled" and show(rejected)["approval"]["decision"] == "rejected"
         assert wait_for(child, ["cancelled"])["status"] == "cancelled"
-        machine.fail(f"test -e /var/lib/agentos/tasks/{rejected}.log")
+        machine.fail(f"test -e /var/lib/nestlo/tasks/{rejected}.log")
 
     with subtest("workflow: a 3-node DAG whose last node waits for both parents"):
         wf = {"nodes": {
@@ -230,16 +230,16 @@ pkgs.testers.runNixOSTest {
                         "when": "any_failed", "prompt": "only after a failure"},
         }}
         machine.succeed("printf '%s' " + json.dumps(json.dumps(wf)) + " > /tmp/wf.json && chmod 644 /tmp/wf.json")
-        out = ops("agentos-task workflow submit /tmp/wf.json 2>/dev/null").split()
+        out = ops("nestlo-task workflow submit /tmp/wf.json 2>/dev/null").split()
         group = out[0]
         assert group.startswith("wf-"), out
         machine.wait_until_succeeds(
-            f"su - ops -c 'agentos-task workflow status {group} --json' | "
+            f"su - ops -c 'nestlo-task workflow status {group} --json' | "
             "jq -e '.tasks | (length == 4) and all(.[]; if .node == \"cleanup\" then .status == \"skipped\" else .status == \"succeeded\" end)'",
             timeout=240,
         )
-        wfs = json.loads(ops(f"agentos-task workflow status {group} --json"))
-        by = {n: json.loads(ops(f"agentos-task show {i} --json")) for n, i in wfs["nodes"].items()}
+        wfs = json.loads(ops(f"nestlo-task workflow status {group} --json"))
+        by = {n: json.loads(ops(f"nestlo-task show {i} --json")) for n, i in wfs["nodes"].items()}
         assert set(by) == {"left", "right", "join", "cleanup"}, by.keys()
         assert by["join"]["started_at"] >= max(by["left"]["finished_at"], by["right"]["finished_at"]), by
         assert by["join"]["resolved_prompt"].count("TOKEN=xyzzy-42") == 2, by["join"]["resolved_prompt"]
@@ -249,7 +249,7 @@ pkgs.testers.runNixOSTest {
         bad = {"nodes": {"x": {"agent": "fake", "workspace": "swarm", "prompt": "x", "depends_on": ["y"]},
                          "y": {"agent": "fake", "workspace": "swarm", "prompt": "y", "depends_on": ["x"]}}}
         machine.succeed("printf '%s' " + json.dumps(json.dumps(bad)) + " > /tmp/bad.json && chmod 644 /tmp/bad.json")
-        machine.fail("su - ops -c 'agentos-task workflow submit /tmp/bad.json'")
+        machine.fail("su - ops -c 'nestlo-task workflow submit /tmp/bad.json'")
 
     with subtest("swarm: two agents on one prompt, each in its own worktree and branch"):
         ids = submit("--workspace swarm --swarm 2 --prompt 'same prompt for all'")
@@ -263,24 +263,24 @@ pkgs.testers.runNixOSTest {
         assert len(trees) == 2, trees
         for t in done:
             machine.succeed(f"test -f {t['result']['worktree']}/note-{t['id']}.txt")
-            ops(f"git -C /var/lib/agentos/workspaces/swarm rev-parse --verify {t['result']['branch']}")
-        summary = ops(f"agentos-task show {done[0]['group']}")
+            ops(f"git -C /var/lib/nestlo/workspaces/swarm rev-parse --verify {t['result']['branch']}")
+        summary = ops(f"nestlo-task show {done[0]['group']}")
         assert "2 succeeded" in summary, summary
-        listing = ops("agentos list")
+        listing = ops("nestlo list")
         assert all(i in listing for i in ids), listing
 
     with subtest("timeout, cancel and failed dependencies"):
         (slow,) = submit("--workspace demo --prompt 'SLEEP' --timeout 5")
         t = wait_for(slow, ["timeout", "succeeded", "failed"])
         assert t["status"] == "timeout", t
-        machine.fail(f"systemctl is-active agentos-agent-{slow}.service")
+        machine.fail(f"systemctl is-active nestlo-agent-{slow}.service")
 
         (long_run,) = submit("--workspace demo --prompt 'SLEEP'")
         wait_for(long_run, ["running"])
-        machine.wait_until_succeeds(f"systemctl is-active agentos-agent-{long_run}.service")
-        ops(f"agentos-task cancel {long_run}")
+        machine.wait_until_succeeds(f"systemctl is-active nestlo-agent-{long_run}.service")
+        ops(f"nestlo-task cancel {long_run}")
         t = wait_for(long_run, ["cancelled"])
-        machine.wait_until_fails(f"systemctl is-active agentos-agent-{long_run}.service")
+        machine.wait_until_fails(f"systemctl is-active nestlo-agent-{long_run}.service")
 
         (bad,) = submit("--workspace demo --prompt 'FAIL'")
         (after_bad,) = submit("--workspace demo --after", bad, "--prompt 'never runs'")
@@ -292,46 +292,46 @@ pkgs.testers.runNixOSTest {
         for args in ["--workspace /etc --prompt x", "--workspace ../../etc --prompt x",
                      "--workspace demo --prompt '--dangerously-skip-permissions'",
                      "--workspace demo --prompt x --timeout 0"]:
-            machine.fail("su - ops -c " + json.dumps("agentos-task submit --agent fake " + args))
-        machine.fail("su - ops -c 'agentos-task submit --agent nosuchagent --workspace demo --prompt x'")
-        machine.succeed("printf '%s' \"\\$(touch /var/lib/agentos/workspaces/demo/pwned); echo 'x' > /tmp/pwned\" > /tmp/evil.txt")
+            machine.fail("su - ops -c " + json.dumps("nestlo-task submit --agent fake " + args))
+        machine.fail("su - ops -c 'nestlo-task submit --agent nosuchagent --workspace demo --prompt x'")
+        machine.succeed("printf '%s' \"\\$(touch /var/lib/nestlo/workspaces/demo/pwned); echo 'x' > /tmp/pwned\" > /tmp/evil.txt")
         machine.succeed("chmod 644 /tmp/evil.txt")
         (evil,) = submit("--workspace demo --prompt-file /tmp/evil.txt")
         t = wait_for(evil, ["succeeded", "failed"])
         assert t["status"] == "succeeded" and "prompt=[$(touch" in t["result"]["output_tail"], t
-        machine.fail("test -e /var/lib/agentos/workspaces/demo/pwned")
+        machine.fail("test -e /var/lib/nestlo/workspaces/demo/pwned")
         machine.fail("test -e /tmp/pwned")
 
     with subtest("the orchestrator user can start task runners and nothing else"):
-        machine.succeed("su -s /bin/sh agentos -c 'systemctl start --no-block agentos-task-runner@nonexistent.service'")
-        machine.fail("su -s /bin/sh agentos -c 'systemctl restart agentos-daemon.service'")
-        machine.fail("su -s /bin/sh agentos -c 'systemctl start --no-block sshd.service'")
-        machine.fail("su -s /bin/sh agentos -c 'sudo -n true'")
+        machine.succeed("su -s /bin/sh nestlo -c 'systemctl start --no-block nestlo-task-runner@nonexistent.service'")
+        machine.fail("su -s /bin/sh nestlo -c 'systemctl restart nestlo-daemon.service'")
+        machine.fail("su -s /bin/sh nestlo -c 'systemctl start --no-block sshd.service'")
+        machine.fail("su -s /bin/sh nestlo -c 'sudo -n true'")
         # the sandboxed agent user cannot reach the orchestrator
-        machine.fail("su -s /bin/sh agentos-agent -c "
-                     "'curl -fsS --unix-socket /run/agentos-orchestrator/orchestrator.sock http://x/tasks'")
+        machine.fail("su -s /bin/sh nestlo-agent -c "
+                     "'curl -fsS --unix-socket /run/nestlo-orchestrator/orchestrator.sock http://x/tasks'")
 
     with subtest("schedules: declared ones are listed and read-only, CLI ones fire"):
-        listing = ops("agentos-schedule list")
+        listing = ops("nestlo-schedule list")
         print(listing)
         assert "weekly-report" in listing and "declared" in listing, listing
-        machine.fail("su - ops -c 'agentos-schedule remove weekly-report'")
-        ops("agentos-schedule add tick --calendar '*-*-* *:*:00/10' --agent fake --workspace sched "
+        machine.fail("su - ops -c 'nestlo-schedule remove weekly-report'")
+        ops("nestlo-schedule add tick --calendar '*-*-* *:*:00/10' --agent fake --workspace sched "
             "--prompt 'scheduled run' --budget 5")
-        machine.fail("su - ops -c 'agentos-schedule add bad --calendar nonsense --agent fake --workspace sched --prompt x'")
+        machine.fail("su - ops -c 'nestlo-schedule add bad --calendar nonsense --agent fake --workspace sched --prompt x'")
         machine.wait_until_succeeds(
-            "su - ops -c 'agentos-task list --json' | "
+            "su - ops -c 'nestlo-task list --json' | "
             "jq -e '[.tasks[] | select(.origin == \"schedule:tick\" and .status == \"succeeded\")] | length >= 1'",
             timeout=180,
         )
-        ops("agentos-schedule remove tick")
-        run = ops("agentos-schedule run-now weekly-report 2>/dev/null").split()
+        ops("nestlo-schedule remove tick")
+        run = ops("nestlo-schedule run-now weekly-report 2>/dev/null").split()
         t = wait_for(run[0], ["succeeded", "failed"])
         assert t["status"] == "succeeded" and t["origin"] == "schedule:weekly-report", t
         assert t["budget_usd"] == 5, t
         # schedules survive a restart of the scheduler
-        machine.succeed("systemctl restart agentos-scheduler.service")
-        machine.wait_until_succeeds("test -S /run/agentos-scheduler/scheduler.sock")
-        machine.wait_until_succeeds("su - ops -c 'agentos-schedule list' | grep -q weekly-report")
+        machine.succeed("systemctl restart nestlo-scheduler.service")
+        machine.wait_until_succeeds("test -S /run/nestlo-scheduler/scheduler.sock")
+        machine.wait_until_succeeds("su - ops -c 'nestlo-schedule list' | grep -q weekly-report")
   '';
 }

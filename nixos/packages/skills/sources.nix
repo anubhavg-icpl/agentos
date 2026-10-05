@@ -1,4 +1,4 @@
-# Pinned upstream sources of the agent skill packs (agentos.skills).
+# Pinned upstream sources of the agent skill packs (nestlo.skills).
 #
 # Every pack is fetched by commit and content hash, so the skills an agent
 # sees are reproducible and reviewable. To update one, change `rev`, set
@@ -220,11 +220,31 @@
 
   # herdr: persistent terminal workspaces for coding agents. Its skills/herdr
   # skill teaches an agent to drive panes and other agents through the herdr
-  # CLI (agentos.herdr, docs/herdr.md).
+  # CLI (nestlo.herdr, docs/herdr.md).
   herdr = fetchFromGitHub {
     owner = "herdrdev";
     repo = "herdr";
     rev = "e35f3937b0efe40ec0dab675709c68e1d8e8c9e6";
     hash = "sha256-3X3G75QuJcSTc3x2iblKZJgXUSrSWa9BlkybqlGm5Bw=";
+  };
+
+  # NVIDIA OpenShell: sandboxed runtime for AI agents. Its skills/ teach an
+  # agent to use the openshell CLI, write sandbox policies and debug gateways
+  # and inference (nestlo.openshell, docs/openshell.md).
+  openshell = fetchFromGitHub {
+    owner = "NVIDIA";
+    repo = "OpenShell";
+    rev = "e7fdd6beef98f7f92d86271a169fdd4d3be44cf3";
+    hash = "sha256-GY3f0C7kfaeKXPVuzVcCyZ+BcfmhuBLj1caPOnv0wK8=";
+  };
+
+  # Agent Beacon: the memory skills of its agent-skills/ plugin (recall,
+  # distill, promote, lenses). The same commit nestlo.beacon builds the
+  # beacon CLI from (nixos/packages/agent-beacon.nix).
+  beacon = fetchFromGitHub {
+    owner = "Asymptote-Labs";
+    repo = "agent-beacon";
+    rev = "82a6fba58e5d51f55fadc12ccdde8ce7b286eaa4";
+    hash = "sha256-PtEObrdWZ9qCH04X8xEKp8hIIKKR9azODSW37tZUUMs=";
   };
 }

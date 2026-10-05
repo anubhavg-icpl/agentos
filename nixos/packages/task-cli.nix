@@ -1,6 +1,6 @@
-# agentos-task: submit and follow orchestrator tasks
+# nestlo-task: submit and follow orchestrator tasks
 #
-# Talks to the orchestrator over its unix socket (group agentos), which
+# Talks to the orchestrator over its unix socket (group nestlo), which
 # validates every task; this script only builds requests. Task output is
 # read from the log files the task runner writes.
 { writeShellApplication
@@ -12,12 +12,12 @@
 }:
 
 writeShellApplication {
-  name = "agentos-task";
+  name = "nestlo-task";
   runtimeInputs = [ coreutils curl gnugrep jq util-linux ];
 
   text = ''
-    SOCKET="''${AGENTOS_ORCH_SOCKET:-/run/agentos-orchestrator/orchestrator.sock}"
-    TASKS_DIR="''${AGENTOS_TASKS_DIR:-/var/lib/agentos/tasks}"
+    SOCKET="''${NESTLO_ORCH_SOCKET:-/run/nestlo-orchestrator/orchestrator.sock}"
+    TASKS_DIR="''${NESTLO_TASKS_DIR:-/var/lib/nestlo/tasks}"
 
     if [ -t 2 ]; then
       RED='\033[0;31m' GREEN='\033[0;32m' BLUE='\033[0;34m' NC='\033[0m'
@@ -30,38 +30,38 @@ writeShellApplication {
 
     usage() {
       cat <<'EOF'
-    agentos-task: run coding agents headless through the AgentOS orchestrator
+    nestlo-task: run coding agents headless through the Nestlo orchestrator
 
     USAGE
-      agentos-task submit --agent <name> [--workspace <name|path>] (--prompt <text> | --prompt-file <file>)
+      nestlo-task submit --agent <name> [--workspace <name|path>] (--prompt <text> | --prompt-file <file>)
                           [--budget <usd>] [--timeout <sec>] [--after <task-id>]... [--swarm <n>]
                           [--group <name>] [--isolate] [--wait] [--json]
                           [--gate] [--priority <n>] [--retries <n>] [--backoff <sec>]
                           [--concurrency-key <k>] [--dedupe-key <k>] [--verify '["cmd","arg"]']
                           [--judge-agent <name> --judge-prompt <text>] [--start-from <task-id>]
-      agentos-task publish <source-task-id> --repo <owner/name> --title <text> [--body <text> | --body-file <file>]
+      nestlo-task publish <source-task-id> --repo <owner/name> --title <text> [--body <text> | --body-file <file>]
                           [--merge squash|merge|rebase] [--no-require-checks] [--wait] [--json]
-      agentos-task list [--status <s>] [--group <name>] [--json]
-      agentos-task show <task-id|group> [--json]
-      agentos-task logs <task-id> [-f]
-      agentos-task cancel <task-id|group>
-      agentos-task approve <task-id> [--note <text>]
-      agentos-task reject <task-id> [--note <text>]
-      agentos-task workflow submit <file.json> [--wait] [--json]
-      agentos-task workflow status <group> [--json]
-      agentos-task policy show [owner/name|workspace] [--json]
-      agentos-task whoami [--json]
+      nestlo-task list [--status <s>] [--group <name>] [--json]
+      nestlo-task show <task-id|group> [--json]
+      nestlo-task logs <task-id> [-f]
+      nestlo-task cancel <task-id|group>
+      nestlo-task approve <task-id> [--note <text>]
+      nestlo-task reject <task-id> [--note <text>]
+      nestlo-task workflow submit <file.json> [--wait] [--json]
+      nestlo-task workflow status <group> [--json]
+      nestlo-task policy show [owner/name|workspace] [--json]
+      nestlo-task whoami [--json]
 
     NOTES
-      policy show    the effective policy (agentos.policy) for a repository or workspace name,
-                     or the default; whoami: your user, groups and RBAC roles (agentos.rbac)
+      policy show    the effective policy (nestlo.policy) for a repository or workspace name,
+                     or the default; whoami: your user, groups and RBAC roles (nestlo.rbac)
       --after <id>   start when that task has succeeded; the prompt may use {prev_result}
                      (its output) and the tasks run one after another in the workspace
       --swarm <n>    n agents, same prompt, in parallel; each in its own git worktree on its
                      own branch (agent/<task-id>)
       --budget       daily budget for each task's agent, in USD (enforced by the gateway)
       --wait         block until the task (or the whole swarm) has finished; exit 1 if any failed
-      --gate         the task waits (awaiting_approval, no worker slot) until: agentos-task approve <id>
+      --gate         the task waits (awaiting_approval, no worker slot) until: nestlo-task approve <id>
       --priority     higher runs first (-1000..1000, default 0); first come first served within a priority
       --retries      retry a failed or timed-out run up to n times; --backoff sec doubles each retry
       --concurrency-key / --dedupe-key
@@ -71,7 +71,7 @@ writeShellApplication {
       --start-from   branch agent/<id> of this task is created from the tip of agent/<that task> (same
                      workspace; needs --isolate): a fix round continues the previous round's work
       publish        no agent runs: pushes the branch of a succeeded task and opens the pull request
-                     (agentos.git-automation.publish). --merge asks to merge it once checks are green;
+                     (nestlo.git-automation.publish). --merge asks to merge it once checks are green;
                      honoured only for repositories with allowAutoMerge, otherwise the PR stays open
       --judge-*      with --swarm: after all members finish a judge task gets {results}; its first output
                      line "winner: <task-id>" is recorded on the group
@@ -82,7 +82,7 @@ writeShellApplication {
     EOF
     }
 
-    [ -S "$SOCKET" ] || die "orchestrator socket $SOCKET not found; is agentos.orchestration.enable set?"
+    [ -S "$SOCKET" ] || die "orchestrator socket $SOCKET not found; is nestlo.orchestration.enable set?"
 
     # api METHOD PATH [JSON] -> prints the body, fails on HTTP errors
     api() {
@@ -92,7 +92,7 @@ writeShellApplication {
       if [ -n "$body" ]; then
         args+=(--data-binary "$body")
       fi
-      code=$(curl "''${args[@]}" "http://orchestrator$path") || { rm -f "$out"; die "cannot reach the orchestrator (are you in the agentos group?)"; }
+      code=$(curl "''${args[@]}" "http://orchestrator$path") || { rm -f "$out"; die "cannot reach the orchestrator (are you in the nestlo group?)"; }
       if [ "''${code:0:1}" != "2" ]; then
         local msg
         msg=$(jq -r '.error // empty' "$out" 2>/dev/null || true)
@@ -146,7 +146,7 @@ writeShellApplication {
           --judge-prompt) jprompt="''${2:?--judge-prompt needs a value}"; shift 2 ;;
           --wait) wait=1; shift ;;
           --json) raw=1; shift ;;
-          *) die "unknown option: $1 (see: agentos-task help)" ;;
+          *) die "unknown option: $1 (see: nestlo-task help)" ;;
         esac
       done
       [ -n "$agent" ] || die "--agent is required"
@@ -186,10 +186,10 @@ writeShellApplication {
         if [ "$(jq '.deduplicated // false' <<<"$resp")" = "true" ]; then
           ok "dedupe key is held by an unfinished task; nothing queued"
         else
-          ok "queued $(jq '.tasks | length' <<<"$resp") task(s); follow with: agentos-task show $(jq -r '.group // .tasks[0].id' <<<"$resp")"
+          ok "queued $(jq '.tasks | length' <<<"$resp") task(s); follow with: nestlo-task show $(jq -r '.group // .tasks[0].id' <<<"$resp")"
         fi
         if [ "$(jq '[.tasks[] | select(.status == "awaiting_approval")] | length' <<<"$resp")" -gt 0 ]; then
-          info "awaiting approval; release with: agentos-task approve $(jq -r '[.tasks[] | select(.status == "awaiting_approval")][0].id' <<<"$resp")"
+          info "awaiting approval; release with: nestlo-task approve $(jq -r '[.tasks[] | select(.status == "awaiting_approval")][0].id' <<<"$resp")"
         fi
       fi
       if [ "$wait" -eq 1 ]; then
@@ -199,7 +199,7 @@ writeShellApplication {
 
     cmd_publish() {
       local source="''${1:-}" repo="" title="" body="" merge="" require=true wait=0 raw=0
-      [ -n "$source" ] || die "Usage: agentos-task publish <source-task-id> --repo <owner/name> --title <text> [--body <text> | --body-file <file>] [--merge squash|merge|rebase]"
+      [ -n "$source" ] || die "Usage: nestlo-task publish <source-task-id> --repo <owner/name> --title <text> [--body <text> | --body-file <file>] [--merge squash|merge|rebase]"
       valid_id "$source" || die "invalid id: $source"
       shift
       while [ $# -gt 0 ]; do
@@ -214,7 +214,7 @@ writeShellApplication {
           --no-require-checks) require=false; shift ;;
           --wait) wait=1; shift ;;
           --json) raw=1; shift ;;
-          *) die "unknown option: $1 (see: agentos-task help)" ;;
+          *) die "unknown option: $1 (see: nestlo-task help)" ;;
         esac
       done
       [ -n "$repo" ] || die "--repo is required"
@@ -234,7 +234,7 @@ writeShellApplication {
         echo "$resp"
       else
         jq -r '.tasks[].id' <<<"$resp"
-        ok "queued the publish task; follow with: agentos-task show $(jq -r '.tasks[0].id' <<<"$resp")"
+        ok "queued the publish task; follow with: nestlo-task show $(jq -r '.tasks[0].id' <<<"$resp")"
       fi
       if [ "$wait" -eq 1 ]; then
         wait_for "$(jq -r '.tasks[0].id' <<<"$resp")"
@@ -284,7 +284,7 @@ writeShellApplication {
 
     cmd_show() {
       local id="''${1:-}" raw=0
-      [ -n "$id" ] || die "Usage: agentos-task show <task-id|group> [--json]"
+      [ -n "$id" ] || die "Usage: nestlo-task show <task-id|group> [--json]"
       [ "''${2:-}" != "--json" ] || raw=1
       valid_id "$id" || die "invalid id: $id"
       local resp
@@ -318,7 +318,7 @@ writeShellApplication {
 
     cmd_logs() {
       local id="''${1:-}" follow="''${2:-}"
-      [ -n "$id" ] || die "Usage: agentos-task logs <task-id> [-f]"
+      [ -n "$id" ] || die "Usage: nestlo-task logs <task-id> [-f]"
       valid_id "$id" || die "invalid id: $id"
       local log="$TASKS_DIR/$id.log"
       if [ ! -f "$log" ]; then
@@ -333,14 +333,14 @@ writeShellApplication {
 
     cmd_cancel() {
       local id="''${1:-}"
-      [ -n "$id" ] || die "Usage: agentos-task cancel <task-id|group>"
+      [ -n "$id" ] || die "Usage: nestlo-task cancel <task-id|group>"
       valid_id "$id" || die "invalid id: $id"
       api POST "/tasks/$id/cancel" | jq -r '.tasks[] | "\(.id) \(.status)"'
     }
 
     cmd_decide() {
       local verb="$1" id="''${2:-}" note=""
-      [ -n "$id" ] || die "Usage: agentos-task $verb <task-id> [--note <text>]"
+      [ -n "$id" ] || die "Usage: nestlo-task $verb <task-id> [--note <text>]"
       valid_id "$id" || die "invalid id: $id"
       shift 2
       while [ $# -gt 0 ]; do
@@ -359,7 +359,7 @@ writeShellApplication {
       case "$sub" in
         submit)
           local file="''${1:-}" wait=0 raw=0
-          [ -n "$file" ] || die "Usage: agentos-task workflow submit <file.json> [--wait] [--json]"
+          [ -n "$file" ] || die "Usage: nestlo-task workflow submit <file.json> [--wait] [--json]"
           shift
           while [ $# -gt 0 ]; do
             case "$1" in
@@ -376,7 +376,7 @@ writeShellApplication {
             echo "$resp"
           else
             jq -r '.group' <<<"$resp"
-            ok "queued $(jq '.tasks | length' <<<"$resp") node(s); follow with: agentos-task workflow status $(jq -r '.group' <<<"$resp")"
+            ok "queued $(jq '.tasks | length' <<<"$resp") node(s); follow with: nestlo-task workflow status $(jq -r '.group' <<<"$resp")"
           fi
           if [ "$wait" -eq 1 ]; then
             wait_for "$(jq -r '.group' <<<"$resp")"
@@ -384,7 +384,7 @@ writeShellApplication {
           ;;
         status)
           local group="''${1:-}" raw=0
-          [ -n "$group" ] || die "Usage: agentos-task workflow status <group> [--json]"
+          [ -n "$group" ] || die "Usage: nestlo-task workflow status <group> [--json]"
           [ "''${2:-}" != "--json" ] || raw=1
           valid_id "$group" || die "invalid id: $group"
           local resp
@@ -398,7 +398,7 @@ writeShellApplication {
                     "\(.attempt // 1)/\((.max_retries // 0) + 1)" ] | @tsv)' <<<"$resp" \
             | column -t -s "$(printf '\t')"
           ;;
-        *) die "Usage: agentos-task workflow submit <file.json> | workflow status <group>" ;;
+        *) die "Usage: nestlo-task workflow submit <file.json> | workflow status <group>" ;;
       esac
     }
 
@@ -413,7 +413,7 @@ writeShellApplication {
     }
 
     cmd_policy() {
-      [ "''${1:-}" = "show" ] || die "Usage: agentos-task policy show [owner/name|workspace] [--json]"
+      [ "''${1:-}" = "show" ] || die "Usage: nestlo-task policy show [owner/name|workspace] [--json]"
       shift
       local repo="" raw=0
       while [ $# -gt 0 ]; do
@@ -426,7 +426,7 @@ writeShellApplication {
       local resp
       resp=$(api GET "/policy''${repo:+?repo=$repo}")
       if [ "$raw" -eq 1 ]; then echo "$resp"; return; fi
-      jq -r 'if .enabled | not then "policy: not enabled (agentos.policy.enable = false); nothing is enforced" else
+      jq -r 'if .enabled | not then "policy: not enabled (nestlo.policy.enable = false); nothing is enforced" else
                "policy:  \(.name)\(if .matched then "" else " (no entry for the name; showing the default)" end)",
                "version: \(.version)",
                "entries: \(.repos | if length == 0 then "none" else join(", ") end)",
@@ -451,5 +451,5 @@ writeShellApplication {
     esac
   '';
 
-  meta.description = "Submit and follow AgentOS orchestrator tasks";
+  meta.description = "Submit and follow Nestlo orchestrator tasks";
 }

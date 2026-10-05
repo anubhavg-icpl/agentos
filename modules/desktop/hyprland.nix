@@ -1,6 +1,6 @@
 # Hyprland (Wayland) session. Hyprland renders with OpenGL ES and needs a
 # real GPU driver; it is slow or fails in VMs without 3D acceleration (use
-# i3 or sway there). The config is /etc/agentos/desktop/hyprland.conf and is
+# i3 or sway there). The config is /etc/nestlo/desktop/hyprland.conf and is
 # passed to Hyprland explicitly by the greeter, so it applies to every user.
 { config, pkgs, lib, ... }:
 
@@ -68,7 +68,7 @@ let
   '';
 
   hyprConf = pkgs.writeText "hyprland.conf" ''
-    # AgentOS Hyprland configuration (generated)
+    # Nestlo Hyprland configuration (generated)
     monitor = , preferred, auto, 1
 
     $mod = SUPER
@@ -133,11 +133,11 @@ let
     bind = , Print, exec, ${screenshot}
     bind = $mod SHIFT, S, exec, ${screenshot}
 
-    # Dashboard: `agentos status` lives in a hidden special workspace
-    windowrule = float on, match:class ^(agentos-dash)$
-    windowrule = size 1100 640, match:class ^(agentos-dash)$
-    windowrule = center on, match:class ^(agentos-dash)$
-    windowrule = workspace special:dash silent, match:class ^(agentos-dash)$
+    # Dashboard: `nestlo status` lives in a hidden special workspace
+    windowrule = float on, match:class ^(nestlo-dash)$
+    windowrule = size 1100 640, match:class ^(nestlo-dash)$
+    windowrule = center on, match:class ^(nestlo-dash)$
+    windowrule = workspace special:dash silent, match:class ^(nestlo-dash)$
     bind = $mod, grave, togglespecialworkspace, dash
     bind = $mod, minus, togglespecialworkspace, dash
 
@@ -189,7 +189,7 @@ let
     submap = reset
 
     # ── Autostart ─────────────────────────────────────────────────
-    exec-once = ${c.seed}/bin/agentos-desktop-seed
+    exec-once = ${c.seed}/bin/nestlo-desktop-seed
     exec-once = ${lib.getExe pkgs.swaybg} --image ${cfg.wallpaper} --mode fill
     exec-once = ${lib.getExe pkgs.waybar} --config ${c.waybarConfig "hyprland"} --style ${c.waybarStyle}
     exec-once = ${lib.getExe pkgs.mako} --config ${c.makoConfig}
@@ -198,7 +198,7 @@ let
     exec-once = ${pkgs.wl-clipboard}/bin/wl-paste --watch ${pkgs.cliphist}/bin/cliphist store
     ${lib.optionalString cfg.bluetooth "exec-once = ${pkgs.blueman}/bin/blueman-applet"}
     exec-once = ${lib.getExe pkgs.hypridle} --config ${hypridleConf}
-    exec-once = ${c.terminal} --class agentos-dash --title "AgentOS" -e ${c.dashboard}/bin/agentos-dashboard
+    exec-once = ${c.terminal} --class nestlo-dash --title "Nestlo" -e ${c.dashboard}/bin/nestlo-dashboard
   '';
 in
 {
@@ -207,7 +207,7 @@ in
     # Provides the PAM service for hyprlock
     programs.hyprlock.enable = true;
 
-    environment.etc."agentos/desktop/hyprland.conf".source = hyprConf;
+    environment.etc."nestlo/desktop/hyprland.conf".source = hyprConf;
 
     environment.systemPackages = with pkgs; [
       waybar

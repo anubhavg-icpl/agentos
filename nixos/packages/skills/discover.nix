@@ -59,7 +59,8 @@ rec {
         '') olds}
         ${lib.concatMapStringsSep "\n" (g: "rm -f $out/${g}") prune}
         ${lib.concatMapStringsSep "\n" (r: ''
-          grep -rlZ --include='*.md' -F ${lib.escapeShellArg r.from} $out | xargs -0 -r sed -i ${lib.escapeShellArg "s|${lib.escapeRegex r.from}|${r.to}|g"} || true
+          { grep -rlZ --include='*.md' -F ${lib.escapeShellArg r.from} $out || [ $? = 1 ]; } \
+            | xargs -0 -r sed -i ${lib.escapeShellArg "s|${lib.escapeRegex r.from}|${lib.escape [ "\\" "&" "|" ] r.to}|g"}
         '') rewrite}
       '';
     in

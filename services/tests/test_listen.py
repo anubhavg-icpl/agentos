@@ -1,4 +1,4 @@
-from agentos_services.gateway import listen_addresses
+from nestlo_services.gateway import listen_addresses
 
 
 def test_listen_accepts_string_or_list():

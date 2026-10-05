@@ -1,52 +1,52 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Orchestration Module
+# Nestlo Orchestration Module
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Runs coding agents headless, as tasks (services/agentos_services/orchestrator.py):
+# Runs coding agents headless, as tasks (services/nestlo_services/orchestrator.py):
 #   - single tasks, pipelines (--after <task>, prompt uses {prev_result})
 #     and swarms (--swarm N: N agents, same prompt, one worktree and
 #     branch each)
 #   - at most maxWorkers tasks at a time; task state lives in the
 #     control-plane Redis
-#   - `agentos-task` submits and follows them
+#   - `nestlo-task` submits and follows them
 #
-# The orchestrator runs as `agentos` and cannot start agents itself. To run
-# task <id> it starts agentos-task-runner@<id>.service (allowed by a polkit
+# The orchestrator runs as `nestlo` and cannot start agents itself. To run
+# task <id> it starts nestlo-task-runner@<id>.service (allowed by a polkit
 # rule for exactly that unit pattern). That root helper re-validates the
-# task and launches the same sandbox as `agentos spawn`, so tasks are
-# metered by the gateway, budgeted, and visible in `agentos list`.
+# task and launches the same sandbox as `nestlo spawn`, so tasks are
+# metered by the gateway, budgeted, and visible in `nestlo list`.
 #
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.orchestration;
-  rt = config.agentos.runtime;
-  tasksDir = "/var/lib/agentos/tasks";
+  cfg = config.nestlo.orchestration;
+  rt = config.nestlo.runtime;
+  tasksDir = "/var/lib/nestlo/tasks";
 in
 {
   imports = [
-    (lib.mkRemovedOptionModule [ "agentos" "orchestration" "mode" ]
-      "Use `agentos-task submit` (single task), `--after` (pipeline) or `--swarm N`.")
-    (lib.mkRemovedOptionModule [ "agentos" "orchestration" "resultStrategy" ]
+    (lib.mkRemovedOptionModule [ "nestlo" "orchestration" "mode" ]
+      "Use `nestlo-task submit` (single task), `--after` (pipeline) or `--swarm N`.")
+    (lib.mkRemovedOptionModule [ "nestlo" "orchestration" "resultStrategy" ]
       "Swarm results are per task; compare the agent/<task-id> branches.")
   ];
 
-  options.agentos.orchestration = {
-    enable = lib.mkEnableOption "AgentOS multi-agent orchestration";
+  options.nestlo.orchestration = {
+    enable = lib.mkEnableOption "Nestlo multi-agent orchestration";
 
     maxWorkers = lib.mkOption {
       type = lib.types.ints.positive;
       default = 4;
       description = ''
         Maximum number of tasks running at the same time. Agents started by
-        hand count against `agentos.runtime.maxAgents` as well.
+        hand count against `nestlo.runtime.maxAgents` as well.
       '';
     };
 
     maxWorkflowNodes = lib.mkOption {
       type = lib.types.ints.positive;
       default = 50;
-      description = "Largest workflow (DAG of tasks) `agentos-task workflow submit` accepts";
+      description = "Largest workflow (DAG of tasks) `nestlo-task workflow submit` accepts";
     };
 
     maxRetries = lib.mkOption {
@@ -58,7 +58,7 @@ in
     taskTimeoutSec = lib.mkOption {
       type = lib.types.ints.positive;
       default = 3600;
-      description = "Default task timeout (1 hour); `agentos-task submit --timeout` overrides it";
+      description = "Default task timeout (1 hour); `nestlo-task submit --timeout` overrides it";
     };
 
     resultTailKB = lib.mkOption {
@@ -67,7 +67,7 @@ in
       description = ''
         How much of a task's output (its tail) is kept in the task record.
         This is what a later pipeline step sees as {prev_result}; the full
-        output is in /var/lib/agentos/tasks/<id>.log.
+        output is in /var/lib/nestlo/tasks/<id>.log.
       '';
     };
 
@@ -81,8 +81,8 @@ in
         `{task_id}` are replaced inside single arguments; the prompt is never
         passed through a shell. Agents without an entry cannot run tasks.
         Entries you add are merged with the defaults; use `lib.mkForce` to
-        replace one. The commands run inside the `agentos spawn` sandbox as
-        `agentos-agent`, so agents that ask for permissions need their
+        replace one. The commands run inside the `nestlo spawn` sandbox as
+        `nestlo-agent`, so agents that ask for permissions need their
         auto-approve mode here (the defaults use it where one exists).
       '';
     };
@@ -97,12 +97,12 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [{
       assertion = rt.enable;
-      message = "agentos.orchestration needs agentos.runtime.enable (Redis, the agent user and the sandbox)";
+      message = "nestlo.orchestration needs nestlo.runtime.enable (Redis, the agent user and the sandbox)";
     }];
 
     # Headless invocations. Verify against the agent versions you install;
     # they change between releases.
-    agentos.orchestration.taskCommands = lib.mapAttrs (_: lib.mkDefault) {
+    nestlo.orchestration.taskCommands = lib.mapAttrs (_: lib.mkDefault) {
       claude = [ "claude" "-p" "{prompt}" "--permission-mode" "acceptEdits" ];
       codex = [ "codex" "exec" "{prompt}" ];
       aider = [ "aider" "--yes-always" "--message" "{prompt}" ];
@@ -116,7 +116,7 @@ in
       droid = [ "droid" "exec" "{prompt}" ];
     };
 
-    agentos.services.settings.orchestrator = {
+    nestlo.services.settings.orchestrator = {
       max_workers = cfg.maxWorkers;
       max_workflow_nodes = cfg.maxWorkflowNodes;
       max_retries_cap = cfg.maxRetries;
@@ -127,16 +127,16 @@ in
     };
 
     # Task logs: written by the root helper, readable by operators
-    systemd.tmpfiles.rules = [ "d ${tasksDir} 2750 agentos agentos" ];
+    systemd.tmpfiles.rules = [ "d ${tasksDir} 2750 nestlo nestlo" ];
 
     # ─ Orchestrator service ──────────────────────────────────────────
-    systemd.services.agentos-orchestrator = {
-      description = "AgentOS orchestrator (task queue, pipelines, swarms)";
-      after = [ "redis-agentos.service" "agentos-daemon.service" ];
-      requires = [ "redis-agentos.service" ];
-      wants = [ "agentos-daemon.service" ];
+    systemd.services.nestlo-orchestrator = {
+      description = "Nestlo orchestrator (task queue, pipelines, swarms)";
+      after = [ "redis-nestlo.service" "nestlo-daemon.service" ];
+      requires = [ "redis-nestlo.service" ];
+      wants = [ "nestlo-daemon.service" ];
       wantedBy = [ "multi-user.target" ];
-      restartTriggers = [ config.environment.etc."agentos/services.toml".source ];
+      restartTriggers = [ config.environment.etc."nestlo/services.toml".source ];
       path = [ config.systemd.package ]; # systemctl
 
       serviceConfig = {
@@ -145,14 +145,14 @@ in
         # The service sends READY=1 once listening and WATCHDOG=1 while healthy
         WatchdogSec = 60;
         TimeoutStartSec = 60;
-        User = "agentos";
-        Group = "agentos";
-        SupplementaryGroups = [ "redis-agentos" ];
-        ExecStart = "${pkgs.agentos.services}/bin/agentos-orchestrator";
+        User = "nestlo";
+        Group = "nestlo";
+        SupplementaryGroups = [ "redis-nestlo" ];
+        ExecStart = "${pkgs.nestlo.services}/bin/nestlo-orchestrator";
         Restart = "on-failure";
         RestartSec = 3;
-        # Control socket: reachable by the agentos group (operators), not agents
-        RuntimeDirectory = "agentos-orchestrator";
+        # Control socket: reachable by the nestlo group (operators), not agents
+        RuntimeDirectory = "nestlo-orchestrator";
         RuntimeDirectoryMode = "0750";
         UMask = "0007";
 
@@ -172,14 +172,14 @@ in
 
     # ─ Root helper: one instance per task ────────────────────────────
     # Started by the orchestrator, never enabled. It validates the task
-    # again and runs the agent in the `agentos spawn` sandbox.
-    systemd.services."agentos-task-runner@" = {
-      description = "AgentOS task %i";
-      after = [ "redis-agentos.service" "agentos-daemon.service" ];
+    # again and runs the agent in the `nestlo spawn` sandbox.
+    systemd.services."nestlo-task-runner@" = {
+      description = "Nestlo task %i";
+      after = [ "redis-nestlo.service" "nestlo-daemon.service" ];
       path = [ config.systemd.package pkgs.git ]; # systemd-run, systemctl, git
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.agentos.services}/bin/agentos-task-runner %i";
+        ExecStart = "${pkgs.nestlo.services}/bin/nestlo-task-runner %i";
         TimeoutStartSec = "infinity";
         # `systemctl stop` (cancel) signals the helper only; it stops the
         # agent's unit itself and records the result before it exits
@@ -188,7 +188,7 @@ in
 
         PrivateTmp = true;
         ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/agentos/state" tasksDir rt.workspaceRoot rt.agentHome ];
+        ReadWritePaths = [ "/var/lib/nestlo/state" tasksDir rt.workspaceRoot rt.agentHome ];
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
@@ -202,10 +202,10 @@ in
     security.polkit.extraConfig = ''
       polkit.addRule(function(action, subject) {
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
-            subject.user == "agentos") {
+            subject.user == "nestlo") {
           var unit = action.lookup("unit") || "";
           var verb = action.lookup("verb") || "";
-          if (/^agentos-task-runner@[A-Za-z0-9][A-Za-z0-9._-]*\.service$/.test(unit) &&
+          if (/^nestlo-task-runner@[A-Za-z0-9][A-Za-z0-9._-]*\.service$/.test(unit) &&
               (verb == "start" || verb == "stop")) {
             return polkit.Result.YES;
           }
@@ -213,6 +213,6 @@ in
       });
     '';
 
-    environment.systemPackages = [ pkgs.agentos.task-cli ];
+    environment.systemPackages = [ pkgs.nestlo.task-cli ];
   };
 }

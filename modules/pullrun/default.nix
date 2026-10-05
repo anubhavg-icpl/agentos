@@ -1,25 +1,25 @@
-# AgentOS Pullrun module (experimental)
+# Nestlo Pullrun module (experimental)
 #
 # Pullrun is an OCI runtime that runs one image as a runc container or a
 # Firecracker microVM. This module runs its daemon (`pullrun-runtime`) as a
 # root systemd service for OPERATORS: whoever can open the daemon socket can
 # run arbitrary images as root on this host. The socket is therefore kept in
-# a directory that only root and the `agentos` group (the operators) can
+# a directory that only root and the `nestlo` group (the operators) can
 # enter, and the sandboxed agent user cannot reach it.
 #
 # On top of that, `agentContainers.enable` supports
-# `agentos spawn --isolation pullrun`: agents run in a Pullrun container on
+# `nestlo spawn --isolation pullrun`: agents run in a Pullrun container on
 # the shared `pullrun-br0` bridge. See docs/pullrun.md for what works.
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.pullrun;
+  cfg = config.nestlo.pullrun;
   ac = cfg.agentContainers;
-  net = config.agentos.networking;
+  net = config.nestlo.networking;
 
   socketDir = "/run/pullrun";
   socket = "${socketDir}/pullrun.sock";
-  logDir = "/var/lib/agentos/pullrun-logs";
+  logDir = "/var/lib/nestlo/pullrun-logs";
 
   # Hardcoded in Pullrun: the shared bridge for `--net bridge` workloads
   bridge = "pullrun-br0";
@@ -45,9 +45,9 @@ let
 
   # Build context of the agent image: an almost empty root filesystem.
   # Everything the agent executes comes from the host's /nix/store, which
-  # `agentos spawn` bind-mounts read-only (as for --isolation container), so
+  # `nestlo spawn` bind-mounts read-only (as for --isolation container), so
   # the image does not carry a copy of the closure and works for every agent.
-  agentImageContext = pkgs.runCommand "agentos-pullrun-image-context" { } ''
+  agentImageContext = pkgs.runCommand "nestlo-pullrun-image-context" { } ''
     mkdir -p $out/rootfs/etc
     cat > $out/rootfs/etc/passwd <<'EOF'
     root:x:0:0:root:/root:/bin/sh
@@ -72,16 +72,16 @@ let
   kernelPkg = import ./kernel.nix { inherit pkgs lib; };
 in
 {
-  options.agentos.pullrun = {
+  options.nestlo.pullrun = {
     enable = lib.mkEnableOption ''
       the Pullrun OCI runtime (containers and Firecracker microVMs). The
-      daemon runs as root; operators in the agentos group can run any image
+      daemon runs as root; operators in the nestlo group can run any image
       as root through it. Experimental'';
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.agentos.pullrun;
-      defaultText = lib.literalExpression "pkgs.agentos.pullrun";
+      default = pkgs.nestlo.pullrun;
+      defaultText = lib.literalExpression "pkgs.nestlo.pullrun";
       description = "Pullrun package (the `pullrun` CLI and `pullrun-runtime` daemon).";
     };
 
@@ -96,8 +96,8 @@ in
       default = socket;
       readOnly = true;
       description = ''
-        gRPC socket of the daemon, in a root:agentos 0750 directory. The
-        socket itself is root:agentos 0660.
+        gRPC socket of the daemon, in a root:nestlo 0750 directory. The
+        socket itself is root:nestlo 0660.
       '';
     };
 
@@ -107,7 +107,7 @@ in
         default = true;
         description = ''
           Enable the Firecracker microVM backend of the daemon. Needs
-          /dev/kvm on the host, `agentos.pullrun.kernel`, and (with the
+          /dev/kvm on the host, `nestlo.pullrun.kernel`, and (with the
           default kernel) a local kernel build the first time. Container
           workloads (`pullrun run --backend container`) work without it.
         '';
@@ -140,13 +140,13 @@ in
 
     agentContainers = {
       enable = lib.mkEnableOption ''
-        `agentos spawn --isolation pullrun` (experimental): the bridge
+        `nestlo spawn --isolation pullrun` (experimental): the bridge
         ${bridge} for the containers, the model gateway on it, the firewall
         rules for it, and the agent image'';
 
       image = lib.mkOption {
         type = lib.types.str;
-        default = "agentos-agent:latest";
+        default = "nestlo-agent:latest";
         description = ''
           Tag of the agent image in Pullrun's store. A systemd oneshot
           (pullrun-agent-image.service) builds it from a Nix-generated
@@ -169,18 +169,18 @@ in
   config = lib.mkIf cfg.enable (lib.mkMerge [
     {
       assertions = [{
-        assertion = !ac.enable || (net.enable && config.agentos.runtime.enable);
-        message = "agentos.pullrun.agentContainers.enable needs agentos.networking.enable and agentos.runtime.enable (model gateway and agent user)";
+        assertion = !ac.enable || (net.enable && config.nestlo.runtime.enable);
+        message = "nestlo.pullrun.agentContainers.enable needs nestlo.networking.enable and nestlo.runtime.enable (model gateway and agent user)";
       }];
 
       environment.systemPackages = [ cfg.package cfg.firecracker pkgs.e2fsprogs ];
 
-      users.groups.agentos = { };
+      users.groups.nestlo = { };
 
-      # The socket directory: only root and the operators (group agentos)
+      # The socket directory: only root and the operators (group nestlo)
       # can reach the socket inside. The agent user cannot even stat it.
       systemd.tmpfiles.rules = [
-        "d ${socketDir} 0750 root agentos -"
+        "d ${socketDir} 0750 root nestlo -"
         "d ${cfg.storeRoot} 0700 root root -"
       ];
 
@@ -214,7 +214,7 @@ in
               sleep 0.1
             done
             [ -S ${socket} ]
-            ${pkgs.coreutils}/bin/chgrp agentos ${socket}
+            ${pkgs.coreutils}/bin/chgrp nestlo ${socket}
             ${pkgs.coreutils}/bin/chmod 0660 ${socket}
           '';
           Restart = "on-failure";
@@ -249,8 +249,8 @@ in
 
       # The gateway listens on the bridge too (the list merges with the
       # networking module's own)
-      agentos.services.settings.gateway.listen = [ bridgeAddress ];
-      systemd.services.agentos-model-gateway = {
+      nestlo.services.settings.gateway.listen = [ bridgeAddress ];
+      systemd.services.nestlo-model-gateway = {
         after = [ "network-addresses-${bridge}.service" ];
         wants = [ "network-addresses-${bridge}.service" ];
       };
@@ -262,13 +262,13 @@ in
       };
 
       # Output of the agents (their stdout is not captured by Pullrun) and the
-      # per-agent passwd/group files; written by operators, `agentos spawn`
-      systemd.tmpfiles.rules = [ "d ${logDir} 2770 root agentos -" ];
+      # per-agent passwd/group files; written by operators, `nestlo spawn`
+      systemd.tmpfiles.rules = [ "d ${logDir} 2770 root nestlo -" ];
 
-      # Like the agentos0 rules of the networking module: the containers
+      # Like the nestlo0 rules of the networking module: the containers
       # reach the host only through the gateway (and DNS), and what they
       # forward goes through the same egress chain as the other containers.
-      # The FORWARD jump is only there with agentos.security.enable.
+      # The FORWARD jump is only there with nestlo.security.enable.
       networking.firewall.extraCommands = lib.mkAfter ''
         iptables -D INPUT -i ${bridge} -j pullrun-in 2>/dev/null || true
         iptables -F pullrun-in 2>/dev/null || iptables -N pullrun-in
@@ -283,16 +283,16 @@ in
         ip6tables -I INPUT 1 -i ${bridge} -j DROP
         ip6tables -D FORWARD -i ${bridge} -j REJECT 2>/dev/null || true
         ip6tables -I FORWARD 1 -i ${bridge} -j REJECT
-        ${lib.optionalString config.agentos.security.enable ''
-          iptables -D FORWARD -i ${bridge} -j agentos-fwd 2>/dev/null || true
-          iptables -I FORWARD 1 -i ${bridge} -j agentos-fwd
+        ${lib.optionalString config.nestlo.security.enable ''
+          iptables -D FORWARD -i ${bridge} -j nestlo-fwd 2>/dev/null || true
+          iptables -I FORWARD 1 -i ${bridge} -j nestlo-fwd
         ''}
       '';
       networking.firewall.extraStopCommands = ''
         iptables -D INPUT -i ${bridge} -j pullrun-in 2>/dev/null || true
         iptables -F pullrun-in 2>/dev/null || true
         iptables -X pullrun-in 2>/dev/null || true
-        iptables -D FORWARD -i ${bridge} -j agentos-fwd 2>/dev/null || true
+        iptables -D FORWARD -i ${bridge} -j nestlo-fwd 2>/dev/null || true
         ip6tables -D INPUT -i ${bridge} -j DROP 2>/dev/null || true
         ip6tables -D FORWARD -i ${bridge} -j REJECT 2>/dev/null || true
       '';

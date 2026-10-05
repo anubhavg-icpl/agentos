@@ -1,8 +1,8 @@
-# Agent skills (`agentos.skills`)
+# Agent skills (`nestlo.skills`)
 
 A skill is a directory with a `SKILL.md` (YAML front matter with `name` and
 `description`, then instructions) and any files it refers to. Most agent CLIs
-load skills from a directory in the user's home. `agentos.skills` builds skill
+load skills from a directory in the user's home. `nestlo.skills` builds skill
 packs from pinned upstream repositories and links their skills into those
 directories for every CLI on the system, so one declaration serves Claude Code,
 Codex, OpenCode, Gemini CLI, Copilot CLI, Cursor, Factory Droid, Amp, Goose and
@@ -14,28 +14,28 @@ service of their own; what needs the network is listed per pack below.
 ## Enable
 
 ```nix
-agentos.skills.enable = true;
+nestlo.skills.enable = true;
 ```
 
-The main host configuration (`nixos/hosts/agentos`) enables it. The minimal
+The main host configuration (`nixos/hosts/nestlo`) enables it. The minimal
 images do not.
 
 | Option | Default | Meaning |
 |--------|---------|---------|
-| `agentos.skills.enable` | `false` | Install the enabled packs |
-| `agentos.skills.packs.<name>.enable` | `true` (see below) | One option per pack in `nixos/packages/skills`; new packs appear automatically. An explicit value always wins over `enableAll` and `collections` |
-| `agentos.skills.enableAll` | `false` | Enable every pack, including the opt-in ones (see [Community collections](#community-collections)) |
-| `agentos.skills.collections` | `[ ]` | Enable every pack that belongs to one of these collections (`community`, `design`, `security`, `writing`, `research`, `dev-workflow`, `productivity`, `science`, `automation`, `large`) |
-| `agentos.skills.targets` | all | Which CLI directories get links (table below) |
-| `agentos.skills.includeAgentUser` | `agentos.runtime.enable` | Link into the home of `agentos-agent` (`agentos.runtime.agentHome`) |
-| `agentos.skills.users` | `[ ]` | More users whose home gets the links |
+| `nestlo.skills.enable` | `false` | Install the enabled packs |
+| `nestlo.skills.packs.<name>.enable` | `true` (see below) | One option per pack in `nixos/packages/skills`; new packs appear automatically. An explicit value always wins over `enableAll` and `collections` |
+| `nestlo.skills.enableAll` | `false` | Enable every pack, including the opt-in ones (see [Community collections](#community-collections)) |
+| `nestlo.skills.collections` | `[ ]` | Enable every pack that belongs to one of these collections (`community`, `design`, `security`, `writing`, `research`, `dev-workflow`, `productivity`, `science`, `automation`, `large`) |
+| `nestlo.skills.targets` | all | Which CLI directories get links (table below) |
+| `nestlo.skills.includeAgentUser` | `nestlo.runtime.enable` | Link into the home of `nestlo-agent` (`nestlo.runtime.agentHome`) |
+| `nestlo.skills.users` | `[ ]` | More users whose home gets the links |
 
 A pack is on by default unless its derivation sets `passthru.defaultEnable =
 false` (`defaultEnable = false;` in `mkSkillPack`); all the community packs
 below are opt-in. Examples:
 
 ```nix
-agentos.skills = {
+nestlo.skills = {
   enable = true;
   packs.img2threejs.enable = false;        # token-heavy, see below
   targets = [ "agents" "claude-code" "codex" ];
@@ -48,31 +48,31 @@ agentos.skills = {
 For all enabled packs together:
 
 - **Skills.** The skills of every pack are flattened into one store directory,
-  `agentos-skills-bundle`. Two enabled packs shipping a skill with the same
+  `nestlo-skills-bundle`. Two enabled packs shipping a skill with the same
   name fail evaluation (an assertion naming both packs) and the bundle build.
 - **Links.** For each user and each target, `<home>/<dir>/<skill>` is a
   symlink to `<bundle>/skills/<skill>`. A oneshot unit per user,
-  `agentos-skills-link-<user>.service`, creates them at boot and again on every
+  `nestlo-skills-link-<user>.service`, creates them at boot and again on every
   rebuild that changes the bundle, so skills follow updates.
 - **Tools.** Each pack's `bin/` (for example `ui-skills`) goes into
   `environment.systemPackages`.
 - **MCP servers.** Each pack's `mcp` servers are added to
-  `agentos.mcp-registry.extraToolServers` and appear in
-  `/etc/agentos/mcp-tools.json` (category `extra`, shown by `agentos-tools
-  list`) when `agentos.mcp-registry.enable` is set. `agentos.mcp-registry` only
+  `nestlo.mcp-registry.extraToolServers` and appear in
+  `/etc/nestlo/mcp-tools.json` (category `extra`, shown by `nestlo-tools
+  list`) when `nestlo.mcp-registry.enable` is set. `nestlo.mcp-registry` only
   lists them; each agent CLI still needs the server in its own MCP
   configuration.
 - **Claude Code hooks.** A pack may set `passthru.claudeHooks` (Claude Code
   `hooks`: event name to a list of entries). The entries of all enabled packs are
   concatenated per event into
-  `/etc/claude-code/managed-settings.d/50-agentos-skills.json`, a drop-in of
+  `/etc/claude-code/managed-settings.d/50-nestlo-skills.json`, a drop-in of
   Claude Code's system managed settings (path from its managed settings
   documentation for Linux). No file is written when no pack has hooks.
-- **`agentos-skills`** (see below) and `/etc/agentos/skills.json`.
+- **`nestlo-skills`** (see below) and `/etc/nestlo/skills.json`.
 
 The link unit runs as the user it serves, so links and the directories it
 creates belong to that user. It only manages links of its own: a symlink whose
-target is inside an `agentos-skills-bundle`. A skill directory you wrote
+target is inside an `nestlo-skills-bundle`. A skill directory you wrote
 yourself, or a symlink pointing elsewhere, with the same name is left alone and
 reported in the unit's log. Links of ours to skills that are gone (a pack
 disabled, a skill removed upstream) are deleted on the next run, in all known
@@ -104,24 +104,24 @@ under the same name twice; both links resolve to the same files. Set `targets` t
 if you prefer, for example `[ "agents" "claude-code" "gemini" "copilot"
 "cursor" "factory-droid" ]`.
 
-The sandboxed `agentos-agent` user has its own home (`agentos.runtime.agentHome`,
-default `/var/lib/agentos/agent-home`, mode 0700), which is where agents started
-with `agentos spawn` look. Your own login needs `agentos.skills.users = [ "you" ]`.
+The sandboxed `nestlo-agent` user has its own home (`nestlo.runtime.agentHome`,
+default `/var/lib/nestlo/agent-home`, mode 0700), which is where agents started
+with `nestlo spawn` look. Your own login needs `nestlo.skills.users = [ "you" ]`.
 
-## `agentos-skills`
+## `nestlo-skills`
 
 ```
-agentos-skills list            # packs, skills, tools, MCP servers, licenses, notes (long skill lists cut at 40)
-agentos-skills list --all      # the same with every skill name
-agentos-skills list --collections   # enabled packs grouped by collection, with skill counts
-agentos-skills doctor          # per user and target: ok / missing / broken links; exit 1 on a problem
-agentos-skills path <skill>    # store path of a skill
+nestlo-skills list            # packs, skills, tools, MCP servers, licenses, notes (long skill lists cut at 40)
+nestlo-skills list --all      # the same with every skill name
+nestlo-skills list --collections   # enabled packs grouped by collection, with skill counts
+nestlo-skills doctor          # per user and target: ok / missing / broken links; exit 1 on a problem
+nestlo-skills path <skill>    # store path of a skill
 ```
 
 `doctor` reports links that are missing or dangling as problems. A
 user-created skill or a link pointing elsewhere is listed as "other" and does
 not fail the check. Reading another user's home needs root. If `doctor`
-reports missing links, `systemctl restart 'agentos-skills-link-*'` re-runs the
+reports missing links, `systemctl restart 'nestlo-skills-link-*'` re-runs the
 link units.
 
 ## Packs
@@ -129,7 +129,7 @@ link units.
 Each pack is a package `skills-<name>` (`nix build .#skills-ui-skills`)
 defined in `nixos/packages/skills/packs/` with `mkSkillPack`
 (`nixos/packages/skills/lib.nix`) from a source pinned by commit and hash in
-`nixos/packages/skills/sources.nix`. A pack builds `share/agentos/skills/<pack>/<skill>/`
+`nixos/packages/skills/sources.nix`. A pack builds `share/nestlo/skills/<pack>/<skill>/`
 and a `pack.json`.
 
 | Pack | Skills | Tools | MCP | License | Network |
@@ -144,7 +144,8 @@ and a `pack.json`.
 | `reticle` | 19 skills (see below) | `reticle` | `reticle` | FSL-1.1-ALv2 (skills Apache-2.0) | none; drives the local Chromium |
 | `caliper` | `grill-skill`, `evaluate-skill` | `caliper` | none | MIT | runs agent CLIs, which call their model APIs |
 | `ouroboros` | 23 skills, `ouroboros-*` | `ooo`, `ouroboros`, `ozo` | `ouroboros` | MIT | drives the `claude` CLI; telemetry off |
-| `herdr` | `herdr` | none (`agentos.herdr` installs the CLI) | none | Apache-2.0 | none |
+| `herdr` | `herdr` | none (`nestlo.herdr` installs the CLI) | none | Apache-2.0 | none |
+| `openshell` | `openshell-cli`, `generate-sandbox-policy`, `debug-inference`, `debug-openshell-cluster` | none (`nestlo.openshell` installs the CLI) | none | Apache-2.0 | none |
 
 ### fwc-swiftui-skills
 
@@ -182,7 +183,7 @@ loop.
   `forge/` (Python stage scripts) and `grimoire/` (reference notes) by relative
   path.
 - Token-heavy: expect long sessions that read many reference files. Disable it
-  with `agentos.skills.packs.img2threejs.enable = false` if you do not want it in
+  with `nestlo.skills.packs.img2threejs.enable = false` if you do not want it in
   every agent's skill list.
 - The scripts need Python, and the screenshot helpers need Playwright; the pack
   provides neither.
@@ -221,10 +222,10 @@ In Claude Code the pack also installs three hooks: a session-start hook that inj
 Because the hooks change what every Claude Code session sees, the pack is not enabled by default (`defaultEnable = false`). Enable it explicitly:
 
 ```nix
-agentos.skills.packs.chisle.enable = true;
+nestlo.skills.packs.chisle.enable = true;
 ```
 
-The module merges the pack's `passthru.claudeHooks` into the Claude Code managed settings drop-in (`/etc/claude-code/managed-settings.d/50-agentos-skills.json`, see above), pointing at the node scripts in the Nix store. Nothing is written to `~/.claude` at build time.
+The module merges the pack's `passthru.claudeHooks` into the Claude Code managed settings drop-in (`/etc/claude-code/managed-settings.d/50-nestlo-skills.json`, see above), pointing at the node scripts in the Nix store. Nothing is written to `~/.claude` at build time.
 
 Runtime switches (environment): `CHISLE_DEFAULT_MODE=off` disables the ruleset, `CHISLE_COMPRESS=0` disables output trimming, `CHISLE_COMPRESS_TOOLS=Bash,Grep` narrows which tools are trimmed. Inside a session, `/chisle off` and `/chisle` toggle it.
 
@@ -309,8 +310,15 @@ Works through an app's details before building, asks about the decisions that ch
 The skill from [herdrdev/herdr](https://github.com/herdrdev/herdr) (0.9.3, Apache-2.0) that teaches an agent running inside herdr to inspect and drive panes, tabs, workspaces and other agents through the `herdr` CLI (`herdr pane list`, `herdr agent prompt`, `herdr agent wait`, ...).
 
 - The skill describes itself as active only when the user mentions herdr, and requires `HERDR_ENV=1`, which herdr sets in every pane, so it costs a short description in the context elsewhere and nothing else.
-- The pack ships no tools: the `herdr` binary, the agent-user server, the status bridge and the plugin management come from `agentos.herdr` ([herdr.md](herdr.md)). Enabling the pack without the module leaves the skill with no CLI to call.
+- The pack ships no tools: the `herdr` binary, the agent-user server, the status bridge and the plugin management come from `nestlo.herdr` ([herdr.md](herdr.md)). Enabling the pack without the module leaves the skill with no CLI to call.
 - No network use.
+
+### openshell
+
+The four skills in [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell)'s `skills/` directory (Apache-2.0, pinned to a commit of `main`): `openshell-cli` (use the `openshell` CLI for sandboxes, providers, policies and logs), `generate-sandbox-policy` (turn plain-language requirements and API documentation into L4 or L7 network policies and middleware configuration), `debug-inference` (diagnose inference clients that use an attached provider) and `debug-openshell-cluster` (diagnose an unhealthy or unreachable gateway and sandbox startup).
+
+- The pack ships no tools: the `openshell` CLI and the gateway come from `nestlo.openshell` ([openshell.md](openshell.md)). The skills tell the agent to use the installed `openshell --help` as the authority for syntax.
+- No network use by the pack itself.
 
 <!-- Entries for further packs go here, in the same form. -->
 
@@ -326,7 +334,7 @@ so a pin update picks up new skills; the build still fails on a skill that
 breaks the Agent Skills spec.
 
 ```nix
-agentos.skills = {
+nestlo.skills = {
   enable = true;
   collections = [ "community" "security" ];   # every pack tagged with one of these
   packs.gstack.enable = false;                # an explicit value always wins
@@ -335,8 +343,8 @@ agentos.skills = {
 };
 ```
 
-`agentos.skills.collections` takes any of these names; a pack can be in
-several. `agentos-skills list --collections` shows the enabled packs grouped
+`nestlo.skills.collections` takes any of these names; a pack can be in
+several. `nestlo-skills list --collections` shows the enabled packs grouped
 by collection.
 
 | Collection | Contents |
@@ -369,7 +377,7 @@ skills), `everything-claude-code` (274) and `scientific-skills` (171).
 ### Pack table
 
 Skill counts are what the pinned sources give now. Every pack's `notes` field
-(shown by `agentos-skills list`) has the full list of runtimes, keys and
+(shown by `nestlo-skills list`) has the full list of runtimes, keys and
 caveats. None of the packs installs a dependency: scripts inside skills are
 shipped as they are.
 
@@ -446,7 +454,7 @@ excluded on purpose; the reasons are also in the header of each pack file.
 
 ### Name clashes
 
-`agentos.skills` fails when two enabled packs install a skill with the same
+`nestlo.skills` fails when two enabled packs install a skill with the same
 directory name, and `enableAll` enables all of them, so the whole set is kept
 collision-free. `python3 nixos/packages/skills/collisions.py` evaluates every
 pack and reports name clashes and identical `SKILL.md` text; it currently
@@ -466,12 +474,12 @@ directories lose a leading hyphen).
 
 Each pack keeps its upstream licence in `pack.json`, and the build copies the
 upstream `LICENSE`/`NOTICE` files of the source into
-`share/doc/agentos-skills/<pack>/` of the pack. `agentos-skills list` prints
+`share/doc/nestlo-skills/<pack>/` of the pack. `nestlo-skills list` prints
 the licence and notes of every enabled pack.
 
 ## Licenses
 
-Each pack keeps its upstream license; `agentos-skills list` prints it.
+Each pack keeps its upstream license; `nestlo-skills list` prints it.
 
 | Pack | License |
 |------|---------|
@@ -489,6 +497,7 @@ Each pack keeps its upstream license; `agentos-skills list` prints it.
 | `anthropic-skills`, `hyperframes`, `impeccable`, `caveman`, `open-design` | Apache-2.0 (`open-design`'s `web-clone` MIT; `anthropic-skills` per skill) |
 | `composio-awesome-claude-skills`, `composio-automation` | Apache-2.0 as stated in the repository README (no LICENSE file) |
 | `herdr` | Apache-2.0 |
+| `openshell` | Apache-2.0 |
 
 Reticle's server package, which provides the `reticle` CLI and MCP server, is
 under the Functional Source License 1.1 (Apache-2.0 future): internal use,
@@ -513,7 +522,7 @@ their skills send the agent to the network or to hosted services (Composio's
 Rube MCP server, HeyGen, Caveman, ui-ux-pro-max's image APIs, `npx hyperframes`,
 the launcher of impeccable); each pack's notes list them.
 
-When `agentos.security` restricts egress, allow these hosts or leave the
+When `nestlo.security` restricts egress, allow these hosts or leave the
 affected pack's tools unused.
 
 ## Adding or updating a pack
@@ -544,4 +553,4 @@ affected pack's tools unused.
 
 `checks.x86_64-linux.skills` is a VM test of the module: links in the agent
 user's `.claude`, `.codex` and `.agents` directories, user-created skills left
-alone, stale links removed, `agentos-skills doctor`, and the MCP entry.
+alone, stale links removed, `nestlo-skills doctor`, and the MCP entry.

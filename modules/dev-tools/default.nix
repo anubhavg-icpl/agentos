@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS Developer Tools Module
+# Nestlo Developer Tools Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Essential tools that every agent needs for day-to-day work:
@@ -10,11 +10,11 @@
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.dev-tools;
+  cfg = config.nestlo.dev-tools;
 in
 {
-  options.agentos.dev-tools = {
-    enable = lib.mkEnableOption "AgentOS developer tools";
+  options.nestlo.dev-tools = {
+    enable = lib.mkEnableOption "Nestlo developer tools";
   };
 
   config = lib.mkIf cfg.enable {

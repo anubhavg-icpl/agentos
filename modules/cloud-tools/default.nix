@@ -1,14 +1,14 @@
-# AgentOS Cloud Tools Module
+# Nestlo Cloud Tools Module
 # CLI tools for every major cloud provider
 { config, pkgs, lib, ... }:
 
 let
   avail = import ../lib/available.nix { inherit pkgs lib; };
-  cfg = config.agentos.cloud-tools;
+  cfg = config.nestlo.cloud-tools;
 in
 {
-  options.agentos.cloud-tools = {
-    enable = lib.mkEnableOption "AgentOS cloud CLI tools";
+  options.nestlo.cloud-tools = {
+    enable = lib.mkEnableOption "Nestlo cloud CLI tools";
   };
 
   config = lib.mkIf cfg.enable {

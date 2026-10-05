@@ -1,11 +1,11 @@
-# AgentOS notifier - internal service binary
+# Nestlo notifier - internal service binary
 # (Placeholder: this will be a Rust binary in production)
 { rustPlatform }:
 
 rustPlatform.buildRustPackage {
-  pname = "agentos-notifier";
+  pname = "nestlo-notifier";
   version = "0.1.0";
   src = ./.;
   cargoHash = "";
-  meta.mainProgram = "agentos-notifier";
+  meta.mainProgram = "nestlo-notifier";
 }

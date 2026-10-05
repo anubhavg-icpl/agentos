@@ -1,13 +1,13 @@
-# AgentOS storage module
+# Nestlo storage module
 # btrfs with CoW snapshots, content-addressed dedup, git-native workspaces
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.storage;
+  cfg = config.nestlo.storage;
 in
 {
-  options.agentos.storage = {
-    enable = lib.mkEnableOption "AgentOS storage management";
+  options.nestlo.storage = {
+    enable = lib.mkEnableOption "Nestlo storage management";
 
     filesystem = lib.mkOption {
       type = lib.types.enum [ "btrfs" "ext4" "zfs" ];
@@ -43,13 +43,13 @@ in
   config = lib.mkIf cfg.enable {
     # ─ btrfs snapshot management ──────────────────────────────────────
     # The workspace root must be a btrfs subvolume (see disko.nix).
-    services.btrbk.instances."agentos-workspaces" = lib.mkIf (cfg.filesystem == "btrfs") {
+    services.btrbk.instances."nestlo-workspaces" = lib.mkIf (cfg.filesystem == "btrfs") {
       onCalendar = cfg.snapshotInterval;
       settings = {
         timestamp_format = "long";
         snapshot_preserve_min = "2h";
         snapshot_preserve = "${toString cfg.snapshotRetention}h 7d 4w";
-        volume."/var/lib/agentos" = {
+        volume."/var/lib/nestlo" = {
           snapshot_dir = "snapshots";
           subvolume = "workspaces";
         };
@@ -57,21 +57,21 @@ in
     };
 
     # ─ Workspace GC (clean up old, abandoned workspaces) ──────────────
-    # Workspaces are never deleted automatically (`agentos workspace rm`);
+    # Workspaces are never deleted automatically (`nestlo workspace rm`);
     # this prunes the agent history and gateway logs, and btrbk handles
     # snapshot retention.
-    systemd.services.agentos-gc = lib.mkIf config.agentos.runtime.enable {
-      description = "AgentOS agent history and log cleanup";
+    systemd.services.nestlo-gc = lib.mkIf config.nestlo.runtime.enable {
+      description = "Nestlo agent history and log cleanup";
       startAt = "daily";
       serviceConfig = {
         Type = "oneshot";
-        User = "agentos";
-        Group = "agentos";
-        ExecStart = toString (pkgs.writeShellScript "agentos-gc" ''
+        User = "nestlo";
+        Group = "nestlo";
+        ExecStart = toString (pkgs.writeShellScript "nestlo-gc" ''
           set -euo pipefail
-          ${pkgs.findutils}/bin/find /var/lib/agentos/state/history -maxdepth 1 -name '*.json' \
+          ${pkgs.findutils}/bin/find /var/lib/nestlo/state/history -maxdepth 1 -name '*.json' \
             -mtime +${toString cfg.historyRetentionDays} -print -delete
-          ${pkgs.findutils}/bin/find /var/lib/agentos/logs -maxdepth 1 -name '*.log' \
+          ${pkgs.findutils}/bin/find /var/lib/nestlo/logs -maxdepth 1 -name '*.log' \
             -mtime +${toString cfg.historyRetentionDays} -print -delete
         '');
       };
@@ -86,12 +86,12 @@ in
     ];
 
     # ─ Deduplication cron (btrfs dedup) ──────────────────────────────
-    systemd.services.agentos-dedup = lib.mkIf (cfg.enableDedup && cfg.filesystem == "btrfs") {
-      description = "AgentOS content deduplication";
+    systemd.services.nestlo-dedup = lib.mkIf (cfg.enableDedup && cfg.filesystem == "btrfs") {
+      description = "Nestlo content deduplication";
       startAt = "daily";
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.duperemove}/bin/duperemove -drh ${config.agentos.runtime.workspaceRoot}";
+        ExecStart = "${pkgs.duperemove}/bin/duperemove -drh ${config.nestlo.runtime.workspaceRoot}";
         SuccessExitStatus = [ 0 1 ];
       };
     };

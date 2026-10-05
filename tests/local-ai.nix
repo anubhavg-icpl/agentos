@@ -7,18 +7,18 @@
 # registered with the gateway as the keyless provider `local`. No GGUF is
 # fetched: a fixed-output model would add a hash that has to be maintained,
 # so inference itself is not exercised here.
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 pkgs.testers.runNixOSTest {
-  name = "agentos-local-ai";
+  name = "nestlo-local-ai";
   globalTimeout = 1800;
 
   nodes.machine = { ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 2048;
 
-    agentos = {
+    nestlo = {
       runtime.enable = true;
       networking.enable = true;
       localAI = {
@@ -46,18 +46,18 @@ pkgs.testers.runNixOSTest {
         machine.succeed("curl -sf http://127.0.0.1:11434/api/version")
 
     with subtest("an offline model pull does not fail the boot"):
-        machine.wait_for_unit("agentos-local-ai-pull.service")
-        journal = machine.succeed("journalctl -u agentos-local-ai-pull --no-pager")
+        machine.wait_for_unit("nestlo-local-ai-pull.service")
+        journal = machine.succeed("journalctl -u nestlo-local-ai-pull --no-pager")
         assert "could not pull tiny-model:latest" in journal, journal
 
     with subtest("registered as the gateway provider 'local'"):
-        machine.wait_for_unit("agentos-model-gateway.service")
+        machine.wait_for_unit("nestlo-model-gateway.service")
         machine.wait_for_open_port(8080)
-        cfg = machine.succeed("cat /etc/agentos/services.toml")
+        cfg = machine.succeed("cat /etc/nestlo/services.toml")
         print(cfg)
         assert "providers.local" in cfg, cfg
         assert "http://127.0.0.1:11434" in cfg, cfg
         assert "openai-compatible" in cfg and "zero_cost = true" in cfg, cfg
-        machine.succeed("curl -sf http://127.0.0.1:8080/_agentos/health")
+        machine.succeed("curl -sf http://127.0.0.1:8080/_nestlo/health")
   '';
 }

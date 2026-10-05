@@ -11,8 +11,8 @@
 
 let
   inherit (pkgs) lib;
-  iso = self.nixosConfigurations.agentos-iso;
-  desktopVm = self.nixosConfigurations.agentos-desktop-vm.config;
+  iso = self.nixosConfigurations.nestlo-iso;
+  desktopVm = self.nixosConfigurations.nestlo-desktop-vm.config;
 
   failing = cfg: map (a: a.message) (lib.filter (a: !a.assertion) cfg.config.assertions);
 
@@ -42,4 +42,4 @@ assert lib.assertMsg
   "desktop VM: admin must not have a fixed password";
 assert lib.assertMsg desktopVm.security.sudo.wheelNeedsPassword
   "desktop VM: sudo must require the password";
-pkgs.runCommand "agentos-hardening" { } "touch $out"
+pkgs.runCommand "nestlo-hardening" { } "touch $out"

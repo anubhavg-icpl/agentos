@@ -1,4 +1,4 @@
-# AgentOS — ISO Size Analysis
+# Nestlo — ISO Size Analysis
 
 > Sizes on this page are estimates, not measurements of a built image.
 
@@ -19,7 +19,7 @@ NixOS stores complete package closures in `/nix/store`, so the ISO includes ever
 
 ### Option 1: Minimal ISO (800 MB)
 ```nix
-agentos = {
+nestlo = {
   runtime.enable = true;
   security.enable = true;
   # Disable everything else
@@ -40,7 +40,7 @@ nix build .#iso-image
 
 ### Option 3: Netboot (no ISO needed)
 ```bash
-# AgentOS can PXE boot — ISO is only for initial install
+# Nestlo can PXE boot — ISO is only for initial install
 # After install, the system is ~2-3 GB on disk
 ```
 
@@ -61,11 +61,11 @@ nix build .#iso-image
 
 The flake builds one ISO (`nix build .#iso-image`). It's a minimal installer:
 the live system has the installer and basic tools, not the agents or
-toolchains. `agentos-install` then installs the full `agentos` configuration
+toolchains. `nestlo-install` then installs the full `nestlo` configuration
 to disk, downloading packages from cache.nixos.org.
 
-The live ISO also carries the small AgentOS CLIs (`agentos`, `agentos-task`,
-`agentos-schedule`, `agentos-fleet`, `agentos-market`, `agentos-gpu`; shell
+The live ISO also carries the small Nestlo CLIs (`nestlo`, `nestlo-task`,
+`nestlo-schedule`, `nestlo-fleet`, `nestlo-market`, `nestlo-gpu`; shell
 scripts and a pure-Python package). `all-agents` is deliberately left out: the
 20 agents are over 1 GB compressed.
 

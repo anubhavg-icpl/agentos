@@ -7,11 +7,11 @@ import subprocess
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services import provenance as PV
-from agentos_services import publish as P
-from agentos_services import tasks as T
-from agentos_services.taskrunner import TaskRunner
+from nestlo_services import config as configmod
+from nestlo_services import provenance as PV
+from nestlo_services import publish as P
+from nestlo_services import tasks as T
+from nestlo_services.taskrunner import TaskRunner
 from orchfix import cfg, clock, orch, runtime, submit, systemctl, taskstore  # noqa: F401
 from test_publish import REPO, FakeGitHub, FakeResp, env, sh  # noqa: F401
 
@@ -139,7 +139,7 @@ def test_note_is_written_and_read_back(tmp_path):
         return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
                               env=dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null"))
     PV.add_note(git, str(repo), sha, envelope)
-    assert sh("git", "notes", "--ref=agentos-provenance", "list", cwd=repo)
+    assert sh("git", "notes", "--ref=nestlo-provenance", "list", cwd=repo)
     assert PV.read_note(str(repo), sha) == envelope
     assert PV.verify_envelope(PV.read_note(str(repo), sha), PV.parse_public_keys(pub), PV.resolve_commit(str(repo), "HEAD"))["ok"]
     # the CLI resolves a commit-ish to its note
@@ -174,14 +174,14 @@ def test_publish_pushes_note_sets_status_and_describes_the_pr(env, tmp_path):
     res = env.pub.publish(env.spec, "task-1", str(env.ws), "agent/task-1", env.base, attest=attest_with(signer))
     sha = res["pushed_sha"]
     # the note rides along on the remote and verifies against the pushed commit
-    note = json.loads(sh("git", "-C", str(env.remote), "notes", "--ref=agentos-provenance", "show", sha))
+    note = json.loads(sh("git", "-C", str(env.remote), "notes", "--ref=nestlo-provenance", "show", sha))
     assert PV.verify_envelope(note, PV.parse_public_keys(pub), sha)["ok"]
     assert res["provenance_digest"] == PV.envelope_digest(note)
     pr, status = env.gh.requests
-    assert "agentos-provenance" in pr["body"]["body"] and res["provenance_digest"] in pr["body"]["body"]
-    assert "AgentOS provenance" in pr["body"]["body"] and "Refs #7" in pr["body"]["body"]
+    assert "nestlo-provenance" in pr["body"]["body"] and res["provenance_digest"] in pr["body"]["body"]
+    assert "Nestlo provenance" in pr["body"]["body"] and "Refs #7" in pr["body"]["body"]
     assert status["method"] == "POST" and status["url"] == "https://api.github.com/repos/acme/widgets/statuses/" + sha
-    assert status["body"]["state"] == "success" and status["body"]["context"] == "agentos/provenance"
+    assert status["body"]["state"] == "success" and status["body"]["context"] == "nestlo/provenance"
     assert status["headers"]["authorization"] == "Bearer " + "ghp_supersecrettoken123"
 
 
@@ -196,7 +196,7 @@ def test_publish_merges_notes_already_on_the_remote(env, tmp_path):
     (env.ws / "b.txt").write_text("b")
     second = env.pub.publish(env.spec, "task-2", str(env.ws), "agent/task-2", env.base, attest=attest)
     for sha in (first["pushed_sha"], second["pushed_sha"]):
-        assert sh("git", "-C", str(env.remote), "notes", "--ref=agentos-provenance", "show", sha)
+        assert sh("git", "-C", str(env.remote), "notes", "--ref=nestlo-provenance", "show", sha)
 
 
 def test_publish_without_an_envelope_reports_a_failed_status(env):
@@ -206,7 +206,7 @@ def test_publish_without_an_envelope_reports_a_failed_status(env):
     res = env.pub.publish(env.spec, "task-1", str(env.ws), "agent/task-1", env.base, attest=lambda sha: None)
     assert "provenance_digest" not in res
     assert env.gh.requests[-1]["body"]["state"] == "failure"
-    assert "agentos-provenance" not in env.gh.requests[0]["body"]["body"]
+    assert "nestlo-provenance" not in env.gh.requests[0]["body"]["body"]
     assert sh("git", "-C", str(env.remote), "for-each-ref", "refs/notes") == ""
 
 
@@ -303,7 +303,7 @@ def test_runner_try_publish_passes_the_hook_only_when_enabled(cfg, runtime, task
 
 # ── replay-check ─────────────────────────────────────────────────────────
 def test_replay_check_compares_transcript_and_tree(tmp_path, capsys):
-    from agentos_services.recorder import transcript_digest
+    from nestlo_services.recorder import transcript_digest
     rec = tmp_path / "rec" / "t1"
     rec.mkdir(parents=True)
     (rec / "000001.json").write_text('{"seq": 1}')

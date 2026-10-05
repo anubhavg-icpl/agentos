@@ -21,7 +21,7 @@ def test_unreadable_usage_is_charged_at_the_estimate(make_gateway, store, tmp_pa
     entry = json.loads((tmp_path / "logs" / "u1.log").read_text().splitlines()[-1])
     assert entry["usage_estimated"] is True and entry["priced"] is False
     assert store.reserved("u1") == 0
-    snap = json.loads(request(gw, "GET", "/_agentos/spend")[2])
+    snap = json.loads(request(gw, "GET", "/_nestlo/spend")[2])
     assert snap["usage_unparsed"] == {"openai": 1}
 
 

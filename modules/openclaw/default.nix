@@ -1,10 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════════
-# AgentOS OpenClaw Module
+# Nestlo OpenClaw Module
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Runs the OpenClaw gateway (https://github.com/openclaw/openclaw): a Node
 # daemon that connects chat channels (Telegram, Slack) to an LLM agent. Here
-# it is wired into AgentOS like this:
+# it is wired into Nestlo like this:
 #
 #   chat user ──▶ channel (allowlisted DMs only) ──▶ openclaw.service (user openclaw)
 #                                                        │ LLM calls
@@ -12,7 +12,7 @@
 #                       model gateway  http://127.0.0.1:8080/agent/openclaw:<token>/anthropic
 #                       (real API key injected there, daily budget for agent id "openclaw")
 #
-#                openclaw ──exec: agentos-task-chat──▶ bridge ──▶ orchestrator ──▶ sandboxed agents
+#                openclaw ──exec: nestlo-task-chat──▶ bridge ──▶ orchestrator ──▶ sandboxed agents
 #
 # - nixpkgs has no module for it, only the package (marked insecure upstream
 #   because of prompt injection, hence `acceptPromptInjectionRisk`).
@@ -25,18 +25,18 @@
 { config, pkgs, lib, ... }:
 
 let
-  cfg = config.agentos.openclaw;
-  rt = config.agentos.runtime;
-  orch = config.agentos.orchestration;
+  cfg = config.nestlo.openclaw;
+  rt = config.nestlo.runtime;
+  orch = config.nestlo.orchestration;
 
   stateDir = "/var/lib/openclaw";
   homeDir = stateDir;
   openclawDir = "${homeDir}/.openclaw";
   workspaceDir = "${stateDir}/workspace";
-  gatewayAddr = "http://127.0.0.1:${toString config.agentos.networking.modelGatewayPort}";
-  adminSocket = config.agentos.services.settings.gateway.admin_socket;
+  gatewayAddr = "http://127.0.0.1:${toString config.nestlo.networking.modelGatewayPort}";
+  adminSocket = config.nestlo.services.settings.gateway.admin_socket;
   agentId = "openclaw";
-  providerId = "agentos";
+  providerId = "nestlo";
 
   bridgeEnabled = cfg.workspaces != [ ];
   chat = import ./task-chat.nix {
@@ -47,7 +47,7 @@ let
     taskTimeoutSec = cfg.taskTimeoutSec;
     maxActiveTasks = cfg.maxActiveTasks;
   };
-  wrapperPath = "${chat.wrapper}/bin/agentos-task-chat";
+  wrapperPath = "${chat.wrapper}/bin/nestlo-task-chat";
 
   tg = cfg.channels.telegram;
   sl = cfg.channels.slack;
@@ -73,15 +73,15 @@ let
       auto.enabled = false;
     };
 
-    # LLM access only through the AgentOS model gateway. The token in the URL
+    # LLM access only through the Nestlo model gateway. The token in the URL
     # is the agent token registered for id "openclaw"; the key is a
-    # placeholder, the gateway injects the real one (`agentos-managed`).
+    # placeholder, the gateway injects the real one (`nestlo-managed`).
     models = {
       mode = "merge";
       pricing.enabled = false;
       providers.${providerId} = {
-        baseUrl = "${gatewayAddr}/agent/${agentId}:\${AGENTOS_OPENCLAW_TOKEN}/anthropic";
-        apiKey = "agentos-managed";
+        baseUrl = "${gatewayAddr}/agent/${agentId}:\${NESTLO_OPENCLAW_TOKEN}/anthropic";
+        apiKey = "nestlo-managed";
         api = "anthropic-messages";
         models = [{
           id = cfg.model;
@@ -97,13 +97,13 @@ let
     agents.defaults = {
       workspace = workspaceDir;
       model.primary = "${providerId}/${cfg.model}";
-      # only the vendored AgentOS skill; no bundled or installed skills
-      skills = lib.optional bridgeEnabled "agentos";
+      # only the vendored Nestlo skill; no bundled or installed skills
+      skills = lib.optional bridgeEnabled "nestlo";
       # no periodic background LLM calls
       heartbeat.every = "0m";
     };
 
-    # Messaging plus the minimum for the AgentOS skill: read (the skill file,
+    # Messaging plus the minimum for the Nestlo skill: read (the skill file,
     # confined to the workspace) and exec (restricted to one command below).
     # No file writes, web, browser, canvas, nodes, cron or gateway control.
     tools = {
@@ -178,7 +178,7 @@ let
     };
   });
 
-  # Environment shared by the service and `agentos-openclaw`
+  # Environment shared by the service and `nestlo-openclaw`
   commonEnv = {
     HOME = homeDir;
     OPENCLAW_STATE_DIR = openclawDir;
@@ -199,7 +199,7 @@ let
       install -d -m 0700 -o openclaw -g openclaw ${stateDir} ${openclawDir} ${workspaceDir}
 
       newtoken() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
-      for name in gateway-token agentos-token; do
+      for name in gateway-token nestlo-token; do
         if [ ! -s ${stateDir}/$name ]; then
           newtoken > ${stateDir}/$name
         fi
@@ -210,7 +210,7 @@ let
       # admin METHOD PATH [curl args]: the admin socket appears when the model gateway is up
       admin() {
         curl -fsS -m 10 --unix-socket ${adminSocket} -X "$1" -H 'Content-Type: application/json' \
-          "''${@:3}" "http://x/_agentos/$2"
+          "''${@:3}" "http://x/_nestlo/$2"
       }
       for _ in $(seq 1 60); do
         if admin GET health >/dev/null 2>&1; then
@@ -220,14 +220,14 @@ let
       done
       admin GET health >/dev/null || { echo "model gateway admin socket ${adminSocket} not available" >&2; exit 1; }
 
-      hash=$(sha256sum < ${stateDir}/agentos-token | cut -d' ' -f1)
+      hash=$(sha256sum < ${stateDir}/nestlo-token | cut -d' ' -f1)
       admin PUT agents/${agentId} -d "$(jq -cn --arg h "$hash" '{token_sha256: $h}')" >/dev/null
       admin PUT budget/${agentId} -d '{"daily_usd": ${toString cfg.budgetUsd}}' >/dev/null
 
       ${lib.optionalString bridgeEnabled ''
         # The skill is root-owned: OpenClaw can read it, not change it
-        install -d -m 0755 -o root -g root ${workspaceDir}/skills ${workspaceDir}/skills/agentos
-        install -m 0444 -o root -g root ${chat.skill}/agentos/SKILL.md ${workspaceDir}/skills/agentos/SKILL.md
+        install -d -m 0755 -o root -g root ${workspaceDir}/skills ${workspaceDir}/skills/nestlo
+        install -m 0444 -o root -g root ${chat.skill}/nestlo/SKILL.md ${workspaceDir}/skills/nestlo/SKILL.md
       ''}
     '';
   };
@@ -250,8 +250,8 @@ let
     runtimeInputs = [ pkgs.coreutils ];
     text = ''
       OPENCLAW_GATEWAY_TOKEN=$(cat ${stateDir}/gateway-token)
-      AGENTOS_OPENCLAW_TOKEN=$(cat ${stateDir}/agentos-token)
-      export OPENCLAW_GATEWAY_TOKEN AGENTOS_OPENCLAW_TOKEN
+      NESTLO_OPENCLAW_TOKEN=$(cat ${stateDir}/nestlo-token)
+      export OPENCLAW_GATEWAY_TOKEN NESTLO_OPENCLAW_TOKEN
       ${lib.optionalString tg.enable ''
         TELEGRAM_BOT_TOKEN=$(cat "''${CREDENTIALS_DIRECTORY}"/telegram-token)
         export TELEGRAM_BOT_TOKEN
@@ -268,19 +268,19 @@ let
   # For operators: run the openclaw CLI as the service user with the
   # service's environment (config validate, doctor, channels status ...)
   adminCli = pkgs.writeShellApplication {
-    name = "agentos-openclaw";
+    name = "nestlo-openclaw";
     runtimeInputs = [ pkgs.coreutils pkgs.util-linux ];
     text = ''
       if [ "$(id -u)" -ne 0 ]; then
-        echo "agentos-openclaw: run as root (sudo agentos-openclaw ...)" >&2
+        echo "nestlo-openclaw: run as root (sudo nestlo-openclaw ...)" >&2
         exit 1
       fi
       OPENCLAW_GATEWAY_TOKEN=$(cat ${stateDir}/gateway-token)
-      AGENTOS_OPENCLAW_TOKEN=$(cat ${stateDir}/agentos-token)
+      NESTLO_OPENCLAW_TOKEN=$(cat ${stateDir}/nestlo-token)
       exec runuser -u openclaw -- env \
         ${lib.concatStringsSep " \\\n        " (lib.mapAttrsToList (k: v: "${k}=${v}") commonEnv)} \
         OPENCLAW_GATEWAY_TOKEN="$OPENCLAW_GATEWAY_TOKEN" \
-        AGENTOS_OPENCLAW_TOKEN="$AGENTOS_OPENCLAW_TOKEN" \
+        NESTLO_OPENCLAW_TOKEN="$NESTLO_OPENCLAW_TOKEN" \
         ${cfg.package}/bin/openclaw "$@"
     '';
   };
@@ -311,8 +311,8 @@ let
   };
 in
 {
-  options.agentos.openclaw = {
-    enable = lib.mkEnableOption "the OpenClaw chat gateway, wired to the AgentOS model gateway and orchestrator";
+  options.nestlo.openclaw = {
+    enable = lib.mkEnableOption "the OpenClaw chat gateway, wired to the Nestlo model gateway and orchestrator";
 
     acceptPromptInjectionRisk = lib.mkOption {
       type = lib.types.bool;
@@ -346,7 +346,7 @@ in
     model = lib.mkOption {
       type = lib.types.str;
       default = "claude-sonnet-5-5";
-      description = "Anthropic model id used through the AgentOS gateway (must be in its pricing table to be metered).";
+      description = "Anthropic model id used through the Nestlo gateway (must be in its pricing table to be metered).";
     };
 
     budgetUsd = lib.mkOption {
@@ -385,7 +385,7 @@ in
     agents = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ "claude" ];
-      description = "AgentOS agents that OpenClaw may start tasks with. Each needs an entry in `agentos.orchestration.taskCommands`.";
+      description = "Nestlo agents that OpenClaw may start tasks with. Each needs an entry in `nestlo.orchestration.taskCommands`.";
     };
 
     workspaces = lib.mkOption {
@@ -393,9 +393,9 @@ in
       default = [ ];
       example = [ "main-project" ];
       description = ''
-        Workspace names (under `agentos.runtime.workspaceRoot`) that OpenClaw
+        Workspace names (under `nestlo.runtime.workspaceRoot`) that OpenClaw
         may start tasks in. Empty (the default) disables the task bridge, the
-        `agentos` skill and the exec tool altogether: OpenClaw then only chats.
+        `nestlo` skill and the exec tool altogether: OpenClaw then only chats.
       '';
     };
 
@@ -422,27 +422,27 @@ in
     assertions = [
       {
         assertion = cfg.acceptPromptInjectionRisk;
-        message = "agentos.openclaw.enable: set agentos.openclaw.acceptPromptInjectionRisk = true after reading docs/openclaw.md (nixpkgs marks openclaw insecure)";
+        message = "nestlo.openclaw.enable: set nestlo.openclaw.acceptPromptInjectionRisk = true after reading docs/openclaw.md (nixpkgs marks openclaw insecure)";
       }
       {
-        assertion = config.agentos.networking.enable;
-        message = "agentos.openclaw routes its LLM calls through the AgentOS model gateway; enable agentos.networking";
+        assertion = config.nestlo.networking.enable;
+        message = "nestlo.openclaw routes its LLM calls through the Nestlo model gateway; enable nestlo.networking";
       }
       {
         assertion = tg.enable -> (tg.tokenFile != null && tg.allowFrom != [ ]);
-        message = "agentos.openclaw.channels.telegram needs tokenFile and a non-empty allowFrom";
+        message = "nestlo.openclaw.channels.telegram needs tokenFile and a non-empty allowFrom";
       }
       {
         assertion = sl.enable -> (sl.tokenFile != null && sl.appTokenFile != null && sl.allowFrom != [ ]);
-        message = "agentos.openclaw.channels.slack needs tokenFile, appTokenFile and a non-empty allowFrom";
+        message = "nestlo.openclaw.channels.slack needs tokenFile, appTokenFile and a non-empty allowFrom";
       }
       {
         assertion = !bridgeEnabled || orch.enable;
-        message = "agentos.openclaw.workspaces needs agentos.orchestration.enable (OpenClaw submits tasks to the orchestrator)";
+        message = "nestlo.openclaw.workspaces needs nestlo.orchestration.enable (OpenClaw submits tasks to the orchestrator)";
       }
       {
         assertion = !bridgeEnabled || (cfg.agents != [ ] && lib.all (a: orch.taskCommands ? ${a}) cfg.agents);
-        message = "agentos.openclaw.agents must be non-empty and each agent needs an entry in agentos.orchestration.taskCommands";
+        message = "nestlo.openclaw.agents must be non-empty and each agent needs an entry in nestlo.orchestration.taskCommands";
       }
     ];
 
@@ -460,10 +460,10 @@ in
     systemd.services.openclaw = {
       description = "OpenClaw chat gateway";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" "agentos-model-gateway.service" ]
-        ++ lib.optional bridgeEnabled "agentos-openclaw-bridge.service";
-      wants = [ "network-online.target" ] ++ lib.optional bridgeEnabled "agentos-openclaw-bridge.service";
-      requires = [ "agentos-model-gateway.service" ];
+      after = [ "network-online.target" "nestlo-model-gateway.service" ]
+        ++ lib.optional bridgeEnabled "nestlo-openclaw-bridge.service";
+      wants = [ "network-online.target" ] ++ lib.optional bridgeEnabled "nestlo-openclaw-bridge.service";
+      requires = [ "nestlo-model-gateway.service" ];
       restartTriggers = [ configFile execApprovals ] ++ lib.optional bridgeEnabled chat.skill;
 
       environment = commonEnv;
@@ -525,23 +525,23 @@ in
       description = "OpenClaw to orchestrator bridge";
     };
 
-    systemd.services.agentos-openclaw-bridge = lib.mkIf bridgeEnabled {
-      description = "AgentOS task bridge for OpenClaw";
+    systemd.services.nestlo-openclaw-bridge = lib.mkIf bridgeEnabled {
+      description = "Nestlo task bridge for OpenClaw";
       wantedBy = [ "multi-user.target" ];
-      after = [ "agentos-orchestrator.service" ];
-      wants = [ "agentos-orchestrator.service" ];
+      after = [ "nestlo-orchestrator.service" ];
+      wants = [ "nestlo-orchestrator.service" ];
       serviceConfig = {
         Type = "simple";
         User = "openclaw-bridge";
         Group = "openclaw";
-        # Reaches the orchestrator socket (group agentos) and nothing else of
-        # that group: the gateway admin socket and the AgentOS state are hidden
-        SupplementaryGroups = [ "agentos" ];
-        InaccessiblePaths = [ "-/run/agentos-gateway" "-/run/redis-agentos" "-/run/pullrun" "-/var/lib/agentos" ];
-        ExecStart = "${chat.bridge}/bin/agentos-openclaw-bridge ${chat.policy}";
+        # Reaches the orchestrator socket (group nestlo) and nothing else of
+        # that group: the gateway admin socket and the Nestlo state are hidden
+        SupplementaryGroups = [ "nestlo" ];
+        InaccessiblePaths = [ "-/run/nestlo-gateway" "-/run/redis-nestlo" "-/run/pullrun" "-/var/lib/nestlo" ];
+        ExecStart = "${chat.bridge}/bin/nestlo-openclaw-bridge ${chat.policy}";
         Restart = "on-failure";
         RestartSec = 3;
-        RuntimeDirectory = "agentos-openclaw";
+        RuntimeDirectory = "nestlo-openclaw";
         RuntimeDirectoryMode = "0750";
         UMask = "0007";
 

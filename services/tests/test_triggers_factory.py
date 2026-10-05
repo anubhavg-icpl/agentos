@@ -5,8 +5,8 @@ import tempfile
 
 import pytest
 
-from agentos_services import triggers as TR
-from agentos_services.unixapi import serve_unix
+from nestlo_services import triggers as TR
+from nestlo_services.unixapi import serve_unix
 from test_triggers import REPO, Hook, Orch, issue_payload, make_cfg
 
 

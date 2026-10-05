@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services.routing import Router
-from agentos_services.usage import Pricing
+from nestlo_services import config as configmod
+from nestlo_services.routing import Router
+from nestlo_services.usage import Pricing
 from conftest import PRICING, request
 
 ANTHROPIC = "/agent/a1/anthropic/v1/messages"
@@ -78,7 +78,7 @@ def test_gateway_routes_prices_and_logs(make_gateway, upstream, store, tmp_path)
 
 def test_gateway_budget_downgrade(make_gateway, upstream, store):
     gw = make_gateway(routing={"downgrade": {"threshold_pct": 25, "models": {"anthropic": "claude-cheap"}}})
-    assert request(gw, "PUT", "/_agentos/budget/a1", {"daily_usd": 10}, admin=True)[0] == 200
+    assert request(gw, "PUT", "/_nestlo/budget/a1", {"daily_usd": 10}, admin=True)[0] == 200
     assert request(gw, "POST", ANTHROPIC, {"model": "claude-test"})[0] == 200     # $3 = 30% of $10
     assert upstream.requests[-1]["body"]["model"] == "claude-test"                # used 0% when it arrived
     assert request(gw, "POST", ANTHROPIC, {"model": "claude-test"})[0] == 200
@@ -88,8 +88,8 @@ def test_gateway_budget_downgrade(make_gateway, upstream, store):
 
 def test_gateway_routing_admin_view(make_gateway):
     gw = make_gateway(routing={"strategy": "cheapest", "groups": [["claude-mid", "claude-cheap"]]})
-    assert request(gw, "GET", "/_agentos/routing")[0] == 403
-    status, _, body = request(gw, "GET", "/_agentos/routing?agent=a1&provider=anthropic&model=claude-mid", admin=True)
+    assert request(gw, "GET", "/_nestlo/routing")[0] == 403
+    status, _, body = request(gw, "GET", "/_nestlo/routing?agent=a1&provider=anthropic&model=claude-mid", admin=True)
     view = json.loads(body)
     assert status == 200 and view["strategy"] == "cheapest"
     assert view["effective"]["routed_model"] == "claude-cheap" and view["effective"]["reason"] == "cheapest"

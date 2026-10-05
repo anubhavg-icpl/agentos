@@ -8,9 +8,9 @@ backlog to ready when the tasks finish the way the task runner finishes them.
 import copy
 import urllib.parse
 
-from agentos_services import config as configmod
-from agentos_services import factory as F
-from agentos_services import tasks as T
+from nestlo_services import config as configmod
+from nestlo_services import factory as F
+from nestlo_services import tasks as T
 from orchfix import (cfg, clock, complete, orch, runtime, systemctl, taskstore)  # noqa: F401
 
 PLAN = "Step 1, step 2.\nSIZE: medium\nPLAN-READY\n"

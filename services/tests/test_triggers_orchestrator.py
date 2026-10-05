@@ -2,9 +2,9 @@
 
 import json
 
-from agentos_services import tasks as T
-from agentos_services import triggers as TR
-from agentos_services.unixapi import ApiError
+from nestlo_services import tasks as T
+from nestlo_services import triggers as TR
+from nestlo_services.unixapi import ApiError
 from orchfix import cfg, clock, orch, runtime, systemctl, taskstore  # noqa: F401
 from test_triggers import REPO, SECRET, issue_payload, make_cfg, rule
 

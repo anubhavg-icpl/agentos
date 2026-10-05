@@ -9,7 +9,7 @@
 #   model routing    a rewrite rule changes the model the provider receives
 #   replay           a recorded session is served again without the provider
 #   message bus      two agents exchange messages (direct and long-poll)
-{ pkgs, agentosModules }:
+{ pkgs, nestloModules }:
 
 let
   # Mock of the Anthropic Messages API (+ a webhook sink). Every reply
@@ -64,11 +64,11 @@ let
   '';
 in
 pkgs.testers.runNixOSTest {
-  name = "agentos-gateway-features";
+  name = "nestlo-gateway-features";
   globalTimeout = 1800;
 
   nodes.machine = { ... }: {
-    imports = agentosModules;
+    imports = nestloModules;
 
     virtualisation.memorySize = 2048;
     virtualisation.cores = 2;
@@ -79,14 +79,14 @@ pkgs.testers.runNixOSTest {
     };
     security.sudo.wheelNeedsPassword = false;
 
-    agentos = {
+    nestlo = {
       runtime.enable = true;
       networking = {
         enable = true;
         recordSessions = true;
         providers.anthropic = {
           baseUrl = "http://127.0.0.1:9999";
-          keyFile = "/etc/agentos-test/anthropic.key";
+          keyFile = "/etc/nestlo-test/anthropic.key";
         };
         providers.openai.baseUrl = "http://127.0.0.1:9999";
       };
@@ -105,17 +105,17 @@ pkgs.testers.runNixOSTest {
       };
     };
 
-    environment.etc."agentos-test/anthropic.key" = {
+    environment.etc."nestlo-test/anthropic.key" = {
       text = "sk-test-real-key";
       mode = "0440";
-      group = "agentos";
+      group = "nestlo";
     };
 
     environment.systemPackages = [ pkgs.jq ];
 
     systemd.services.mock-llm = {
       wantedBy = [ "multi-user.target" ];
-      before = [ "agentos-model-gateway.service" ];
+      before = [ "nestlo-model-gateway.service" ];
       serviceConfig = {
         ExecStart = "${mockLlm}/bin/mock-llm";
         StateDirectory = "mock-llm";
@@ -134,13 +134,13 @@ pkgs.testers.runNixOSTest {
     TOKENS = {}
 
     def seg(agent):
-        """The "<id>:<token>" URL segment, registering a token like agentos spawn does."""
+        """The "<id>:<token>" URL segment, registering a token like nestlo spawn does."""
         if agent not in TOKENS:
             token = machine.succeed("od -An -N16 -tx1 /dev/urandom | tr -d ' \\n'").strip()
             digest = machine.succeed(f"printf %s {token} | sha256sum | cut -d' ' -f1").strip()
             machine.succeed(
-                "curl -fsS --unix-socket /run/agentos-gateway/admin.sock -X PUT "
-                f"-d '{{\"token_sha256\": \"{digest}\"}}' http://localhost/_agentos/agents/{agent}"
+                "curl -fsS --unix-socket /run/nestlo-gateway/admin.sock -X PUT "
+                f"-d '{{\"token_sha256\": \"{digest}\"}}' http://localhost/_nestlo/agents/{agent}"
             )
             TOKENS[agent] = token
         return f"{agent}:{TOKENS[agent]}"
@@ -149,7 +149,7 @@ pkgs.testers.runNixOSTest {
         """POST JSON as an agent; returns (status, parsed body)."""
         out = machine.succeed(
             f"curl -s -w '\\n%{{http_code}}' -H 'content-type: application/json' "
-            f"-H 'x-api-key: agentos-managed' -d {json.dumps(json.dumps(body))} {GW}/agent/{seg(agent)}/{path}"
+            f"-H 'x-api-key: nestlo-managed' -d {json.dumps(json.dumps(body))} {GW}/agent/{seg(agent)}/{path}"
         )
         text, code = out.rsplit("\n", 1)
         return int(code), json.loads(text)
@@ -165,8 +165,8 @@ pkgs.testers.runNixOSTest {
         return {"model": model, "max_tokens": 16, "messages": [{"role": "user", "content": text}]}
 
     machine.wait_for_unit("multi-user.target")
-    for unit in ["redis-agentos.service", "agentos-model-gateway.service",
-                 "agentos-daemon.service", "mock-llm.service"]:
+    for unit in ["redis-nestlo.service", "nestlo-model-gateway.service",
+                 "nestlo-daemon.service", "mock-llm.service"]:
         machine.wait_for_unit(unit)
     machine.wait_for_open_port(8080)
 
@@ -178,8 +178,8 @@ pkgs.testers.runNixOSTest {
         status, err = post("looper", "anthropic/v1/messages", stuck)
         assert err["error"]["type"] == "loop_detected", err
         # an operator can clear the loop state; other agents were never affected
-        admin("curl -fsS --unix-socket /run/agentos-gateway/admin.sock -X DELETE "
-              "http://localhost/_agentos/loop/looper")
+        admin("curl -fsS --unix-socket /run/nestlo-gateway/admin.sock -X DELETE "
+              "http://localhost/_nestlo/loop/looper")
         assert post("looper", "anthropic/v1/messages", stuck)[0] == 200
         assert post("looper", "anthropic/v1/messages", message("something new"))[0] == 200
         assert post("bystander", "anthropic/v1/messages", stuck)[0] == 200
@@ -196,14 +196,14 @@ pkgs.testers.runNixOSTest {
         assert status == 200
         seen = upstream_requests()[before:]
         assert [r["model"] for r in seen] == ["claude-sonnet-5-5"], seen
-        logs = machine.succeed("cat /var/lib/agentos/logs/router1.log")
+        logs = machine.succeed("cat /var/lib/nestlo/logs/router1.log")
         entry = json.loads(logs.splitlines()[-1])
         assert entry["original_model"] == "claude-opus-5-5", entry
         assert entry["routed_model"] == "claude-sonnet-5-5", entry
         # priced with the routed model
-        snap = json.loads(admin("agentos budget status --json"))
+        snap = json.loads(admin("nestlo budget status --json"))
         assert "claude-sonnet-5-5" in snap["models"] and "claude-opus-5-5" not in snap["models"], snap
-        view = json.loads(admin("agentos budget routing router1 anthropic claude-opus-5-5"))
+        view = json.loads(admin("nestlo budget routing router1 anthropic claude-opus-5-5"))
         assert view["effective"]["routed_model"] == "claude-sonnet-5-5", view
 
     with subtest("replay: a recorded session is served without the provider"):
@@ -211,11 +211,11 @@ pkgs.testers.runNixOSTest {
         second = message("now make it pass")
         originals = [post("rec1", "anthropic/v1/messages", b)[1]["content"][0]["text"] for b in (first, second)]
         assert originals[0] != originals[1], originals
-        machine.succeed("test -f /var/lib/agentos/recordings/rec1/000001.json")
-        machine.succeed("test -f /var/lib/agentos/recordings/rec1/000002.json")
-        assert "rec1" in admin("agentos-replay list")
-        assert "/v1/messages" in admin("agentos-replay show rec1")
-        out = admin("agentos-replay start rec1 play1")
+        machine.succeed("test -f /var/lib/nestlo/recordings/rec1/000001.json")
+        machine.succeed("test -f /var/lib/nestlo/recordings/rec1/000002.json")
+        assert "rec1" in admin("nestlo-replay list")
+        assert "/v1/messages" in admin("nestlo-replay show rec1")
+        out = admin("nestlo-replay start rec1 play1")
         print(out)
         # the CLI registers a token for the replay agent and prints its URL
         base = next(l.split("=", 1)[1] for l in out.splitlines() if "ANTHROPIC_BASE_URL=" in l)
@@ -233,11 +233,11 @@ pkgs.testers.runNixOSTest {
         assert len(upstream_requests()) == upstream_before, "replay contacted the provider"
         status, err = post("play1", "anthropic/v1/messages", first)
         assert status == 409 and err["error"]["type"] == "replay_exhausted", err
-        snap = json.loads(admin("agentos budget status --json"))
+        snap = json.loads(admin("nestlo budget status --json"))
         assert snap["agents"]["play1"]["usd"] == 0, snap["agents"]["play1"]
         assert snap["agents"]["rec1"]["usd"] > 0, snap["agents"]["rec1"]
-        assert "2 of 2 requests served" in admin("agentos-replay status play1")
-        admin("agentos-replay stop play1")
+        assert "2 of 2 requests served" in admin("nestlo-replay status play1")
+        admin("nestlo-replay stop play1")
 
     with subtest("message bus: two agents talk"):
         # direct message to an inbox
@@ -257,25 +257,25 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds("test -s /tmp/poll.json", timeout=30)
         polled = json.loads(machine.succeed("cat /tmp/poll.json"))
         assert [m["body"] for m in polled["messages"]] == ["build 42 is green"], polled
-        # operators use agentos-msg
-        admin("agentos-msg send --from ops builds 'freeze deploys'")
-        out = admin("agentos-msg read builds")
+        # operators use nestlo-msg
+        admin("nestlo-msg send --from ops builds 'freeze deploys'")
+        out = admin("nestlo-msg read builds")
         assert "alice: build 42 is green" in out and "ops: freeze deploys" in out, out
-        assert "alice: please review PR 7" in admin("agentos-msg read @bob")
+        assert "alice: please review PR 7" in admin("nestlo-msg read @bob")
         # the MCP server talks to the same bus
         rpc = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                           "params": {"name": "read_messages", "arguments": {"topic": "builds"}}})
         out = machine.succeed(
-            f"echo {json.dumps(rpc)} | AGENTOS_AGENT_ID=carol "
-            f"ANTHROPIC_BASE_URL={GW}/agent/{seg('carol')}/anthropic agentos-mcp-bus"
+            f"echo {json.dumps(rpc)} | NESTLO_AGENT_ID=carol "
+            f"ANTHROPIC_BASE_URL={GW}/agent/{seg('carol')}/anthropic nestlo-mcp-bus"
         )
         assert "freeze deploys" in out, out
 
     with subtest("the sandbox user cannot reach the admin endpoints"):
-        machine.fail("su -s /bin/sh agentos-agent -c "
-                     "'curl -fsS --unix-socket /run/agentos-gateway/admin.sock http://x/_agentos/recordings'")
+        machine.fail("su -s /bin/sh nestlo-agent -c "
+                     "'curl -fsS --unix-socket /run/nestlo-gateway/admin.sock http://x/_nestlo/recordings'")
         code = machine.succeed(f"curl -s -o /dev/null -w '%{{http_code}}' -X PUT "
-                               f"-d '{{\"recording\": \"rec1\"}}' {GW}/_agentos/replay/anyone")
+                               f"-d '{{\"recording\": \"rec1\"}}' {GW}/_nestlo/replay/anyone")
         assert code == "403", code
   '';
 }

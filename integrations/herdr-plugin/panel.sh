@@ -1,16 +1,16 @@
 #!/bin/sh
-# AgentOS panels for herdr (see herdr-plugin.toml and docs/herdr.md).
+# Nestlo panels for herdr (see herdr-plugin.toml and docs/herdr.md).
 #
 #   panel.sh tasks|factory|budget    live view, refreshed every few seconds
 #   panel.sh approve|cancel          list the candidates and ask for a task id
 #   panel.sh open <pane>             action entry point: open that pane
 #
-# Plain POSIX sh, no network. It only runs the AgentOS CLIs as the user that
+# Plain POSIX sh, no network. It only runs the Nestlo CLIs as the user that
 # runs herdr, so it can do exactly what that user can do on the command line.
 
 PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
 export PATH
-INTERVAL="${AGENTOS_PANEL_INTERVAL:-5}"
+INTERVAL="${NESTLO_PANEL_INTERVAL:-5}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -29,9 +29,9 @@ run() {
 
 show() {
   case "$1" in
-    tasks)   run agentos-task "agentos.orchestration is not enabled" list ;;
-    factory) run agentos-factory "the AgentOS factory is not enabled on this host" list ;;
-    budget)  run agentos-budget "agentos.budget-controller is not enabled" status ;;
+    tasks)   run nestlo-task "nestlo.orchestration is not enabled" list ;;
+    factory) run nestlo-factory "the Nestlo factory is not enabled on this host" list ;;
+    budget)  run nestlo-budget "nestlo.budget-controller is not enabled" status ;;
     *) echo "unknown panel: $1"; return 1 ;;
   esac
 }
@@ -39,7 +39,7 @@ show() {
 watch_panel() {
   while :; do
     printf '\033[H\033[2J'
-    echo "AgentOS $1   $(date '+%H:%M:%S')   (refreshes every ${INTERVAL}s, ctrl+c to close)"
+    echo "Nestlo $1   $(date '+%H:%M:%S')   (refreshes every ${INTERVAL}s, ctrl+c to close)"
     echo
     show "$1"
     sleep "$INTERVAL"
@@ -64,24 +64,24 @@ case "${1:-}" in
     ;;
   approve)
     echo "Tasks waiting for approval:"
-    run agentos-task "agentos.orchestration is not enabled" list --status awaiting_approval
+    run nestlo-task "nestlo.orchestration is not enabled" list --status awaiting_approval
     echo
-    if have agentos-task && ask_id approve; then
-      run agentos-task "" approve "$id"
+    if have nestlo-task && ask_id approve; then
+      run nestlo-task "" approve "$id"
     fi
     pause
     ;;
   cancel)
     echo "Running and queued tasks:"
-    run agentos-task "agentos.orchestration is not enabled" list --status running
-    run agentos-task "" list --status queued
-    run agentos-task "" list --status awaiting_approval
+    run nestlo-task "nestlo.orchestration is not enabled" list --status running
+    run nestlo-task "" list --status queued
+    run nestlo-task "" list --status awaiting_approval
     echo
-    if have agentos-task && ask_id cancel; then
+    if have nestlo-task && ask_id cancel; then
       printf 'cancel %s? [y/N] ' "$id"
       read -r answer || exit 0
       case "$answer" in
-        y | Y | yes) run agentos-task "" cancel "$id" ;;
+        y | Y | yes) run nestlo-task "" cancel "$id" ;;
         *) echo "left running" ;;
       esac
     fi
@@ -92,7 +92,7 @@ case "${1:-}" in
       tasks | factory | budget | approve | cancel) ;;
       *) echo "usage: panel.sh open tasks|factory|budget|approve|cancel" >&2; exit 2 ;;
     esac
-    exec "${HERDR_BIN_PATH:-herdr}" plugin pane open --plugin "${HERDR_PLUGIN_ID:-agentos.dashboard}" --entrypoint "$2"
+    exec "${HERDR_BIN_PATH:-herdr}" plugin pane open --plugin "${HERDR_PLUGIN_ID:-nestlo.dashboard}" --entrypoint "$2"
     ;;
   *)
     echo "usage: panel.sh tasks|factory|budget|approve|cancel|open <pane>" >&2

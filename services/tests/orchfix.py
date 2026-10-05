@@ -6,9 +6,9 @@ import subprocess
 
 import pytest
 
-from agentos_services import config as configmod
-from agentos_services import tasks as T
-from agentos_services.orchestrator import Orchestrator
+from nestlo_services import config as configmod
+from nestlo_services import tasks as T
+from nestlo_services.orchestrator import Orchestrator
 
 TEMPLATES = {
     "fake": ["fake-agent", "{prompt}"],
@@ -63,7 +63,7 @@ def runtime(tmp_path):
         "max_agents": 8,
         "workspace_root": str(root),
         "state_dir": str(tmp_path / "state"),
-        "agent_user": "agentos-agent",
+        "agent_user": "nestlo-agent",
         "agent_home": str(tmp_path / "home"),
         "gateway_enabled": False,
         "limits": {},

@@ -1,6 +1,6 @@
 # Roadmap
 
-Where AgentOS is going after v0.3.0, and why. It is based on an audit of the
+Where Nestlo is going after v0.3.0, and why. It is based on an audit of the
 code and on research into agent sandbox platforms (E2B, Daytona, Modal,
 Cloudflare and Vercel sandboxes), coding-agent protocols (MCP, A2A, ACP),
 LLM gateways (LiteLLM, Portkey, Helicone) and agent security guidance
@@ -14,7 +14,7 @@ releases as work lands; [CHANGELOG.md](../CHANGELOG.md) records what shipped.
   ([orchestration.md](orchestration.md)).
 - GitHub triggers and issue → pull request publishing, with the token held
   by root and never visible to the agent ([triggers.md](triggers.md)).
-- OpenClaw as an opt-in chat front end that submits AgentOS tasks through a
+- OpenClaw as an opt-in chat front end that submits Nestlo tasks through a
   policy bridge and spends through the gateway ([openclaw.md](openclaw.md)).
 - Agent stack: n8n, Open WebUI + Ollama, Flowise, Langflow, AnythingLLM and
   LobeChat from the agent-fleet repo on the host, each with its own gateway
@@ -29,11 +29,11 @@ Finish and secure what is merged before adding more.
 
 - Sandbox: `SystemCallFilter`, `RestrictNamespaces`,
   `RestrictAddressFamilies`, `ProtectProc`, `MemorySwapMax=0` for the
-  sandbox and container modes; a default-deny FORWARD policy on `agentos0`.
+  sandbox and container modes; a default-deny FORWARD policy on `nestlo0`.
 - Gateway: reserve estimated cost before a request so concurrent requests
   cannot overshoot a budget; keep agent tokens out of logs; throttle 401s.
 - Desktop: no fixed password in the desktop VM image; fail clearly when
-  `/etc/agentos/admin-password` is missing; assert SSH is off on the live ISO.
+  `/etc/nestlo/admin-password` is missing; assert SSH is off on the live ISO.
 - Remove the four planned-service stubs (MCP gateway, MCP registry,
   provisioner, memory manager) or implement them.
 - CI: run every VM test (a matrix job), add a binary cache, weekly
@@ -41,7 +41,7 @@ Finish and secure what is merged before adding more.
 
 ## v0.5.0 — Local AI and providers
 
-- `agentos.localAI`: Ollama or llama.cpp (`services.ollama`,
+- `nestlo.localAI`: Ollama or llama.cpp (`services.ollama`,
   `services.llama-cpp`) and Open WebUI, chosen by GPU, registered in the
   gateway as zero-cost providers so cost routing can use them.
 - Gateway providers: Gemini, Bedrock, Vertex, Azure, vLLM; prompt-cache
@@ -84,7 +84,7 @@ Finish and secure what is merged before adding more.
 
 - MCP 2025-11-25 authorization, elicitation and Tasks bridged to the
   message bus.
-- Agent Client Protocol so editors (Zed, JetBrains) can drive AgentOS
+- Agent Client Protocol so editors (Zed, JetBrains) can drive Nestlo
   agents; A2A agent cards for the bus; a system-wide `AGENTS.md`.
 - Signed marketplace index with per-entry integrity hashes; an MCP
   registry mirror.

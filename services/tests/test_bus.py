@@ -80,17 +80,17 @@ def test_direct_messages_and_inbox_privacy(make_gateway):
     status, res = read(gw, "a3", "@a2")
     assert status == 403
     # operators read any inbox over the admin socket
-    status, _, raw = request(gw, "GET", "/_agentos/bus/@a2", admin=True)
+    status, _, raw = request(gw, "GET", "/_nestlo/bus/@a2", admin=True)
     assert status == 200 and json.loads(raw)["messages"][0]["from"] == "a1"
-    assert request(gw, "GET", "/_agentos/bus/@a2")[0] == 403
+    assert request(gw, "GET", "/_nestlo/bus/@a2")[0] == 403
 
 
 def test_operator_posts_and_topic_listing(make_gateway):
     gw = make_gateway()
-    status, _, raw = request(gw, "POST", "/_agentos/bus/ops?from=alice", {"body": "stand down"}, admin=True)
+    status, _, raw = request(gw, "POST", "/_nestlo/bus/ops?from=alice", {"body": "stand down"}, admin=True)
     assert status == 200 and json.loads(raw)["from"] == "alice"
-    assert request(gw, "POST", "/_agentos/bus/ops", {"body": "x"})[0] == 403
-    topics = json.loads(request(gw, "GET", "/_agentos/bus", admin=True)[2])["topics"]
+    assert request(gw, "POST", "/_nestlo/bus/ops", {"body": "x"})[0] == 403
+    topics = json.loads(request(gw, "GET", "/_nestlo/bus", admin=True)[2])["topics"]
     assert topics == ["ops"]
 
 
