@@ -11,6 +11,7 @@ license = { text = "MIT" }
 dependencies = ["redis>=5", "cryptography>=41"]
 
 [project.scripts]
+agentos-audit = "agentos_services.audit:main"
 agentos-model-gateway = "agentos_services.gateway:main"
 agentos-daemon = "agentos_services.daemon:main"
 agentos-dashboard = "agentos_services.dashboard:main"

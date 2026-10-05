@@ -43,6 +43,7 @@ import sys
 import threading
 import time
 
+from . import audit as auditmod
 from . import config as configmod
 from . import policy as policymod
 from . import rbac as rbacmod
@@ -100,8 +101,10 @@ def _note(value):
 
 
 class Orchestrator:
-    def __init__(self, cfg, tasks, runtime=None, clock=time.time, runner=_run, agents_running=None):
+    def __init__(self, cfg, tasks, runtime=None, clock=time.time, runner=_run, agents_running=None, audit=None):
         self.cfg = cfg
+        self.audit = audit if audit is not None else auditmod.client_from_config(cfg, "orchestrator")
+        tasks.audit = self.audit
         self.opts = T.settings(cfg, "orchestrator")
         self.tasks = tasks
         self.tasks.clock = clock       # retry back-off and the scheduling loop must share one clock
@@ -127,6 +130,13 @@ class Orchestrator:
         return "%s%s.service" % (self.opts["runner_unit_prefix"], task_id)
 
     # ── submission ─────────────────────────────────────────────────────
+    def _audit_gate(self):
+        """Strict audit mode: refuse changes while the audit trail cannot be written."""
+        try:
+            self.audit.require()
+        except auditmod.AuditUnavailable as exc:
+            raise ApiError(503, str(exc))
+
     def _check_origin(self, origin, peer):
         """The origin the OpenClaw bridge stamps is reserved for the bridge's own user."""
         if origin == T.RESERVED_ORIGIN and (not peer or peer_identity(peer)[0] != self.opts["bridge_user"]):
@@ -171,6 +181,7 @@ class Orchestrator:
     def submit_ex(self, body, peer=None):
         """Like submit; returns (tasks, deduplicated). When a live task with the
         same dedupe_key exists, that task is returned and nothing is queued."""
+        self._audit_gate()
         if not isinstance(body, dict):
             raise T.ValidationError("task must be a JSON object")
         rt = self.runtime()
@@ -216,11 +227,19 @@ class Orchestrator:
                 self.tasks.set_group_meta(group, {"members": members, "judge_task": created[-1]["id"],
                                                   "winner": None, "winner_error": None})
         log.info("queued %s", ", ".join(t["id"] for t in created))
+        self._audit_submitted(created, submitter, swarm=swarm if swarm > 1 else None)
         return created, False
+
+    def _audit_submitted(self, tasks, submitter, **extra):
+        for t in tasks:
+            self.audit.emit("task.submit", submitter, task=t["id"], agent=t.get("agent"), group=t.get("group"),
+                            workspace=t.get("workspace"), gated=bool(t.get("gate")), origin=t.get("origin"),
+                            kind=t.get("kind"), **extra)
 
     def submit_workflow(self, body, peer=None):
         """Expand {nodes: {name: {...task fields, depends_on: [names], when}}}
         into tasks that share a group. Returns (group, {node name: task})."""
+        self._audit_gate()
         if not isinstance(body, dict) or set(body) - {"nodes", "group", "origin"}:
             raise T.ValidationError("workflow must be an object with nodes (and optionally group, origin)")
         nodes = body.get("nodes")
@@ -306,6 +325,7 @@ class Orchestrator:
                 task["id"] = ids[n]
                 created[n] = self.tasks.create(task)
         log.info("workflow %s: queued %d nodes", group, len(created))
+        self._audit_submitted(list(created.values()), submitter, workflow=group)
         return group, created
 
     # ── control ────────────────────────────────────────────────────────
@@ -313,6 +333,7 @@ class Orchestrator:
         """Cancel one task, or every unfinished task of a group. With RBAC,
         `caller` (an identity from Rbac.identity) may only cancel its own
         tasks unless it is an admin."""
+        self._audit_gate()
         task = self.tasks.get(ident)
         ids = [ident] if task else self.tasks.group_ids(ident)
         if not ids:
@@ -341,6 +362,7 @@ class Orchestrator:
                     log.warning("could not stop %s: %s", task_id, exc)
                 self.tasks.finish(task_id, T.CANCELLED, error="cancelled by operator")
             cancelled.append(task_id)
+            self.audit.emit("task.cancel", caller["name"] if caller else None, task=task_id, request=ident)
         if task and not cancelled:
             raise ApiError(409, "task %s already finished (%s)" % (ident, task["status"]))
         return [self.tasks.get(i) for i in cancelled]
@@ -351,6 +373,7 @@ class Orchestrator:
         The decision (who, when, note) is recorded on the task. Approving
         queues it; rejecting cancels it and every unfinished task that
         depends on it, directly or not. Returns the tasks that changed."""
+        self._audit_gate()
         note = _note(note)
         name, uid = peer_identity(peer)
         record = {"decision": "approved" if approve else "rejected", "by": name, "uid": uid,
@@ -394,6 +417,8 @@ class Orchestrator:
                             changed.append(self.tasks.finish(
                                 t["id"], T.CANCELLED, error="dependency %s was rejected" % task_id))
         log.info("%s %s by %s", record["decision"], task_id, name)
+        self.audit.emit("task.approve" if approve else "task.reject", name, task=task_id, uid=uid, note=note,
+                        cancelled=[t["id"] for t in changed[1:]] or None)
         return changed
 
     # ── scheduling loop ────────────────────────────────────────────────

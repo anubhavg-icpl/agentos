@@ -38,6 +38,7 @@ import threading
 import time
 import urllib.request
 
+from . import audit as auditmod
 from . import config as configmod
 from . import provenance as PV
 from . import publish as P
@@ -81,8 +82,10 @@ class RunnerError(Exception):
 class TaskRunner:
     def __init__(self, cfg, runtime, tasks, clock=time.time, systemd_run="systemd-run",
                  systemctl="systemctl", drop_privileges=True, publisher=None, signer=None,
-                 closure_path="/run/current-system"):
+                 closure_path="/run/current-system", audit=None):
         self.cfg = cfg
+        self.audit = audit if audit is not None else auditmod.client_from_config(cfg, "task-runner")
+        tasks.audit = self.audit
         self.opts = T.settings(cfg, "orchestrator")
         self.runtime = runtime
         self.tasks = tasks
@@ -396,9 +399,11 @@ class TaskRunner:
 
     # ── publishing (publish.py) ────────────────────────────────────────
     def _make_publisher(self, popts):
-        return P.Publisher(popts, P.load_token(popts),
-                           git=P.make_git(self._agent_ids(), {k: v for k, v in os.environ.items()
-                                                    if k in ("PATH", "SSL_CERT_FILE", "GIT_SSL_CAINFO")}))
+        pub = P.Publisher(popts, P.load_token(popts),
+                          git=P.make_git(self._agent_ids(), {k: v for k, v in os.environ.items()
+                                                   if k in ("PATH", "SSL_CERT_FILE", "GIT_SSL_CAINFO")}))
+        pub.audit = self.audit
+        return pub
 
     def publish_marker(self, task_id):
         """A publish request recorded by the trigger service (see triggers.py)."""

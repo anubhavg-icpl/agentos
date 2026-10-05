@@ -47,6 +47,7 @@ Last reviewed: 2026-09-30 (unreleased, after v0.3.0).
 | Container isolation | Working | `agentos spawn --isolation container`: own root, PID, IPC and network namespace on the `agentos0` bridge. See [containers.md](containers.md). |
 | GPU scheduling | Working | `agentos spawn --gpu N` with exclusive locks. See [gpu.md](gpu.md). |
 | Loop detection, cost routing, record/replay, message bus | Working | See [gateway-features.md](gateway-features.md). |
+| Audit log, SIEM export, gateway DLP | Implemented; unit tests plus VM test `audit` | See [audit.md](audit.md) and [dlp.md](dlp.md). The audit log is tamper-evident, not tamper-proof against root. |
 | Orchestrator and scheduler | Working | `agentos-task`, `agentos-schedule`. Tasks run in the systemd sandbox only. See [orchestration.md](orchestration.md). |
 | Web dashboard, fleets, marketplace | Working | See [dashboard.md](dashboard.md), [fleet.md](fleet.md), [marketplace.md](marketplace.md). |
 | Desktop edition | Working, not boot-tested in CI | i3 (gaps) by default, sway or Hyprland; VS Code, Zed, Firefox. See [desktop.md](desktop.md). |

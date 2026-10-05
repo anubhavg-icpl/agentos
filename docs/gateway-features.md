@@ -15,6 +15,8 @@ requests that agents send through `http://127.0.0.1:8080/agent/<id>/<provider>/.
 | [Providers](#providers) | `agentos.networking.providers` | |
 | [Cache pricing and unreadable usage](#cache-pricing-and-unreadable-usage) | `pricing.json` | |
 | [Fallbacks](#fallbacks) | `agentos.networking.providers.<name>.fallbacks` | |
+| DLP on request bodies | `agentos.gateway.dlp` | see [dlp.md](dlp.md) |
+| Audit events for requests, refusals and auth failures | `agentos.audit` | see [audit.md](audit.md) |
 
 The gateway reads its settings from `/etc/agentos/services.toml`; the NixOS
 options below generate the `[limits]`, `[routing]`, `[recording]` and `[bus]`

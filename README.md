@@ -375,6 +375,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | budget-controller | Per-agent and global daily caps, auto-shutdown | `agentos-budget` |
 | circuit-breaker | Rate limit, circuit breaker, resource limits | `agentos-breaker` |
 | secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
+| audit | Tamper-evident audit log, SIEM export, gateway DLP (`agentos.audit`, `agentos.gateway.dlp`) | `agentos-audit` |
 | git-automation | Branch/commit/PR helpers, hooks (auto-commit †) | `agentos-git` |
 | provenance | Signed provenance for agent-authored commits (Ed25519, in-toto/DSSE, commit status) | `agentos-provenance` |
 | provisioning | Env detection, Nix dev shells | `agentos-env` |
@@ -494,6 +495,8 @@ agentos/
 | [docs/FEATURES.md](docs/FEATURES.md) | Detailed documentation of all 27 modules |
 | [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
 | [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
+| [docs/audit.md](docs/audit.md) | Tamper-evident audit log, signed checkpoints, SIEM export (OCSF), control mapping (EU AI Act, SOC 2, ISO 27001) |
+| [docs/dlp.md](docs/dlp.md) | Gateway DLP: secret and PII detectors, log/mask/block modes, per-agent overrides |
 | [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
 | [docs/provenance.md](docs/provenance.md) | Signed provenance for agent commits, verification and the merge gate |
 | [docs/policy.md](docs/policy.md) | Policy-as-code, RBAC roles, four-eyes approval; EU AI Act Art. 14 and ISO 27001 A.5.15 mapping |
@@ -532,6 +535,8 @@ agentos/
 - [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
 - [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
 - [x] Signed provenance for AI-authored commits, verifiable offline ([docs](docs/provenance.md))
+- [x] Hash-chained, signed audit log with SIEM export ([docs](docs/audit.md))
+- [x] DLP in the gateway: mask or block secrets and PII in prompts ([docs](docs/dlp.md))
 - [x] OpenClaw chat front end, opt-in ([docs](docs/openclaw.md))
 - [x] agent-fleet app stack on the host, opt-in ([docs](docs/agent-stack.md))
 - [x] Pullrun packaged, experimental `--isolation pullrun` ([docs](docs/pullrun.md))

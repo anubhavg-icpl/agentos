@@ -42,6 +42,7 @@ import uuid
 
 import redis
 
+from . import audit as auditmod
 from . import config as configmod
 
 QUEUED, RUNNING, AWAITING = "queued", "running", "awaiting_approval"
@@ -498,6 +499,8 @@ def new_id(prefix="task", clock=time.time):
 class TaskStore:
     """Tasks in Redis; wraps a Store for its client, clock and key prefix."""
 
+    audit = auditmod.NullClient()      # replaced by the orchestrator / task runner
+
     def __init__(self, store):
         self.store = store
         self.r = store.r
@@ -588,8 +591,10 @@ class TaskStore:
         kept in `attempts`. The runner calls this too, so retries need no
         cooperation from it."""
         now = self.clock()
+        outcome = []
 
         def mutate(task):
+            outcome.clear()                 # the update may be retried after a concurrent write
             if task["status"] in TERMINAL:
                 return False
             was_running = task["status"] == RUNNING
@@ -609,12 +614,19 @@ class TaskStore:
                 task.update(status=QUEUED, attempt=attempt + 1, not_before=now + delay, started_at=None,
                             finished_at=None, result=None)
                 task.pop("resolved_prompt", None)
+                outcome.append("task.retry")
                 return True
             task["status"] = status
             task["finished_at"] = now
             task["result"] = merged
+            outcome.append("task.finish")
             return True
         task = self.update(task_id, mutate)
+        if outcome and task:
+            self.audit.emit(outcome[0], task.get("submitted_by"), task=task_id, agent=task.get("agent"),
+                            status=task["status"], attempt=task.get("attempt"),
+                            exit_code=(task.get("result") or {}).get("exit_code") if outcome[0] == "task.finish" else None,
+                            group=task.get("group"))
         if task and task.get("role") == "judge" and task["status"] == SUCCEEDED:
             self._record_winner(task)
         return task

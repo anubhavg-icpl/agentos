@@ -359,3 +359,22 @@ def test_publish_refused_when_not_on_the_tasks_own_branch(cfg, runtime, taskstor
     cfg["publish"]["auto"] = True
     fields, error = runner.try_publish({"id": "t", "workspace": "/w/demo"}, "/w/demo", "main", None)
     assert error is None and fields["publish"]["status"] == "skipped" and not fake.calls
+
+
+def test_publish_is_audited(env):
+    class Rec:
+        enabled = True
+
+        def __init__(self):
+            self.events = []
+
+        def emit(self, etype, actor=None, **data):
+            self.events.append((etype, actor, data))
+
+    env.pub.audit = Rec()
+    (env.ws / "new.txt").write_text("agent work\n")
+    env.pub.publish(env.spec, "task-1", str(env.ws), "agent/task-1", env.base)
+    (etype, _, data), = env.pub.audit.events
+    assert etype == "publish.pr" and data["task"] == "task-1" and data["repo"] == REPO
+    assert data["branch"] == "agent/task-1" and data["pr_url"].endswith("/pull/5")
+    assert TOKEN not in repr(env.pub.audit.events)

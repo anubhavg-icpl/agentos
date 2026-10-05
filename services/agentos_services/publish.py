@@ -44,6 +44,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import audit as auditmod
 from . import config as configmod
 from . import provenance as prov
 
@@ -199,6 +200,8 @@ def default_opener():
 
 # ── the publisher ────────────────────────────────────────────────────────
 class Publisher:
+    audit = auditmod.NullClient()       # the task runner sets a real client
+
     def __init__(self, opts, token, git=None, opener=None, home=None):
         self.opts = opts
         self.token = token
@@ -397,4 +400,6 @@ class Publisher:
             else:
                 self.set_status(repo, sha, "failure", "No provenance was attached to this commit", target_url=pr_url)
         log.info("task %s: pushed %s to %s, PR %s", task_id, branch, repo, pr_url)
+        self.audit.emit("publish.pr", None, task=task_id, repo=repo, branch=branch, base=base, pr_url=pr_url,
+                        pr_number=number, pushed_sha=sha)
         return {"pr_url": pr_url, "pr_number": number, "branch": branch, "base": base, "repo": repo, "pushed_sha": sha, **result}
