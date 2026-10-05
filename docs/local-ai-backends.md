@@ -140,8 +140,9 @@ The unit is `DynamicUser`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`,
 no capabilities, `IPAddressDeny=any` when offline, and for GPU builds
 `DevicePolicy=closed` with exactly the device nodes of the listed GPUs
 (`/dev/nvidia<N>` plus the shared control nodes, or `/dev/kfd` and the DRM
-class for AMD). Python bytecode and JIT caches go to the unit's cache
-directory.
+class for AMD). `HOME` and the Python, Triton and JIT caches are the unit's
+cache directory; `/proc/cpuinfo`, `/proc/meminfo` and `/proc/driver/nvidia`
+stay visible (other processes are hidden).
 
 ### GPU scheduling
 
@@ -189,10 +190,16 @@ same request without the key is refused.
   fixes `local-ai`.
 - The LocalAI environment variable names used for the container
   (`LOCALAI_API_KEY`, `LOCALAI_MODELS_PATH`, `LOCALAI_BACKENDS_PATH`,
-  `LOCALAI_THREADS`, `LOCALAI_LOG_LEVEL`, `LOCALAI_PARALLEL_REQUESTS`) follow
-  LocalAI's documentation for v3 and were not run in this tree. If the server
-  starts without requiring the key, check the variable name for the image
-  version you pin.
+  `LOCALAI_THREADS`, `LOCALAI_LOG_LEVEL`, `LOCALAI_PARALLEL_REQUESTS`,
+  `LLAMACPP_PARALLEL`) and the package-mode flags (`--address`, `--threads`,
+  `--models-path`, `--localai-config-dir`, `--parallel-requests`,
+  `--log-level`) were checked against the v3.9.0 sources (`core/cli/run.go`,
+  `core/cli/context/context.go`) and the image digests against Docker Hub; the
+  container itself was not run in this tree. The vLLM flags and variables
+  (`vllm serve`, `--host`, `--port`, `--served-model-name`, `--dtype`,
+  `--gpu-memory-utilization`, `--max-model-len`, `--quantization`,
+  `--tensor-parallel-size`, `VLLM_API_KEY`, `VLLM_NO_USAGE_STATS`,
+  `VLLM_CACHE_ROOT`) were checked against v0.24.0.
 - vLLM from source takes hours to build and its CUDA build is unfree. Use a
   binary cache.
 - The key protects the API port. The gRPC backends of a LocalAI package unit

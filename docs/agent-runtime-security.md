@@ -46,7 +46,7 @@ under `policies`.
 | `raw-socket` | creates an `AF_PACKET` socket, or `SOCK_RAW` on IPv4/IPv6 (netlink is also `SOCK_RAW` and is not matched) | `security_socket_create` | high |
 | `ptrace` | `ptrace` ATTACH, SEIZE, POKE*, SETREGS, SETFPREGS, or `process_vm_writev` | `sys_ptrace`, `sys_process_vm_writev` | high |
 | `kernel-module` | calls `init_module`, `finit_module`, `delete_module` | those syscalls | critical |
-| `egress-bypass` | opens a TCP connection to port 443 (`ports`) on an address that is not loopback or exempt | `security_socket_connect` | medium |
+| `egress-bypass` | opens a TCP connection to port 443 (`ports`) on an address that is not loopback or exempt | `tcp_connect` (`sock` argument: `DPort`, `NotDAddr`) | medium |
 
 ### "Write outside the workspace"
 
@@ -130,7 +130,7 @@ nestlo.agentRuntimeSecurity = {
 ```
 
 In enforce mode the forwarder, on an event of an agent user for one of
-`enforcement.rules`, checks that the PID still has that uid and binary
+`enforcement.rules`, checks that the event is under a minute old and that the PID still has that uid, binary and start time
 (PIDs are reused), then sends SIGKILL to the process, or with `scope = "unit"`
 kills the whole systemd unit it runs in (`systemctl kill`), which ends an
 agent's task. This is detection plus fast reaction, not prevention: the
@@ -222,7 +222,7 @@ other-user filtering, kill with PID check, audit socket delivery).
 ## Limits
 
 - Not run against a live kernel here: the TracingPolicies follow Tetragon
-  1.6.0's CRD and examples (`security_file_open`, `security_socket_connect`,
+  1.6.0's CRD and examples (`security_file_open`, `tcp_connect`,
   `sys_ptrace`, ...) but their loading and hook arguments were not exercised.
   A hook that cannot load makes Tetragon refuse that policy and log why
   (`journalctl -u nestlo-tetragon`); the test lists the loaded policies.

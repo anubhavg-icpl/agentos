@@ -180,6 +180,16 @@ let
     requires = [ "nestlo-agent-security-setup.service" ];
   };
 
+  # promptfoo 0.118: implemented only by the hosted generation service
+  remoteOnlyPlugins = [
+    "hijacking" "ssrf" "bola" "bfla" "off-topic" "mcp" "rag-poisoning" "rag-document-exfiltration"
+    "system-prompt-override" "special-token-injection" "ascii-smuggling" "competitors" "religion" "cca"
+    "reasoning-dos" "harmful:misinformation-disinformation" "harmful:specialized-advice"
+  ];
+  remoteOnlyStrategies = [
+    "jailbreak:composite" "jailbreak:likert" "citation" "gcg" "best-of-n" "goat" "audio" "video"
+  ];
+
   scanNeedsNetwork = sc.inspect || sc.remote.enable;
 in
 {
@@ -299,19 +309,29 @@ in
           "pii:social"
           "pii:api-db"
           "excessive-agency"
-          "hijacking"
           "prompt-extraction"
+          "shell-injection"
         ];
-        description = "promptfoo red-team plugins (what to test): PII leakage, excessive agency, goal hijacking and system-prompt extraction by default.";
+        description = ''
+          promptfoo red-team plugins (what to test): PII leakage, excessive
+          agency, system-prompt extraction and shell injection by default.
+          Plugins that promptfoo only implements on its hosted service
+          (`hijacking`, `ssrf`, `bola`, `off-topic`, ...) generate nothing
+          while `remoteGeneration` is off; an assertion rejects them.
+        '';
       };
 
       strategies = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        default = [ "basic" "prompt-injection" "jailbreak" "jailbreak:composite" ];
+        default = [ "basic" "prompt-injection" "jailbreak" ];
         description = ''
           promptfoo strategies (how each test case is delivered): plain, static
-          prompt-injection templates, iterative jailbreak, composite
-          jailbreak. Newer promptfoo releases renamed `prompt-injection` to
+          prompt-injection templates and iterative jailbreak (the generator
+          model attacks, the gateway carries every call). Strategies that need
+          promptfoo's hosted service (`jailbreak:composite`, `jailbreak:likert`,
+          `citation`, `gcg`, `best-of-n`, `goat`, `audio`, `video`) abort the
+          run while `remoteGeneration` is off; an assertion rejects them.
+          Newer promptfoo releases renamed `prompt-injection` to
           `jailbreak-templates`.
         '';
       };
@@ -351,7 +371,7 @@ in
       evalConfig = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
         default = null;
-        description = "promptfoo eval config `nestlo-eval` runs when `-c` is not given. Default: a small prompt-injection resistance suite generated at run time. Configs can use `{{ env.NESTLO_OPENAI_BASE_URL }}` and `{{ env.NESTLO_ANTHROPIC_BASE_URL }}` for the gateway; `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL` and dummy API keys are set as well.";
+        description = "promptfoo eval config `nestlo-eval` runs when `-c` is not given. Default: a small prompt-injection resistance suite generated at run time. The run sets `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL` (the gateway, carrying the agent token) and dummy API keys, which the `openai:` and `anthropic:` providers pick up, so a config needs no `apiBaseUrl`; `NESTLO_OPENAI_BASE_URL` and `NESTLO_ANTHROPIC_BASE_URL` hold the same URLs for providers that need them spelled out (e.g. `{{ env.NESTLO_OPENAI_BASE_URL }}` in an `http` provider).";
       };
 
       maxFailureRatePercent = lib.mkOption {
@@ -578,7 +598,8 @@ in
           Gateway provider PR-Agent (litellm, OpenAI wire format) talks to:
           `OPENAI__API_BASE` is `<gateway>/agent/<agentId>:<token>/<provider>/v1`. An OpenAI-compatible or
           `anthropic` provider works too (Anthropic's OpenAI-compatible
-          endpoint), with the model name as that provider knows it.
+          endpoint); for a model litellm would route to another vendor by
+          name, set `model` to `openai/<name>` so it uses this endpoint.
         '';
       };
 
@@ -686,6 +707,13 @@ in
         {
           assertion = !(pf.enable || pr.enable) || net.enable;
           message = "nestlo.agentSecurity sends promptfoo and PR-Agent model calls through the Nestlo model gateway (nestlo.networking.enable).";
+        }
+        {
+          assertion = !pf.enable || pf.remoteGeneration
+            || (lib.intersectLists pf.plugins remoteOnlyPlugins == [ ]
+                && lib.intersectLists pf.strategies remoteOnlyStrategies == [ ]);
+          message = "nestlo.agentSecurity.promptfoo: these plugins/strategies only work with promptfoo's hosted generation (set remoteGeneration = true or drop them): "
+            + lib.concatStringsSep ", " (lib.intersectLists pf.plugins remoteOnlyPlugins ++ lib.intersectLists pf.strategies remoteOnlyStrategies);
         }
         {
           assertion = !sc.remote.enable || (sc.remote.acceptDataSharing && sc.remote.tokenFile != null);

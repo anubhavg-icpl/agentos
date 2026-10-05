@@ -19,6 +19,7 @@ import json
 import os
 import re
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -150,15 +151,20 @@ def promptfoo_env(cfg, pf):
 
 
 def provider_entry(m, label=None):
-    """A promptfoo provider for a gateway model. Base URL and key come from the environment."""
+    """A promptfoo provider for a gateway model.
+
+    The base URL (which carries the gateway token) is deliberately NOT in the
+    config: promptfoo 0.118 does not render `{{ env.X }}` in openai/anthropic
+    provider options, but both providers read OPENAI_BASE_URL /
+    ANTHROPIC_BASE_URL from the environment (promptfoo_env sets them), so the
+    generated config file holds no secret.
+    """
     if m["api"] == "anthropic":
         p = {"id": "anthropic:messages:" + m["model"],
-             "config": {"apiBaseUrl": "{{ env.NESTLO_ANTHROPIC_BASE_URL }}", "apiKey": "nestlo-managed",
-                        "max_tokens": m.get("maxTokens", 1024)}}
+             "config": {"apiKey": "nestlo-managed", "max_tokens": m.get("maxTokens", 1024)}}
     else:
         p = {"id": "openai:chat:" + m["model"],
-             "config": {"apiBaseUrl": "{{ env.NESTLO_OPENAI_BASE_URL }}", "apiKey": "nestlo-managed",
-                        "max_tokens": m.get("maxTokens", 1024)}}
+             "config": {"apiKey": "nestlo-managed", "max_tokens": m.get("maxTokens", 1024)}}
     if label:
         p["label"] = label
     return p
@@ -219,7 +225,9 @@ def run_promptfoo(cfg, kind, extra, config_file, out_dir, label):
     env = promptfoo_env(cfg, pf)
     out = os.path.join(out_dir, kind + ".json")
     if kind == "redteam":
-        cmd = [pf["bin"], "redteam", "run", "-c", config_file, "-o", out, "--no-cache"]
+        # `redteam run -o` names the generated test file AND (promptfoo reuses
+        # the path) the eval result file: the final content is the result JSON
+        cmd = [pf["bin"], "redteam", "run", "-c", config_file, "-o", out, "--no-cache", "--no-progress-bar"]
         cmd += ["--max-concurrency", str(pf["maxConcurrency"])]
     else:
         cmd = [pf["bin"], "eval", "-c", config_file, "-o", out, "--no-progress-bar", "--no-cache"]
@@ -312,7 +320,7 @@ def cmd_eval(cfg, args, rest):
 
 
 # ── agent scan ──────────────────────────────────────────────────────────────
-HIDDEN_CHARS = re.compile("[\U000e0000-\U000e007f​-‏⁠-⁤‪-‮⁦-⁩]|(?<!^)﻿")
+HIDDEN_CHARS = re.compile("[\U000e0000-\U000e007f\u200b-\u200f\u2060-\u2064\u202a-\u202e\u2066-\u2069]|(?<!^)\ufeff")
 
 # (rule id, severity, pattern, what it means). Patterns match in tool/prompt
 # descriptions, MCP config text and skill files. Modelled on the tool-poisoning
@@ -453,7 +461,8 @@ def lint_server(name, e, where, findings):
     if isinstance(url, str) and url.startswith("http://") and not re.match(r"http://(127\.0\.0\.1|localhost|\[::1\])[:/]", url):
         findings.append({"severity": "medium", "rule": "plain-http", "where": where + "/url",
                          "message": "remote MCP server over plain HTTP", "excerpt": url})
-    for k, v in (e.get("env") or {}).items():
+    env = e.get("env")
+    for k, v in (env.items() if isinstance(env, dict) else []):
         if SECRET_ENV.search(k) and isinstance(v, str) and len(v) >= 8 and not v.startswith("${"):
             findings.append({"severity": "medium", "rule": "inline-secret", "where": "%s/env/%s" % (where, k),
                              "message": "a literal secret in an MCP config (use ${VAR} and the secrets manager)",
@@ -491,7 +500,9 @@ def lint_skill_dir(root, findings, limit):
             if seen > limit:
                 return seen
             try:
-                if os.path.getsize(path) > 256 * 1024:
+                # regular files only: opening a FIFO or device in a skill dir would block or misread
+                st = os.stat(path)
+                if not stat.S_ISREG(st.st_mode) or st.st_size > 256 * 1024:
                     continue
                 with open(path, errors="replace") as f:
                     text = f.read()
@@ -753,10 +764,13 @@ def cmd_pr_review(cfg, args, rest):
         repo = (m.group(1) or m.group(3)) if m else url
         number = int(m.group(2) or m.group(4)) if m else 0
     else:
-        repo, number = args.target, int(args.pr)
-        if repo not in pr["allowedRepos"] and pr["allowedRepos"]:
-            die("%s is not in nestlo.agentSecurity.prReview.repos" % repo)
+        try:
+            repo, number = args.target, int(args.pr)
+        except ValueError:
+            die("pull request number expected, got %r" % args.pr)
         url = "%s/%s/pull/%d" % (pr["webUrl"].rstrip("/"), repo, number)
+    if pr["allowedRepos"] and repo not in pr["allowedRepos"]:
+        die("%s is not in nestlo.agentSecurity.prReview.repos" % repo)
     ok = review_one(cfg, pr, repo, number, url, env, publish, commands, pr.get("extraInstructions"))
     if ok and not args.dry_run:
         try:

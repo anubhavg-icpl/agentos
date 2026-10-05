@@ -124,7 +124,7 @@ let
     { echo "ARGS $*"; env | grep -E '^(NESTLO_|OPENAI_|ANTHROPIC_|PROMPTFOO_)'; } > "$PWD/stub-env.txt"
     echo '{"results":{"results":[
       {"success":true,"metadata":{"pluginId":"pii:direct"}},
-      {"success":false,"metadata":{"pluginId":"hijacking"}}],
+      {"success":false,"metadata":{"pluginId":"excessive-agency"}}],
       "stats":{"successes":1,"failures":1,"errors":0}}}' > "$out"
     exit 100
   '';
@@ -287,11 +287,11 @@ pkgs.testers.runNixOSTest {
         assert res[0] == 0, res
         rdir = machine.succeed(f"ls -d {STATE}/reports/redteam/*/").strip()
         conf = json.loads(machine.succeed(f"cat {rdir}promptfooconfig.json"))
-        assert set(["pii:direct", "excessive-agency", "hijacking", "prompt-extraction"]) <= set(conf["redteam"]["plugins"]), conf
+        assert set(["pii:direct", "excessive-agency", "shell-injection", "prompt-extraction"]) <= set(conf["redteam"]["plugins"]), conf
         assert "jailbreak" in conf["redteam"]["strategies"] and "prompt-injection" in conf["redteam"]["strategies"], conf
         tgt = conf["targets"][0]
         assert tgt["id"] == "anthropic:messages:claude-sonnet-4-6", tgt
-        assert tgt["config"]["apiBaseUrl"] == "{{ env.NESTLO_ANTHROPIC_BASE_URL }}", tgt
+        assert "apiBaseUrl" not in tgt["config"], tgt
         assert token not in machine.succeed(f"cat {rdir}promptfooconfig.json")
         env = machine.succeed(f"cat {rdir}stub-env.txt")
         assert f"NESTLO_OPENAI_BASE_URL=http://127.0.0.1:8080/agent/redteam:{token}/openai/v1" in env, env
@@ -299,7 +299,7 @@ pkgs.testers.runNixOSTest {
         assert "PROMPTFOO_DISABLE_TELEMETRY=1" in env and "PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION=true" in env, env
         summary = json.loads(machine.succeed(f"cat {rdir}summary.json"))
         assert summary["total"]["passed"] == 1 and summary["total"]["failed"] == 1, summary
-        assert summary["plugins"]["hijacking"]["failed"] == 1, summary
+        assert summary["plugins"]["excessive-agency"]["failed"] == 1, summary
         machine.succeed(f"test -L {STATE}/reports/latest-redteam.json")
         # no token anywhere under /etc or in the unit files
         machine.fail(f"grep -RF {token} /etc/nestlo /etc/static/nestlo /etc/systemd/system")

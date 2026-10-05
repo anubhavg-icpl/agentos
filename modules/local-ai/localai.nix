@@ -385,8 +385,9 @@ in
           ProtectControlGroups = true;
           ProtectClock = true;
           ProtectHostname = true;
+          # other processes are hidden, but /proc/cpuinfo, /proc/meminfo and
+          # /proc/driver/nvidia stay: psutil, torch and the GPU runtimes read them
           ProtectProc = "invisible";
-          ProcSubset = "pid";
           RestrictNamespaces = true;
           RestrictRealtime = true;
           RestrictSUIDSGID = true;

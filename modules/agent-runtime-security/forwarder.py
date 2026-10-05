@@ -15,7 +15,9 @@ an agent" test. Stdlib only. Configuration: a JSON file (--config).
 """
 
 import argparse
+import calendar
 import collections
+import datetime
 import json
 import os
 import pwd
@@ -165,6 +167,8 @@ def arg_value(arg):
                 return val.get("path")
             if "addr" in val:
                 return "%s:%s" % (val.get("addr"), val.get("port", "?"))
+            if "daddr" in val:  # sock_arg (tcp_connect)
+                return "%s:%s" % (val.get("daddr"), val.get("dport", "?"))
             if "family" in val:
                 return str(val.get("family"))
             return json.dumps(val, separators=(",", ":"))[:200]
@@ -220,18 +224,62 @@ def unit_of(pid):
     return None
 
 
+STALE_SECONDS = 60
+
+
+def parse_time(value):
+    """RFC 3339 timestamp (Tetragon: 2024-01-01T00:00:00.123456789Z) to epoch seconds, or None."""
+    if not isinstance(value, str):
+        return None
+    m = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?(Z|[+-]\d\d:\d\d)$", value)
+    if not m:
+        return None
+    try:
+        base = datetime.datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return None
+    offset = 0
+    if m.group(3) != "Z":
+        sign = 1 if m.group(3)[0] == "+" else -1
+        offset = sign * (int(m.group(3)[1:3]) * 3600 + int(m.group(3)[4:6]) * 60)
+    epoch = calendar.timegm(base.timetuple()) - offset
+    return epoch + (float(m.group(2)) if m.group(2) else 0.0)
+
+
+def proc_start_time(pid):
+    """Start of a process as epoch seconds (boot time + starttime ticks), or None."""
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            stat = f.read()
+        # the command name may contain spaces and parentheses: split after the last ')'
+        ticks = int(stat.rsplit(")", 1)[1].split()[19])
+        with open("/proc/stat") as f:
+            btime = next(int(l.split()[1]) for l in f if l.startswith("btime "))
+        return btime + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
+
+
 def enforce(alert, scope, killable_units):
     """Kill the process (or its agent unit). Returns "killed" or a failure word."""
     pid = alert.get("pid")
     if not isinstance(pid, int) or pid <= 1:
         return "kill_skipped"
-    # PIDs are recycled: the process must still run the same binary as the same uid
+    # PIDs are recycled: the event must be fresh, and the process must be the
+    # one the event names (same uid, same binary, same start time)
+    ts = parse_time(alert.get("ts"))
+    if ts is None or abs(time.time() - ts) > STALE_SECONDS:
+        return "kill_skipped"
     try:
         with open("/proc/%d/status" % pid) as f:
             uids = [l for l in f if l.startswith("Uid:")][0].split()[1:3]
         if int(uids[0]) != alert["uid"]:
             return "kill_skipped"
         if os.readlink("/proc/%d/exe" % pid) != alert["binary"]:
+            return "kill_skipped"
+        started = parse_time(alert.get("start_time"))
+        actual = proc_start_time(pid)
+        if started is not None and actual is not None and abs(started - actual) > 3:
             return "kill_skipped"
     except (OSError, IndexError, ValueError):
         return "gone"
@@ -301,6 +349,13 @@ class Tail:
                     time.sleep(1)
                     continue
                 first = False
+            # look for a rotation BEFORE the last read: once the old file has been
+            # renamed nothing is appended to it any more, so an empty read after
+            # that is the real end of it
+            try:
+                rotated = os.stat(self.path).st_ino != os.fstat(self.f.fileno()).st_ino
+            except OSError:
+                rotated = False
             chunk = self.f.read(65536)
             if chunk:
                 self.buf += chunk
@@ -310,12 +365,6 @@ class Tail:
                         yield line
                 self._save()
                 continue
-            # at the end: has the file been rotated away?
-            try:
-                st = os.stat(self.path)
-                rotated = st.st_ino != os.fstat(self.f.fileno()).st_ino
-            except OSError:
-                rotated = False
             if rotated:
                 self._save(force=True)
                 self.f.close()

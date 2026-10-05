@@ -297,6 +297,9 @@ in
         environment = {
           HF_HOME = cfg.cacheDir;
           HF_HUB_CACHE = "${cfg.cacheDir}/hub";
+          # a DynamicUser has no writable home: caches (Triton, torch inductor,
+          # vLLM config and assets) go to the unit's cache directory
+          HOME = "%C/${unitOf name}";
           XDG_CACHE_HOME = "%C/${unitOf name}";
           VLLM_CACHE_ROOT = "%C/${unitOf name}";
           # No usage statistics to vLLM's servers
@@ -335,8 +338,9 @@ in
           ProtectControlGroups = true;
           ProtectClock = true;
           ProtectHostname = true;
+          # other processes are hidden, but /proc/cpuinfo, /proc/meminfo and
+          # /proc/driver/nvidia stay: psutil, torch and the GPU runtimes read them
           ProtectProc = "invisible";
-          ProcSubset = "pid";
           RestrictNamespaces = true;
           RestrictRealtime = true;
           RestrictSUIDSGID = true;

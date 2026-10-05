@@ -23,7 +23,7 @@
 #   write-protected     writes to system locations (/etc, /usr, ...)
 #   write-outside-workspace   (off) every write outside the workspace
 #   raw-socket          AF_PACKET sockets and SOCK_RAW on IPv4/IPv6
-#   ptrace              attach/seize/poke and process_vm_readv/writev
+#   ptrace              attach/seize/poke/set-registers and process_vm_writev
 #   kernel-module       init_module, finit_module, delete_module
 #   egress-bypass       TCP connect to port 443 beyond loopback, that is,
 #                       not through the model gateway on 127.0.0.1
@@ -157,7 +157,8 @@ let
         message = "Agent process used ptrace on another process";
         args = [ { index = 0; type = "int"; } { index = 1; type = "int"; } ];
         selectors = map (killSel "ptrace") [{
-          matchArgs = [{ index = 0; operator = "Equal"; values = [ "4" "5" "6" "13" "15" "16" "16902" ]; }];
+          # more than 4 values: Equal is limited to 4, InMap is not
+          matchArgs = [{ index = 0; operator = "InMap"; values = [ "4" "5" "6" "13" "15" "16" "16902" ]; }];
         }];
       }
       {
@@ -178,24 +179,20 @@ let
       })
       [ "sys_init_module" "sys_finit_module" "sys_delete_module" ]));
 
-    # Matches TCP connects to the listed ports whose destination is not
-    # loopback (the model gateway is 127.0.0.1) or an exempt network, and
-    # whose binary is not an exempt helper (git-remote-https, ...)
+    # Matches TCP connects (tcp_connect, the SYN being sent) to the listed
+    # ports whose destination is not loopback (the model gateway is 127.0.0.1)
+    # or an exempt network, and whose binary is not an exempt helper
+    # (git-remote-https, ...). sockaddr arguments only support SAddr/SPort in
+    # Tetragon, so the `sock` argument of tcp_connect is used (DPort, NotDAddr).
     egress-bypass = lib.optionalAttrs pol.egressBypass.enable (policy "egress-bypass" [{
-      call = "security_socket_connect";
+      call = "tcp_connect";
       syscall = false;
       message = "Agent process connected out without the model gateway";
-      args = [
-        { index = 0; type = "socket"; }
-        { index = 1; type = "sockaddr"; }
-        { index = 2; type = "int"; }
-      ];
+      args = [ { index = 0; type = "sock"; } ];
       selectors = [({
         matchArgs = [
-          { index = 0; operator = "Protocol"; values = [ "IPPROTO_TCP" ]; }
-          { index = 1; operator = "Family"; values = [ "AF_INET" "AF_INET6" ]; }
-          { index = 1; operator = "DPort"; values = map toString pol.egressBypass.ports; }
-          { index = 1; operator = "NotDAddr"; values = loopbackAddrs ++ pol.egressBypass.exemptDestinations; }
+          { index = 0; operator = "DPort"; values = map toString pol.egressBypass.ports; }
+          { index = 0; operator = "NotDAddr"; values = loopbackAddrs ++ pol.egressBypass.exemptDestinations; }
         ];
       } // lib.optionalAttrs (pol.egressBypass.exemptBinaries != [ ]) {
         matchBinaries = [{ operator = "NotPostfix"; values = pol.egressBypass.exemptBinaries; }];
@@ -235,7 +232,7 @@ let
 
   forwarderConfig = pkgs.writeText "nestlo-agent-security-forwarder.json" (builtins.toJSON {
     export_file = cfg.export.file;
-    state_file = "/var/lib/nestlo-agent-security/offset.json";
+    state_file = "/var/lib/nestlo-agent-runtime-security/offset.json";
     alerts_log = "${alertsDir}/alerts.jsonl";
     audit_socket = if cfg.audit.enable then config.nestlo.services.settings.audit.socket else null;
     audit_event_type = cfg.audit.eventType;
@@ -611,8 +608,10 @@ in
 
         # Root with the capabilities BPF and probing other processes need
         # (upstream: CAP_SYS_ADMIN, CAP_SYS_RESOURCE, CAP_NET_ADMIN, CAP_BPF,
-        # CAP_PERFMON, CAP_SYS_PTRACE, CAP_DAC_OVERRIDE for /proc and cgroups)
-        CapabilityBoundingSet = [ "CAP_SYS_ADMIN" "CAP_SYS_RESOURCE" "CAP_NET_ADMIN" "CAP_BPF" "CAP_PERFMON" "CAP_SYS_PTRACE" "CAP_DAC_OVERRIDE" "CAP_DAC_READ_SEARCH" ];
+        # CAP_PERFMON, CAP_SYS_PTRACE, CAP_DAC_OVERRIDE for /proc and cgroups; the
+        # upstream chart runs privileged, so CAP_SYSLOG (kallsyms), CAP_IPC_LOCK and
+        # CAP_CHOWN/CAP_FOWNER (export file rotation) are added defensively)
+        CapabilityBoundingSet = [ "CAP_SYS_ADMIN" "CAP_SYS_RESOURCE" "CAP_NET_ADMIN" "CAP_BPF" "CAP_PERFMON" "CAP_SYS_PTRACE" "CAP_DAC_OVERRIDE" "CAP_DAC_READ_SEARCH" "CAP_SYSLOG" "CAP_IPC_LOCK" "CAP_CHOWN" "CAP_FOWNER" ];
         ProtectSystem = "strict";
         ReadWritePaths = [ exportDir ];
         ProtectHome = true;
@@ -641,7 +640,8 @@ in
       path = [ pkgs.systemd ];
       serviceConfig = {
         ExecStart = "${pkgs.python3}/bin/python3 -u ${./forwarder.py} --config ${forwarderConfig}";
-        StateDirectory = "nestlo-agent-security";
+        # not nestlo-agent-security: that is the state directory of nestlo.agentSecurity (user nestlo-security)
+        StateDirectory = "nestlo-agent-runtime-security";
         StateDirectoryMode = "0700";
         Restart = "always";
         RestartSec = 3;

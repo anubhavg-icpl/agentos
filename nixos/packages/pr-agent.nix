@@ -30,7 +30,7 @@ stdenvNoCC.mkDerivation rec {
     makeWrapper ${uv}/bin/uvx $out/bin/pr-agent \
       --set UV_PYTHON_DOWNLOADS never \
       --set-default SSL_CERT_FILE ${cacert}/etc/ssl/certs/ca-bundle.crt \
-      --add-flags "--python ${python313}/bin/python3 --from 'pr-agent[github]==${version}' pr-agent" \
+      --add-flags "--python ${python313}/bin/python3 --from pr-agent==${version} pr-agent" \
       --prefix PATH : ${lib.makeBinPath [ git ]}
     runHook postInstall
   '';
