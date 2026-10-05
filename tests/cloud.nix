@@ -14,7 +14,7 @@
 let
   domain = "cloud.test";
   # nixpkgs' well-known test key pair (no import from derivation)
-  snakeoil = import "${pkgs.path}/nixos/tests/ssh-keys.nix" pkgs;
+  snakeoil = import (pkgs.path + "/nixos/tests/ssh-keys.nix") pkgs;
   aliceKey = snakeoil.snakeOilEd25519PrivateKey;
   upstream = pkgs.writers.writePython3Bin "upstream" { } ''
     import http.server
