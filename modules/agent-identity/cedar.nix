@@ -87,7 +87,7 @@ let
 
       [ "''${1:-}" = check ] || usage
       shift
-      principal='' action='' resource='' context='' entities=$dir/entities.json json=''
+      principal="" action="" resource="" context="" entities=$dir/entities.json json=""
       while [ $# -gt 0 ]; do
         case $1 in
           --principal) principal=''${2:?}; shift 2 ;;
