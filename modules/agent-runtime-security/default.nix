@@ -265,18 +265,18 @@ in
     package = lib.mkOption {
       type = lib.types.package;
       # Tetragon 1.6.0 refuses to start when any function symbol in
-      # /proc/kallsyms is at address 0, which recent kernels have for weak
-      # symbols that are not linked in (srso_alias_untrain_ret on 7.x), even
-      # with kptr_restrict = 1. Upstream main warns and goes on; this exempts
-      # weak symbols from the check the same way.
+      # /proc/kallsyms is at address 0. The 7.x kernel lists
+      # srso_alias_untrain_ret there even with kptr_restrict = 1 (which this
+      # module sets), so no policy would load. Upstream main only warns; the
+      # check is dropped here the same way.
       default = pkgs.tetragon.overrideAttrs (old: {
         postPatch = (old.postPatch or "") + ''
           substituteInPlace pkg/ksyms/ksyms.go \
             --replace-fail 'if sym.isFunction() && sym.addr == 0 {' \
-                           'if sym.isFunction() && sym.addr == 0 && sym.ty != "w" && sym.ty != "W" {'
+                           'if false && sym.isFunction() && sym.addr == 0 {'
         '';
       });
-      defaultText = lib.literalExpression "pkgs.tetragon (with weak symbols at address 0 allowed)";
+      defaultText = lib.literalExpression "pkgs.tetragon (without the kallsyms address-0 abort)";
       description = "Tetragon package (tetragon and tetra, with the BPF objects under lib/tetragon/bpf).";
     };
 
