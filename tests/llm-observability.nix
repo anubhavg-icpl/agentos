@@ -200,7 +200,7 @@ pkgs.testers.runNixOSTest {
             "http://127.0.0.1:8080/agent/tracer:tracetoken/anthropic/v1/messages "
             "-H 'x-api-key: nestlo-managed' -H 'Content-Type: application/json' "
             "-d '{\"model\":\"claude-test\",\"max_tokens\":16,\"messages\":[]}'").strip()
-        assert code == "429", code
+        assert code == "402", code      # budget_exceeded
         machine.wait_until_succeeds(
             "grep -q error.type /var/lib/otlp-sink/posts.jsonl", timeout=30)
         failed = [s for _, s in spans() if "error.type" in attrs(s)][-1]
