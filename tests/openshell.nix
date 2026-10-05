@@ -150,7 +150,9 @@ pkgs.testers.runNixOSTest {
     with subtest("the units survive a restart of the gateway"):
         machine.succeed("systemctl restart nestlo-openshell-gateway.service")
         machine.wait_until_succeeds("curl -fsS http://127.0.0.1:17671/healthz")
-        machine.succeed("systemctl restart nestlo-openshell-setup.service")
+        # Requires= restarts the setup unit with the gateway; wait for it
+        # instead of restarting it again (that would kill the run in progress)
+        machine.wait_until_succeeds("systemctl is-active nestlo-openshell-setup.service", timeout=300)
         as_user("alice", "openshell status")
   '';
 }

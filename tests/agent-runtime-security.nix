@@ -52,7 +52,6 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     import json
-    import time
 
     alerts = "/var/log/nestlo-agent-runtime-security/alerts.jsonl"
 

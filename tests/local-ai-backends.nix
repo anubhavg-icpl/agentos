@@ -62,7 +62,6 @@ pkgs.testers.runNixOSTest {
   };
 
   testScript = ''
-    import json
 
     def unit_text(name):
         # the unit file plus the start script it runs, if the command is one

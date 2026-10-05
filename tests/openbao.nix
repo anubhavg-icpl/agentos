@@ -94,9 +94,9 @@ pkgs.testers.runNixOSTest {
         machine.fail(f"BAO_TOKEN={tok} BAO_ADDR=https://127.0.0.1:8200 BAO_CACERT=/var/lib/nestlo-openbao/pub/ca.pem bao kv put -mount=nestlo agents/worker/x value=1")
 
     with subtest("the audit device records requests, secrets HMAC-ed"):
-        log = machine.succeed("cat /var/log/nestlo-openbao/audit.log")
-        assert '"type":"request"' in log, log[:500]
-        assert "ghp_worker" not in log and "s3cret" not in log
+        audit_log = machine.succeed("cat /var/log/nestlo-openbao/audit.log")
+        assert '"type":"request"' in audit_log, audit_log[:500]
+        assert "ghp_worker" not in audit_log and "s3cret" not in audit_log
         assert machine.succeed("stat -c %a /var/log/nestlo-openbao/audit.log").strip() == "600"
 
     with subtest("secrets-manager contract: /run/secrets/<NAME>"):

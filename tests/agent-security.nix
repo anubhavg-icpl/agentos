@@ -318,7 +318,7 @@ pkgs.testers.runNixOSTest {
         machine.succeed("systemctl cat nestlo-redteam.timer | grep -q OnCalendar=weekly")
 
     with subtest("agent-scan flags a poisoned tool description and passes a clean config, offline"):
-        res = machine.execute(f"nestlo-agent-scan --no-defaults --no-emit --json --path ${poisoned}")
+        res = machine.execute("nestlo-agent-scan --no-defaults --no-emit --json --path ${poisoned}")
         assert res[0] == 1, res
         report = json.loads(res[1])
         rules = {f["rule"] for f in report["findings"]}
