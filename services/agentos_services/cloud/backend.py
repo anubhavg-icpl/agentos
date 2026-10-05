@@ -33,6 +33,7 @@ import array
 import json
 import os
 import shlex
+import shutil
 import socket
 import subprocess
 import time
@@ -541,5 +542,7 @@ class Nspawn:
             raise BackendError("the VM is not running")
         env = {"HOME": "/root", "USER": "root", "TERM": term or "xterm-256color",
                "PATH": "/root/.nix-profile/bin:/.agentos/profile-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
-        return (["nsenter", "-t", str(pid), "-a", "--", "/bin/sh", "-c", self.ATTACH_SCRIPT, "sh"]
+        # the VM's environment replaces ours, so find nsenter on the helper's PATH first
+        nsenter = shutil.which("nsenter") or "nsenter"
+        return ([nsenter, "-t", str(pid), "-a", "--", "/bin/sh", "-c", self.ATTACH_SCRIPT, "sh"]
                 + (list(argv) or ["/bin/sh", "-l"]), env)

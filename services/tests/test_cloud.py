@@ -819,7 +819,8 @@ def test_nspawn_create_composes_commands(tmp_path):
     with pytest.raises(B.BackendError):
         d.dir("../etc")
     argv, env = d.attach_argv("0a1b2c3d", ["id"], "xterm")
-    assert argv[:5] == ["nsenter", "-t", "4242", "-a", "--"] and argv[-1] == "id" and env["TERM"] == "xterm"
+    assert os.path.basename(argv[0]) == "nsenter" and argv[1:5] == ["-t", "4242", "-a", "--"]
+    assert argv[-1] == "id" and env["TERM"] == "xterm"
 
 
 def test_nspawn_refuses_writes_outside_the_vm(tmp_path):
