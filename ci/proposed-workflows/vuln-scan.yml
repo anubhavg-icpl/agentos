@@ -1,0 +1,90 @@
+name: Vulnerability scan
+
+# Nightly vulnix scan of the closure of the default host. Findings land in
+# the repository's Security tab (code scanning) as SARIF.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vulnix:
+    name: vulnix on the toplevel closure
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Build the toplevel
+        run: nix build -L --out-link toplevel .#nixosConfigurations.agentos.config.system.build.toplevel
+
+      - name: Scan with vulnix (from the pinned nixpkgs)
+        run: |
+          vulnix_pkg=$(nix build --no-link --print-out-paths .#nixosConfigurations.agentos.pkgs.vulnix)
+          # vulnix exits non-zero when it finds something; the report is the product
+          "$vulnix_pkg/bin/vulnix" --json "$(readlink -f toplevel)" > vulnix.json || true
+          test -s vulnix.json || echo '[]' > vulnix.json
+
+      - name: Convert to SARIF
+        run: |
+          python3 - <<'PY'
+          import json
+
+          findings = json.load(open("vulnix.json"))
+          rules, results = {}, []
+          for item in findings:
+              name = item.get("name") or item.get("pname", "unknown")
+              scores = item.get("cvssv3_basescore") or {}
+              for cve in item.get("affected_by", []):
+                  score = float(scores.get(cve, 0) or 0)
+                  rules.setdefault(cve, {
+                      "id": cve,
+                      "name": cve,
+                      "shortDescription": {"text": cve},
+                      "helpUri": "https://nvd.nist.gov/vuln/detail/" + cve,
+                      "properties": {"security-severity": str(score or 5.0)},
+                  })
+                  results.append({
+                      "ruleId": cve,
+                      "level": "error" if score >= 7 else "warning",
+                      "message": {"text": "%s is affected by %s (CVSS %s)" % (name, cve, score or "n/a")},
+                      "locations": [{"physicalLocation": {
+                          "artifactLocation": {"uri": "flake.lock"},
+                          "region": {"startLine": 1}}}],
+                      "partialFingerprints": {"primaryLocationLineHash": "%s:%s" % (name, cve)},
+                  })
+          sarif = {
+              "version": "2.1.0",
+              "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+              "runs": [{
+                  "tool": {"driver": {"name": "vulnix", "informationUri": "https://github.com/nix-community/vulnix",
+                                      "rules": list(rules.values())}},
+                  "results": results,
+              }],
+          }
+          json.dump(sarif, open("vulnix.sarif", "w"))
+          print("%d findings across %d CVEs" % (len(results), len(rules)))
+          PY
+
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: vulnix.sarif
+          category: vulnix
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vulnix-report
+          path: |
+            vulnix.json
+            vulnix.sarif

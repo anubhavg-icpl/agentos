@@ -272,11 +272,13 @@
   '';
 
   # ── Automatic updates (security) ──────────────────────────────────
+  # Defaults only: agentos.upgrade (modules/upgrade) overrides them and adds
+  # the post-upgrade health gate with automatic rollback.
   system.autoUpgrade = {
     enable = true;
-    allowReboot = false;
-    dates = "04:00";
-    flake = "github:anubhavg-icpl/agentos";
+    allowReboot = lib.mkDefault false;
+    dates = lib.mkDefault "04:00";
+    flake = lib.mkDefault "github:anubhavg-icpl/agentos";
   };
 
   system.stateVersion = "24.11";

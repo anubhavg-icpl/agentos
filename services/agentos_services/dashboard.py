@@ -19,6 +19,7 @@ Endpoints (GET):
   /api/spend              today's spend per agent and per model
   /api/history?days=N     spend per day (default 7) with per-agent split
   /api/requests?agent=ID&limit=N   tail of one agent's gateway request log
+  /api/links              configured links to other local web UIs
 """
 
 import argparse
@@ -28,6 +29,7 @@ import http.server
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 import time
@@ -35,6 +37,7 @@ import urllib.parse
 import urllib.request
 
 from . import config as configmod
+from . import health as healthmod
 from .dashboard_page import PAGE
 from .store import Store, connect, utc_date
 
@@ -53,6 +56,7 @@ class Dashboard:
         self.clock = clock
         self.state_dir = cfg["daemon"]["state_dir"]
         self.log_dir = cfg["gateway"]["log_dir"]
+        self.probes = healthmod.Health("dashboard", {"redis": healthmod.redis_check(store)})
 
     # ── auth ───────────────────────────────────────────────────────────
     def token(self):
@@ -81,6 +85,11 @@ class Dashboard:
     # ── routing ────────────────────────────────────────────────────────
     def handle(self, path, authorization):
         """Returns (status, content_type, body_bytes)."""
+        route0 = urllib.parse.urlsplit(path).path.strip("/")
+        if route0 in healthmod.HEALTH_PATHS:
+            # Probes carry no data beyond ok / failed, so they need no token
+            status, obj = self.probes.respond(route0)
+            return status, "application/json", _json(obj)
         if not self.authorized(authorization):
             return 401, "application/json", _json({"error": "unauthorized"})
         parts = urllib.parse.urlsplit(path)
@@ -94,6 +103,7 @@ class Dashboard:
             "/api/spend": self.spend,
             "/api/history": self.history,
             "/api/requests": self.requests,
+            "/api/links": self.links,
         }
         fn = handlers.get(route)
         if fn is None:
@@ -180,6 +190,15 @@ class Dashboard:
             return 400, {"error": "agent must be a valid agent id"}
         limit = _int((query.get("limit") or ["50"])[0], 50, 1, MAX_REQUESTS)
         return 200, {"agent": agent, "requests": tail_log(self.log_dir, agent, limit)}
+
+    def links(self, query):
+        """Links to other local web UIs; only http(s) URLs are passed on."""
+        out = []
+        for link in self.cfg.get("dashboard", {}).get("links", []):
+            name, url = str(link.get("name", "")), str(link.get("url", ""))
+            if name and url.startswith(("http://", "https://")):
+                out.append({"name": name, "url": url})
+        return 200, {"links": out}
 
     def health(self, query):
         services = {}
@@ -288,6 +307,7 @@ def serve(cfg, token_file, listen="127.0.0.1", port=8090, store=None):
     store = store or Store(connect(cfg["redis"]["url"]))
     srv = Server((listen, port), Handler)
     srv.dashboard = Dashboard(cfg, store, token_file)
+    srv.dashboard.probes.add("listening", healthmod.listening_check(lambda: [srv]))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -312,8 +332,11 @@ def main(argv=None):
     cfg = configmod.load(args.config)
     srv = serve(cfg, args.token_file, args.listen, args.port)
     log.info("listening on http://%s:%d", args.listen, args.port)
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    host = "127.0.0.1" if args.listen in ("0.0.0.0", "", "::") else args.listen
     try:
-        threading.Event().wait()
+        healthmod.watchdog_loop(stop, lambda: healthmod.http_probe(host, args.port, "/healthz"))
     except KeyboardInterrupt:
         pass
     finally:

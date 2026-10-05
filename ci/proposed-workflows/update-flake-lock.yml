@@ -1,0 +1,55 @@
+name: Update flake.lock
+
+# Weekly `nix flake update`, opened as a pull request with the gh CLI so no
+# third-party action is involved. Pull requests opened with GITHUB_TOKEN do
+# not trigger other workflows; to run CI on them, set the FLAKE_UPDATE_TOKEN
+# secret to a fine-grained token (contents and pull-requests: write).
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Update lock file
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.FLAKE_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Update inputs
+        run: nix flake update 2>&1 | tee update.log
+
+      - name: Open a pull request
+        run: |
+          if git diff --quiet flake.lock; then
+            echo "flake.lock is up to date"
+            exit 0
+          fi
+          branch="flake-lock-update-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add flake.lock
+          git commit -m "flake.lock: update inputs"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          {
+            echo "Automated weekly update of \`flake.lock\`."
+            echo
+            echo '```'
+            cat update.log
+            echo '```'
+          } > body.md
+          gh pr create --base "${GITHUB_REF_NAME}" --head "$branch" \
+            --title "flake.lock: update inputs" --body-file body.md

@@ -249,6 +249,16 @@ agentos-breaker reset <id>  # close an open circuit
 <sub><i>Grafana on localhost:2342 (<code>ssh -L 2342:localhost:2342 admin@agentos</code>). Agent-level metrics arrive with the daemon.</i></sub>
 </div>
 
+### Operations
+
+| Feature | Description |
+|:---|:---|
+| **Health and readiness** | The gateway, daemon, orchestrator and dashboard answer `/healthz` and `/readyz`; their units are `Type=notify` with a watchdog |
+| **Alerting and SLO** | Prometheus rules for service, gateway, budget, circuit, loop, queue, disk and Redis, plus a 99.5% gateway SLO with burn-rate alerts; optional Alertmanager (`agentos.observability.alertmanager`) |
+| **Backup and restore** | `agentos.backup` (restic) saves state, Redis, audit and secrets; `agentos-restore` with a documented drill and a VM test (`checks.<system>.backup`, needs KVM) |
+| **Safe upgrades** | `agentos.upgrade` wraps `system.autoUpgrade` and rolls back when the health gate fails |
+| **Supply chain** | CycloneDX SBOM (`nix run .#sbom`); release provenance, cosign signature and SHA256SUMS once the workflows in `ci/proposed-workflows/` are installed; see [docs/operations.md](docs/operations.md) |
+
 ---
 
 ## VIBE Integration
@@ -359,12 +369,15 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | networking | Metering model gateway, agent bridge, NAT | automatic |
 | context | Qdrant vector DB, persistent memory | `agentos-memory` |
 | orchestration | Multi-agent coordination † | `agentos-orchestrate` |
+| policy | Typed policy-as-code and RBAC roles on the orchestrator socket | `agentos-task policy show`, `whoami` |
 | mcp-registry | 14 core MCP tools | `agentos-tools` |
 | mcp-servers | 36 MCP servers (8 categories) | `agentos-mcp` |
 | budget-controller | Per-agent and global daily caps, auto-shutdown | `agentos-budget` |
 | circuit-breaker | Rate limit, circuit breaker, resource limits | `agentos-breaker` |
 | secrets-manager | sops-nix encrypted API keys | `agentos-secrets` |
+| audit | Tamper-evident audit log, SIEM export, gateway DLP (`agentos.audit`, `agentos.gateway.dlp`) | `agentos-audit` |
 | git-automation | Branch/commit/PR helpers, hooks (auto-commit †) | `agentos-git` |
+| provenance | Signed provenance for agent-authored commits (Ed25519, in-toto/DSSE, commit status) | `agentos-provenance` |
 | provisioning | Env detection, Nix dev shells | `agentos-env` |
 | scheduler | Cron-like task scheduling † | `agentos-schedule` |
 | notifications | Slack, Discord, webhook | `agentos-notify` |
@@ -456,9 +469,11 @@ agentos/
 │   ├── vibe-integration/           #   5340 skills auto-installer
 │   ├── context/                    #   Qdrant vector memory
 │   ├── orchestration/              #   Multi-agent coordination
+│   ├── policy/                     #   Policy-as-code and RBAC
 │   ├── git-automation/             #   Branch/commit/PR helpers
 │   ├── language-toolchains/        #   20+ language runtimes
 │   ├── databases/                  #   Postgres, Redis, SQLite, DuckDB
+│   ├── backup/ upgrade/            #   restic backups, upgrades with rollback
 │   └── ...                         #   17 more modules
 ├── agents/                         # 20 coding agent packages
 ├── nixos/
@@ -480,11 +495,20 @@ agentos/
 | [docs/FEATURES.md](docs/FEATURES.md) | Detailed documentation of all 27 modules |
 | [docs/ISO-SIZE.md](docs/ISO-SIZE.md) | ISO size analysis by configuration |
 | [docs/gateway-features.md](docs/gateway-features.md) | Loop detection, cost routing, record/replay, message bus |
+| [docs/audit.md](docs/audit.md) | Tamper-evident audit log, signed checkpoints, SIEM export (OCSF), control mapping (EU AI Act, SOC 2, ISO 27001) |
+| [docs/dlp.md](docs/dlp.md) | Gateway DLP: secret and PII detectors, log/mask/block modes, per-agent overrides |
 | [docs/orchestration.md](docs/orchestration.md) | Task queue, pipelines, swarms and schedules |
+| [docs/provenance.md](docs/provenance.md) | Signed provenance for agent commits, verification and the merge gate |
+| [docs/policy.md](docs/policy.md) | Policy-as-code, RBAC roles, four-eyes approval; EU AI Act Art. 14 and ISO 27001 A.5.15 mapping |
 | [docs/openclaw.md](docs/openclaw.md) | OpenClaw chat gateway (Telegram, Slack) wired to the model gateway and the orchestrator |
+| [docs/agent-stack.md](docs/agent-stack.md) | agent-fleet apps (n8n, Open WebUI, Flowise, Langflow, AnythingLLM, LobeChat, OpenMuse) on the host, routed through the model gateway |
 | [docs/containers.md](docs/containers.md) / [docs/gpu.md](docs/gpu.md) | Container isolation and GPU scheduling |
 | [docs/fleet.md](docs/fleet.md) / [docs/marketplace.md](docs/marketplace.md) / [docs/dashboard.md](docs/dashboard.md) | Fleets, marketplace, web dashboard |
+| [docs/agent-fleet-web.md](docs/agent-fleet-web.md) | agent-fleet in-browser chat and hub served on loopback (wllama vendored), Hugging Face deploy tool |
 | [docs/desktop.md](docs/desktop.md) / [docs/aarch64.md](docs/aarch64.md) | Desktop edition and ARM64 |
+| [docs/operations.md](docs/operations.md) | Health endpoints, SLOs and alerts, backup and restore drill, upgrades with automatic rollback, release verification |
+| [docs/runbooks/](docs/runbooks/) | One runbook per Prometheus alert |
+| [SECURITY.md](SECURITY.md) | Vulnerability disclosure policy |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: add modules, agents, and more |
 
@@ -510,7 +534,11 @@ agentos/
 - [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
 - [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
 - [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
+- [x] Signed provenance for AI-authored commits, verifiable offline ([docs](docs/provenance.md))
+- [x] Hash-chained, signed audit log with SIEM export ([docs](docs/audit.md))
+- [x] DLP in the gateway: mask or block secrets and PII in prompts ([docs](docs/dlp.md))
 - [x] OpenClaw chat front end, opt-in ([docs](docs/openclaw.md))
+- [x] agent-fleet app stack on the host, opt-in ([docs](docs/agent-stack.md))
 - [x] Pullrun packaged, experimental `--isolation pullrun` ([docs](docs/pullrun.md))
 
 What comes next, release by release: [docs/ROADMAP.md](docs/ROADMAP.md).

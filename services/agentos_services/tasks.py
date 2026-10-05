@@ -42,6 +42,7 @@ import uuid
 
 import redis
 
+from . import audit as auditmod
 from . import config as configmod
 
 QUEUED, RUNNING, AWAITING = "queued", "running", "awaiting_approval"
@@ -113,13 +114,14 @@ SUBMIT_FIELDS = {
     "agent", "workspace", "prompt", "budget_usd", "timeout_sec",
     "depends_on", "after", "swarm", "group", "isolate", "origin",
     "gate", "max_retries", "backoff_sec", "verify", "judge", "priority",
-    "concurrency_key", "dedupe_key", "publish",
+    "concurrency_key", "dedupe_key", "publish", "model",
 }
 _PLACEHOLDER = re.compile(r"\{(prompt|workspace|task_id)\}")
 _PREV = re.compile(r"\{prev_result\}")
 RESERVED_ORIGIN = "openclaw"
 NODE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
 _NODEREF = re.compile(r"\{nodes\.([A-Za-z0-9][A-Za-z0-9_-]{0,31})\.result\}")
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}")
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@#-]{0,99}")
 
 
@@ -228,6 +230,10 @@ def validate_fields(body, runtime, opts, check_workspace=True, partial=False, no
         if value is not None and (not isinstance(value, str) or not _KEY.fullmatch(value)):
             raise ValidationError("invalid %s" % name)
         out[name] = value
+    model = body.get("model")
+    if model is not None and (not isinstance(model, str) or not _MODEL.fullmatch(model)):
+        raise ValidationError("invalid model")
+    out["model"] = model
     out["verify"] = validate_verify(body.get("verify"))
     out["publish"] = validate_publish(body.get("publish"))
 
@@ -493,6 +499,8 @@ def new_id(prefix="task", clock=time.time):
 class TaskStore:
     """Tasks in Redis; wraps a Store for its client, clock and key prefix."""
 
+    audit = auditmod.NullClient()      # replaced by the orchestrator / task runner
+
     def __init__(self, store):
         self.store = store
         self.r = store.r
@@ -583,8 +591,10 @@ class TaskStore:
         kept in `attempts`. The runner calls this too, so retries need no
         cooperation from it."""
         now = self.clock()
+        outcome = []
 
         def mutate(task):
+            outcome.clear()                 # the update may be retried after a concurrent write
             if task["status"] in TERMINAL:
                 return False
             was_running = task["status"] == RUNNING
@@ -604,12 +614,19 @@ class TaskStore:
                 task.update(status=QUEUED, attempt=attempt + 1, not_before=now + delay, started_at=None,
                             finished_at=None, result=None)
                 task.pop("resolved_prompt", None)
+                outcome.append("task.retry")
                 return True
             task["status"] = status
             task["finished_at"] = now
             task["result"] = merged
+            outcome.append("task.finish")
             return True
         task = self.update(task_id, mutate)
+        if outcome and task:
+            self.audit.emit(outcome[0], task.get("submitted_by"), task=task_id, agent=task.get("agent"),
+                            status=task["status"], attempt=task.get("attempt"),
+                            exit_code=(task.get("result") or {}).get("exit_code") if outcome[0] == "task.finish" else None,
+                            group=task.get("group"))
         if task and task.get("role") == "judge" and task["status"] == SUCCEEDED:
             self._record_winner(task)
         return task
@@ -631,10 +648,22 @@ class TaskStore:
     def active_ids(self):
         return sorted(self.r.smembers(self._k("tasks", "active")))
 
+    def get_many(self, task_ids, chunk=500):
+        """Tasks for `task_ids` (missing ones skipped), one MGET per chunk."""
+        ids = [i for i in task_ids if configmod.valid_agent_id(i)]
+        out = []
+        for n in range(0, len(ids), chunk):
+            raws = self.r.mget([self._k("task", i) for i in ids[n:n + chunk]])
+            out.extend(json.loads(raw) for raw in raws if raw)
+        return out
+
     def active(self):
-        tasks = [self.get(i) for i in self.active_ids()]
-        tasks = [t for t in tasks if t]
+        tasks = self.get_many(self.active_ids())
         return sorted(tasks, key=lambda t: (t["created_at"], t["id"]))
+
+    def since(self, ts):
+        """Every stored task created at or after `ts` (no limit)."""
+        return self.get_many(self.r.zrangebyscore(self._k("tasks"), ts, "+inf"))
 
     def list(self, status=None, group=None, limit=100):
         if group:

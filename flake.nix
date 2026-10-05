@@ -148,6 +148,12 @@
             host = hostFor system "agentos";
             agentPkgs = self.packages.${system};
           };
+          # Eval-only: agentos.policy assertions fire on an invalid policy
+          # and a valid one compiles; rbac defaults (tests/policy-eval.nix).
+          policy-eval = import ./tests/policy-eval.nix {
+            inherit pkgs;
+            host = hostFor system "agentos";
+          };
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           # Boots a VM with the AgentOS service stack and drives an agent
@@ -155,6 +161,8 @@
           e2e = import ./tests/e2e.nix { inherit pkgs agentosModules; };
           # Loop detection, cost routing, record/replay and the message bus.
           gateway-features = import ./tests/gateway-features.nix { inherit pkgs agentosModules; };
+          # Tamper-evident audit log, signed checkpoints, gateway DLP.
+          audit = import ./tests/audit.nix { inherit pkgs agentosModules; };
           # Task queue, orchestrator plans and cron-style schedules.
           orchestration = import ./tests/orchestration.nix { inherit pkgs agentosModules; };
           # GitHub webhooks -> tasks -> pushed branch and pull request.
@@ -165,14 +173,43 @@
           pullrun = import ./tests/pullrun.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
+          # agent-fleet chat and hub: static server on loopback, wasm/COOP/COEP.
+          agent-fleet-web = import ./tests/agent-fleet-web.nix { inherit pkgs agentosModules; };
           # OpenClaw chat gateway wired to the model gateway and orchestrator.
           openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
           # Local inference backend registered as a gateway provider.
           local-ai = import ./tests/local-ai.nix { inherit pkgs agentosModules; };
+          # n8n native, Flowise as a container, secrets and gateway routing.
+          agent-stack = import ./tests/agent-stack.nix { inherit pkgs agentosModules; };
+          # Backs up to a local restic repository, destroys the state, restores it.
+          backup = import ./tests/backup.nix { inherit pkgs agentosModules; };
           # Eval-only: key-only sshd on the live ISO, no fixed VM password.
           hardening = import ./tests/hardening.nix { inherit pkgs self; };
+        });
+
+      # ── Apps ──────────────────────────────────────────────────────────
+      # nix run .#sbom [-- <installable>]: a CycloneDX SBOM of the closure
+      apps = forEachSystem (system:
+        let pkgs = pkgsFor system; in
+        lib.optionalAttrs (pkgs ? sbomnix) {
+          sbom = {
+            type = "app";
+            meta.description = "Write a CycloneDX SBOM (sbom.cdx.json) of the AgentOS system closure";
+            program = lib.getExe (pkgs.writeShellApplication {
+              name = "agentos-sbom";
+              runtimeInputs = [ pkgs.sbomnix pkgs.nix ];
+              text = ''
+                # Usage: nix run .#sbom [-- <installable>]   (OUT=file to rename the output)
+                target="''${1:-${self}#nixosConfigurations.agentos.config.system.build.toplevel}"
+                out="''${OUT:-sbom.cdx.json}"
+                path=$(nix build --no-link --print-out-paths "$target")
+                sbomnix "$path" --cdx "$out"
+                echo "wrote $out (CycloneDX) for $path"
+              '';
+            });
+          };
         });
 
       # ── Dev shell for working on AgentOS itself ───────────────────────
@@ -182,7 +219,7 @@
             packages = with pkgs; [
               nixpkgs-fmt
               nil
-              (python3.withPackages (ps: [ ps.pytest ps.redis ps.fakeredis ]))
+              (python3.withPackages (ps: [ ps.pytest ps.redis ps.fakeredis ps.cryptography ]))
             ];
           };
         });

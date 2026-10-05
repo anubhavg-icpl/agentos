@@ -43,10 +43,14 @@ import sys
 import threading
 import time
 
+from . import audit as auditmod
 from . import config as configmod
+from . import policy as policymod
+from . import rbac as rbacmod
 from . import tasks as T
 from . import unixapi
 from .store import Store, connect
+from . import health as healthmod
 from .unixapi import ApiError, serve_unix
 
 log = logging.getLogger("agentos.orchestrator")
@@ -97,8 +101,10 @@ def _note(value):
 
 
 class Orchestrator:
-    def __init__(self, cfg, tasks, runtime=None, clock=time.time, runner=_run, agents_running=None):
+    def __init__(self, cfg, tasks, runtime=None, clock=time.time, runner=_run, agents_running=None, audit=None):
         self.cfg = cfg
+        self.audit = audit if audit is not None else auditmod.client_from_config(cfg, "orchestrator")
+        tasks.audit = self.audit
         self.opts = T.settings(cfg, "orchestrator")
         self.tasks = tasks
         self.tasks.clock = clock       # retry back-off and the scheduling loop must share one clock
@@ -109,6 +115,13 @@ class Orchestrator:
         self.agents_running = agents_running or (lambda exclude: count_running_agents(self.state_dir, exclude))
         self.lock = threading.RLock()
         self._seq = 0
+        self.policy = policymod.Policy.from_config(cfg)
+        self.rbac = rbacmod.Rbac(cfg)
+        self.tick_beat = healthmod.Heartbeat(clock)   # last successful scheduling pass
+        self.health = healthmod.Health("orchestrator", {
+            "redis": healthmod.redis_check(self.tasks.store),
+            "loop": healthmod.heartbeat_check(self.tick_beat, self.tick_limit()),
+        })
 
     def runtime(self):
         return self._runtime if self._runtime is not None else T.load_runtime(self.opts["runtime_file"])
@@ -117,10 +130,38 @@ class Orchestrator:
         return "%s%s.service" % (self.opts["runner_unit_prefix"], task_id)
 
     # ── submission ─────────────────────────────────────────────────────
+    def _audit_gate(self):
+        """Strict audit mode: refuse changes while the audit trail cannot be written."""
+        try:
+            self.audit.require()
+        except auditmod.AuditUnavailable as exc:
+            raise ApiError(503, str(exc))
+
     def _check_origin(self, origin, peer):
         """The origin the OpenClaw bridge stamps is reserved for the bridge's own user."""
         if origin == T.RESERVED_ORIGIN and (not peer or peer_identity(peer)[0] != self.opts["bridge_user"]):
             raise ApiError(403, "origin %r is reserved for %s" % (origin, self.opts["bridge_user"]))
+
+    def _apply_policy(self, fields, rt, count=1, reserve=None, judge=False):
+        """Resolve and enforce the policy of a task; sets fields["policy"].
+        `reserve` ({entry name: usd}) carries the budget committed earlier in
+        the same request. Refusals are 403 errors that name the rule."""
+        if not self.policy.enabled:
+            return
+        name, eff = self.policy.resolve(policymod.candidates(fields, rt.get("workspace_root")))
+        reserve = reserve if reserve is not None else {}
+        spent = 0.0
+        if eff.get("daily_budget_usd") is not None and not judge:
+            spent = policymod.day_spent(self.tasks.since(policymod.utc_day_start(self.clock())), name, self.clock())
+        try:
+            rec = policymod.enforce(eff, name, self.policy.version, fields, rt, spent_today=spent,
+                                    reserved=reserve.get(name, 0.0), count=count, judge=judge)
+        except policymod.PolicyError as exc:
+            raise ApiError(403, str(exc))
+        if not judge:
+            reserve[name] = reserve.get(name, 0.0) + (fields.get("budget_usd") or 0.0) * count
+            fields["policy"] = rec
+        return rec
 
     def _new_task(self, fields, group, now, submitter, **extra):
         # The sequence number keeps FIFO order for tasks queued in the same instant
@@ -140,6 +181,7 @@ class Orchestrator:
     def submit_ex(self, body, peer=None):
         """Like submit; returns (tasks, deduplicated). When a live task with the
         same dedupe_key exists, that task is returned and nothing is queued."""
+        self._audit_gate()
         if not isinstance(body, dict):
             raise T.ValidationError("task must be a JSON object")
         rt = self.runtime()
@@ -165,6 +207,11 @@ class Orchestrator:
         now = self.clock()
         created = []
         with self.lock:
+            self._apply_policy(fields, rt, count=swarm)
+            if judge:
+                jf = dict(fields, **judge)
+                self._apply_policy(jf, rt, judge=True)
+                judge["budget_usd"] = jf["budget_usd"]
             for _ in range(swarm):
                 task = self._new_task(fields, group, now, submitter)
                 stored = self.tasks.create(task)
@@ -180,11 +227,19 @@ class Orchestrator:
                 self.tasks.set_group_meta(group, {"members": members, "judge_task": created[-1]["id"],
                                                   "winner": None, "winner_error": None})
         log.info("queued %s", ", ".join(t["id"] for t in created))
+        self._audit_submitted(created, submitter, swarm=swarm if swarm > 1 else None)
         return created, False
+
+    def _audit_submitted(self, tasks, submitter, **extra):
+        for t in tasks:
+            self.audit.emit("task.submit", submitter, task=t["id"], agent=t.get("agent"), group=t.get("group"),
+                            workspace=t.get("workspace"), gated=bool(t.get("gate")), origin=t.get("origin"),
+                            kind=t.get("kind"), **extra)
 
     def submit_workflow(self, body, peer=None):
         """Expand {nodes: {name: {...task fields, depends_on: [names], when}}}
         into tasks that share a group. Returns (group, {node name: task})."""
+        self._audit_gate()
         if not isinstance(body, dict) or set(body) - {"nodes", "group", "origin"}:
             raise T.ValidationError("workflow must be an object with nodes (and optionally group, origin)")
         nodes = body.get("nodes")
@@ -239,6 +294,7 @@ class Orchestrator:
 
         ids = {n: T.new_id("task", self.clock) for n in order}
         records = []
+        reserve = {}
         for n in order:
             spec = {k: v for k, v in nodes[n].items() if k not in ("depends_on", "when")}
             spec["depends_on"] = [ids[d] for d in deps[n]]
@@ -258,21 +314,38 @@ class Orchestrator:
         submitter = peer_identity(peer)[0] if peer else None
         now = self.clock()
         created = {}
+        # One lock from the first policy check to the last create, so two
+        # workflows cannot both pass the same daily budget
         with self.lock:
+            for n, fields, _ in records:
+                try:
+                    self._apply_policy(fields, rt, reserve=reserve)
+                except ApiError as exc:
+                    raise ApiError(exc.status, "node %s: %s" % (n, exc.message))
             for n, fields, when in records:
                 task = self._new_task(dict(fields, group=group), group, now, submitter, node=n, when=when)
                 task["id"] = ids[n]
                 created[n] = self.tasks.create(task)
         log.info("workflow %s: queued %d nodes", group, len(created))
+        self._audit_submitted(list(created.values()), submitter, workflow=group)
         return group, created
 
     # ── control ────────────────────────────────────────────────────────
-    def cancel(self, ident):
-        """Cancel one task, or every unfinished task of a group."""
+    def cancel(self, ident, caller=None):
+        """Cancel one task, or every unfinished task of a group. With RBAC,
+        `caller` (an identity from Rbac.identity) may only cancel its own
+        tasks unless it is an admin."""
+        self._audit_gate()
         task = self.tasks.get(ident)
         ids = [ident] if task else self.tasks.group_ids(ident)
         if not ids:
             raise ApiError(404, "no such task or group: %s" % ident)
+        if caller is not None:
+            for task_id in ids:
+                current = self.tasks.get(task_id)
+                if current and current["status"] not in T.TERMINAL and not self.rbac.may_cancel(caller, current):
+                    raise ApiError(403, "rbac: %s may cancel only their own tasks; %s was submitted by %s (role required: admin)" % (
+                        caller["name"], task_id, current.get("submitted_by") or "unknown"))
         cancelled = []
         for task_id in ids:
             with self.lock:
@@ -291,6 +364,7 @@ class Orchestrator:
                     log.warning("could not stop %s: %s", task_id, exc)
                 self.tasks.finish(task_id, T.CANCELLED, error="cancelled by operator")
             cancelled.append(task_id)
+            self.audit.emit("task.cancel", caller["name"] if caller else None, task=task_id, request=ident)
         if task and not cancelled:
             raise ApiError(409, "task %s already finished (%s)" % (ident, task["status"]))
         return [self.tasks.get(i) for i in cancelled]
@@ -301,6 +375,7 @@ class Orchestrator:
         The decision (who, when, note) is recorded on the task. Approving
         queues it; rejecting cancels it and every unfinished task that
         depends on it, directly or not. Returns the tasks that changed."""
+        self._audit_gate()
         note = _note(note)
         name, uid = peer_identity(peer)
         record = {"decision": "approved" if approve else "rejected", "by": name, "uid": uid,
@@ -325,6 +400,9 @@ class Orchestrator:
             current = self.tasks.get(task_id)
             if current is None:
                 raise ApiError(404, "no such task: %s" % task_id)
+            if self.rbac.separate_approver and current.get("submitted_by") == name:
+                raise ApiError(403, "rbac: separate_approver is set; %s submitted %s and cannot %s it" % (
+                    name, task_id, "approve" if approve else "reject"))
             updated = self.tasks.update(task_id, mutate)
             if not won:
                 raise ApiError(409, "task %s is not awaiting approval (%s)" % (task_id, updated["status"]))
@@ -341,6 +419,8 @@ class Orchestrator:
                             changed.append(self.tasks.finish(
                                 t["id"], T.CANCELLED, error="dependency %s was rejected" % task_id))
         log.info("%s %s by %s", record["decision"], task_id, name)
+        self.audit.emit("task.approve" if approve else "task.reject", name, task=task_id, uid=uid, note=note,
+                        cancelled=[t["id"] for t in changed[1:]] or None)
         return changed
 
     # ── scheduling loop ────────────────────────────────────────────────
@@ -435,11 +515,20 @@ class Orchestrator:
             slots = self._free_slots(running)
             busy = {t["workspace"] for t in running if not t.get("isolate")}
             keys = {t["concurrency_key"] for t in running if t.get("concurrency_key")}
+            # Policy max_parallel: a concurrency key with a limit above one
+            pol_running = {}
+            for t in running:
+                pk = (t.get("policy") or {}).get("name")
+                if pk and (t["policy"].get("max_parallel") or 0) > 0:
+                    pol_running[pk] = pol_running.get(pk, 0) + 1
             for task in ready:
                 if slots <= 0:
                     break
                 key = task.get("concurrency_key")
                 if key and key in keys:
+                    continue
+                pol = task.get("policy") or {}
+                if pol.get("max_parallel") and pol_running.get(pol["name"], 0) >= pol["max_parallel"]:
                     continue
                 if not task.get("isolate"):
                     # Non-isolated tasks share the working tree: one at a time
@@ -448,6 +537,8 @@ class Orchestrator:
                     busy.add(task["workspace"])
                 if key:
                     keys.add(key)
+                if pol.get("max_parallel"):
+                    pol_running[pol["name"]] = pol_running.get(pol["name"], 0) + 1
                 if self._dispatch(task):
                     slots -= 1
 
@@ -502,14 +593,22 @@ class Orchestrator:
         log.info("started %s (%s in %s)", task["id"], task["agent"], task["workspace"])
         return True
 
-    def loop(self, stop):
+    def loop(self, stop, notify=None):
         interval = float(self.opts["tick_sec"])
+        notify = notify or (lambda msg: None)
         while not stop.is_set():
             try:
                 self.tick()
+                self.tick_beat.beat()
             except Exception:
                 log.exception("scheduling error")
+            # A hung tick never gets here, so systemd restarts the service;
+            # a failing tick (Redis down) shows in /readyz instead.
+            notify("WATCHDOG=1")
             stop.wait(interval)
+
+    def tick_limit(self):
+        return max(30.0, 5 * float(self.opts["tick_sec"]))
 
     # ── API ────────────────────────────────────────────────────────────
     def group_view(self, name):
@@ -527,8 +626,17 @@ class Orchestrator:
                         winner_error=meta.get("winner_error"))
         return view
 
+    def _need(self, peer, action):
+        """The caller's identity if their roles allow `action`, else a 403."""
+        try:
+            return self.rbac.require(peer, action)
+        except rbacmod.Denied as exc:
+            raise ApiError(403, "rbac: " + exc.message)
+
     def app(self, method, parts, query, body):
         peer = unixapi.peer_credentials()
+        if method == "GET" and len(parts) == 1 and parts[0] in healthmod.HEALTH_PATHS:
+            return self.health.respond(parts[0])
         if method == "GET" and parts == ["health"]:
             active = self.tasks.active()
             return 200, {
@@ -538,14 +646,23 @@ class Orchestrator:
                 "awaiting_approval": sum(1 for t in active if t["status"] == T.AWAITING),
                 "max_workers": int(self.opts["max_workers"]),
             }
+        if method == "GET" and parts == ["whoami"]:
+            ident = self.rbac.identity(peer)
+            return 200, dict(ident, rbac=self.rbac.enabled, separate_approver=self.rbac.separate_approver)
+        if method == "GET" and parts == ["policy"]:
+            self._need(peer, "read")
+            return 200, self.policy.show((query.get("repo") or [None])[0])
         if parts[:1] == ["tasks"]:
             if method == "POST" and len(parts) == 1:
+                self._need(peer, "submit")
                 try:
                     created, deduped = self.submit_ex(body, peer)
                 except T.ValidationError as exc:
                     raise ApiError(400, str(exc))
                 return (200 if deduped else 201), {"tasks": created, "group": created[0].get("group"),
                                                    "deduplicated": deduped}
+            if method == "GET" and len(parts) in (1, 2):
+                self._need(peer, "read")
             if method == "GET" and len(parts) == 1:
                 limit = int((query.get("limit") or ["100"])[0])
                 listed = self.tasks.list((query.get("status") or [None])[0], (query.get("group") or [None])[0],
@@ -557,8 +674,9 @@ class Orchestrator:
                     raise ApiError(404, "no such task: %s" % parts[1])
                 return 200, task
             if method == "POST" and len(parts) == 3 and parts[2] == "cancel":
-                return 200, {"tasks": self.cancel(parts[1])}
+                return 200, {"tasks": self.cancel(parts[1], self._need(peer, "cancel"))}
             if method == "POST" and len(parts) == 3 and parts[2] in ("approve", "reject"):
+                self._need(peer, "decide")
                 try:
                     changed = self.decide(parts[1], parts[2] == "approve", peer,
                                           (body or {}).get("note") if isinstance(body, dict) else None)
@@ -566,6 +684,7 @@ class Orchestrator:
                     raise ApiError(400, str(exc))
                 return 200, {"tasks": changed}
         if method == "POST" and parts == ["workflows"]:
+            self._need(peer, "submit")
             try:
                 group, created = self.submit_workflow(body, peer)
             except T.ValidationError as exc:
@@ -573,6 +692,7 @@ class Orchestrator:
             return 201, {"group": group, "tasks": list(created.values()),
                          "nodes": {n: t["id"] for n, t in created.items()}}
         if method == "GET" and len(parts) == 2 and parts[0] in ("groups", "workflows"):
+            self._need(peer, "read")
             return 200, self.group_view(parts[1])
         raise ApiError(404, "unknown endpoint")
 
@@ -590,12 +710,15 @@ def main(argv=None):
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     server = serve_unix(orch.opts["socket"], orch.app)
+    orch.health.add("socket", healthmod.socket_check(orch.opts["socket"]))
+    healthmod.sd_notify("READY=1")
     log.info("orchestrator listening on %s (max %s workers)", orch.opts["socket"], orch.opts["max_workers"])
     try:
-        orch.loop(stop)
+        orch.loop(stop, healthmod.sd_notify)
     except KeyboardInterrupt:
         pass
     finally:
+        healthmod.sd_notify("STOPPING=1")
         server.shutdown()
 
 

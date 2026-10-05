@@ -51,6 +51,7 @@ import json
 import logging
 import os
 import re
+import signal
 import socketserver
 import sys
 import threading
@@ -59,12 +60,15 @@ import urllib.parse
 
 import redis
 
+from . import audit as auditmod
 from . import config as configmod
 from .bus import Bus, BusError
+from .dlp import Dlp
 from .loops import alternation_run, fingerprint
 from .providers import adapter_for
 from .recorder import Recorder, body_hash, decode_body
 from .routing import Router
+from . import health as healthmod
 from .store import BudgetRefused, Store, connect
 from .usage import GENERATION_KEYS, Pricing, UsageParser, apply_output_cap, estimate_cost, output_cap
 
@@ -97,8 +101,10 @@ class HTTPError(Exception):
 
 
 class Gateway:
-    def __init__(self, cfg, store, pricing, clock=time.time):
+    def __init__(self, cfg, store, pricing, clock=time.time, audit=None):
         self.cfg = cfg
+        self.audit = audit if audit is not None else auditmod.client_from_config(cfg, "gateway")
+        self.dlp = Dlp(cfg["gateway"].get("dlp"), key_source=self._provider_keys, clock=clock)
         self.store = store
         self.pricing = pricing
         self.clock = clock
@@ -113,8 +119,39 @@ class Gateway:
             except ValueError as exc:
                 raise ValueError("provider %r: %s" % (name, exc))
         self._replay_lock = threading.Lock()
+        self.listeners = []
+        self.counters = {"loop_detections": 0, "circuit_opens": 0}
+        self.responses = {}
+        self._count_lock = threading.Lock()
+        self.health = healthmod.Health("gateway", {"redis": healthmod.redis_check(store)})
+
+    def count_response(self, status):
+        with self._count_lock:
+            self.responses[int(status)] = self.responses.get(int(status), 0) + 1
+
+    def bump(self, name):
+        with self._count_lock:
+            self.counters[name] += 1
+
+    def metrics_text(self):
+        with self._count_lock:
+            responses, counters = dict(self.responses), dict(self.counters)
+        lines = ["# HELP agentos_gateway_responses_total Responses sent by the gateway, by HTTP status",
+                 "# TYPE agentos_gateway_responses_total counter"]
+        for code in sorted(responses):
+            lines.append('agentos_gateway_responses_total{code="%d"} %d' % (code, responses[code]))
+        lines += ["# HELP agentos_gateway_loop_detections_total Requests refused by loop detection",
+                  "# TYPE agentos_gateway_loop_detections_total counter",
+                  "agentos_gateway_loop_detections_total %d" % counters["loop_detections"],
+                  "# HELP agentos_gateway_circuit_opens_total Circuit breakers opened",
+                  "# TYPE agentos_gateway_circuit_opens_total counter",
+                  "agentos_gateway_circuit_opens_total %d" % counters["circuit_opens"]]
+        return "\n".join(lines) + "\n"
 
     # ── helpers ────────────────────────────────────────────────────────
+    def _provider_keys(self):
+        return [self.provider_key(name) for name in self.cfg["providers"]]
+
     def provider_key(self, provider):
         prov = self.cfg["providers"][provider]
         path = prov.get("key_file")
@@ -170,6 +207,8 @@ class Gateway:
         try:
             return self.store.reserve(agent, usd, limit, global_limit, self.lease_sec())
         except BudgetRefused as exc:
+            self.audit.emit("budget.refused", agent, scope=exc.scope, spent_usd=round(exc.spent, 6),
+                            reserved_usd=round(exc.reserved, 6), limit_usd=exc.limit, estimate_usd=round(usd, 6))
             if exc.scope == "agent":
                 if exc.spent >= exc.limit:
                     self._budget_exceeded(agent, exc.spent, exc.limit)
@@ -254,6 +293,7 @@ class Gateway:
         if alt >= 4:
             run = alternation_run(self.store.loop_history(agent, fp, window, alt * 2))
             if run >= alt:
+                self.bump("loop_detections")
                 if run == alt:
                     self.store.publish({"type": "loop_detected", "agent": agent, "count": run,
                                         "kind": "alternation", "window_sec": limits["loop_window_sec"]})
@@ -264,6 +304,7 @@ class Gateway:
                     {"Retry-After": "30"},
                 )
         if count >= threshold:
+            self.bump("loop_detections")
             if count == threshold:
                 self.store.publish({"type": "loop_detected", "agent": agent, "count": count,
                                     "window_sec": limits["loop_window_sec"]})
@@ -284,6 +325,7 @@ class Gateway:
         max_failures = int(limits["max_consecutive_failures"])
         if max_failures > 0 and failures >= max_failures:
             until = self.store.open_circuit(agent, float(limits["cooldown_sec"]))
+            self.bump("circuit_opens")
             self.store.publish({"type": "circuit_open", "agent": agent, "failures": failures, "until": until})
 
     # ── request handling ───────────────────────────────────────────────
@@ -310,7 +352,10 @@ class Gateway:
         given = hashlib.sha256(token.encode()).hexdigest()
         if not token or not expected or not hmac.compare_digest(given, expected):
             max_fail = int(self.cfg["limits"].get("max_auth_failures_per_minute", 0))
-            if max_fail > 0 and self.store.auth_failure(client or "?") > max_fail:
+            throttled = max_fail > 0 and self.store.auth_failure(client or "?") > max_fail
+            self.audit.emit("auth.failure", None, claimed_agent=agent, client=client or "?",
+                            reason="no_token" if not token else "bad_token", throttled=throttled)
+            if throttled:
                 raise HTTPError(
                     429, "rate_limited",
                     "AgentOS: too many failed authentications from this address; retry later",
@@ -325,6 +370,11 @@ class Gateway:
         parts = [urllib.parse.unquote(p) for p in path.path.split("/") if p]
         authed = None
         try:
+            if len(parts) == 1 and parts[0] in healthmod.HEALTH_PATHS and req.command in ("GET", "HEAD"):
+                status, obj = self.health.respond(parts[0])
+                return send_json(req, status, obj)
+            if parts == ["metrics"] and req.command == "GET":
+                return self.metrics(req)
             if parts[:1] == ["_agentos"]:
                 return self.api(req, parts[1:], urllib.parse.parse_qs(path.query), admin)
             if len(parts) >= 3 and parts[0] == "agent" and parts[2] == "bus":
@@ -356,6 +406,9 @@ class Gateway:
             error = {"type": exc.error_type, "message": exc.message}
             if exc.details:
                 error["details"] = exc.details
+            if authed:          # recorded before the client sees the refusal
+                self.audit.emit("gateway.request", authed, method=req.command, status=exc.status, error=exc.error_type,
+                                duration_ms=int((self.clock() - started) * 1000))
             send_json(req, exc.status, {"type": "error", "error": error}, exc.headers)
             # Only account errors to agents that proved who they are
             if authed:
@@ -365,12 +418,29 @@ class Gateway:
                     log.error("cannot count request: %s", err)
                 self.write_log(authed, {"method": req.command, "path": redact(path.path), "status": exc.status, "error": exc.error_type})
 
+    def metrics(self, req):
+        # Prometheus scrapes over loopback; agents on the bridge must not read it
+        addr = req.client_address
+        local = not isinstance(addr, tuple) or addr[0] in ("127.0.0.1", "::1")
+        if not local:
+            raise HTTPError(403, "permission_error", "metrics are only served to loopback clients")
+        data = self.metrics_text().encode()
+        req.send_response(200)
+        req.send_header("Content-Type", "text/plain; version=0.0.4")
+        req.send_header("Content-Length", str(len(data)))
+        req.send_header("Connection", "close")
+        req.end_headers()
+        req.wfile.write(data)
+
     def api(self, req, parts, query, admin):
         if req.command == "GET" and parts == ["health"]:
-            return send_json(req, 200, {
+            health = {
                 "status": "ok",
                 "providers": {n: {"managed_key": self.provider_key(n) is not None} for n in self.cfg["providers"]},
-            })
+            }
+            if self.audit.enabled:
+                health["audit"] = self.audit.stats()
+            return send_json(req, 200, health)
         if req.command == "GET" and parts == ["spend"]:
             date = (query.get("date") or [None])[0]
             snap = self.store.snapshot(date, self.cfg["budget"]["default_daily_usd"])
@@ -528,6 +598,8 @@ class Gateway:
             "model": entry.get("model"), "replayed": "%s/%d" % (state["recording"], seq),
             "cost_usd": 0.0, "duration_ms": int((self.clock() - started) * 1000),
         })
+        self.audit.emit("gateway.request", agent, method=req.command, status=resp["status"], model=entry.get("model"),
+                        cost_usd=0.0, replayed=True, duration_ms=int((self.clock() - started) * 1000))
         data = decode_body(resp.get("body"), resp.get("body_encoding"))
         req.send_response(resp["status"])
         for name, value in resp.get("headers", {}).items():
@@ -538,24 +610,67 @@ class Gateway:
         req.end_headers()
         write_chunk(req, data)
 
+    def check_audit(self):
+        """Strict audit mode: no work while the audit trail cannot be written."""
+        try:
+            self.audit.require()
+        except auditmod.AuditUnavailable as exc:
+            raise HTTPError(503, "audit_unavailable", str(exc), {"Retry-After": "5"})
+
+    def scan_request(self, req, agent, provider, body, payload):
+        """DLP stage: returns the (body, payload) to forward, or raises 403 in block mode."""
+        policy = self.dlp.policy_for(agent)
+        if not policy.active or not body:
+            return body, payload
+        if self.dlp.too_big(policy, body):
+            self.audit.emit("dlp.detection", agent, direction="request", mode=policy.mode, action="blocked",
+                            provider=provider, detections={}, reason="body larger than the scan limit")
+            raise HTTPError(413, "dlp_scan_limit", "request is larger than the DLP scan limit (%d bytes) and "
+                            "cannot be checked" % self.dlp.max_scan_bytes)
+        out = self.dlp.scan_body(policy, body, payload, req.headers.get("Content-Type"))
+        if out.counts:
+            req.dlp_found = out.counts
+            self.audit.emit("dlp.detection", agent, direction="request", mode=policy.mode, action=out.action,
+                            provider=provider, detections=out.counts)
+            log.warning("DLP %s request of agent %s: %s", out.action, agent, ", ".join(out.types()))
+        if out.action == "blocked":
+            raise HTTPError(403, "dlp_blocked", "request blocked by AgentOS DLP policy: detected %s" % ", ".join(out.types()))
+        return out.body, out.payload
+
+    def scan_response(self, agent, provider, policy, ctype, data):
+        """DLP over a buffered response: (status override or None, body)."""
+        out = self.dlp.scan_body(policy, data, None, ctype, request=False)
+        if not out.counts:
+            return None, data
+        self.audit.emit("dlp.detection", agent, direction="response", mode=policy.mode, action=out.action,
+                        provider=provider, detections=out.counts)
+        log.warning("DLP %s response for agent %s: %s", out.action, agent, ", ".join(out.types()))
+        if out.action == "blocked":
+            err = {"type": "error", "error": {"type": "dlp_blocked", "message":
+                   "response blocked by AgentOS DLP policy: detected %s" % ", ".join(out.types())}}
+            return 502, json.dumps(err).encode()
+        return None, out.body
+
     def proxy(self, req, agent, provider, rest, query, started):
+        self.check_audit()
         replaying = self.store.replay_state(agent) is not None
         if not replaying:
             self.admit(agent)           # circuit breaker and rate limit
 
         body = read_body(req, int(self.cfg["gateway"]["max_request_bytes"]))
-        orig_body = body
-        route = None
-        if replaying:
-            return self.serve_replay(req, agent, "/".join(urllib.parse.quote(p, safe=":") for p in rest),
-                                     orig_body, started)
-        adapter = adapter_for(self.cfg["providers"][provider])
         payload = None
         if body and "json" in (req.headers.get("Content-Type") or "json"):
             try:
                 payload = json.loads(body)
             except ValueError:
                 payload = None
+        body, payload = self.scan_request(req, agent, provider, body, payload)
+        orig_body = body            # what is recorded: never the unmasked text
+        route = None
+        if replaying:
+            return self.serve_replay(req, agent, "/".join(urllib.parse.quote(p, safe=":") for p in rest),
+                                     orig_body, started)
+        adapter = adapter_for(self.cfg["providers"][provider])
         rest = list(rest)
         request_model = adapter.request_model(payload, rest)
         edited = False
@@ -698,9 +813,11 @@ class Gateway:
                 request_model, route, resv):
         rest_path = "/".join(urllib.parse.quote(p, safe=":") for p in rest)
         record_seq = None
+        dlp_skipped = dlp_blocked_response = False
         captured = bytearray()
         capture_cap = int(self.cfg["recording"]["max_body_bytes"])
         truncated = False
+        recorded_status = None
         if self.cfg["recording"]["enabled"] or self.store.record_enabled(agent):
             record_seq = self.recorder.next_seq(agent)
 
@@ -777,17 +894,28 @@ class Gateway:
                 log.error("cannot update circuit breaker: %s", exc)     # response is already in hand
 
             parser = UsageParser(api, resp.getheader("Content-Type", ""), request_model)
-            req.send_response(resp.status)
-            for name, value in resp.getheaders():
-                lname = name.lower()
-                if lname in HOP_BY_HOP or lname == "content-length":
-                    continue
-                req.send_header(name, value)
-            length = resp.getheader("Content-Length")
-            if length is not None:
-                req.send_header("Content-Length", length)
-            req.send_header("Connection", "close")
-            req.end_headers()
+
+            def send_head(status, length):
+                req.send_response(status)
+                for hname, value in resp.getheaders():
+                    lname = hname.lower()
+                    if lname in HOP_BY_HOP or lname == "content-length":
+                        continue
+                    req.send_header(hname, value)
+                if length is not None:
+                    req.send_header("Content-Length", str(length))
+                req.send_header("Connection", "close")
+                req.end_headers()
+
+            # DLP on a response needs the whole body, so only a non-streaming,
+            # unencoded response is held back; a stream passes through as is.
+            policy = self.dlp.policy_for(agent)
+            hold = (policy.active and policy.scan_responses and req.command != "HEAD"
+                    and "event-stream" not in resp.getheader("Content-Type", "").lower()
+                    and not resp.getheader("Content-Encoding"))
+            held, held_bytes = [], 0
+            if not hold:
+                send_head(resp.status, resp.getheader("Content-Length"))
             # Hold back the last chunk until the request is accounted for, so
             # a client never sees the end of a response before its cost is
             # recorded (its next request must see the updated spend).
@@ -806,6 +934,21 @@ class Gateway:
                         captured += chunk
                     else:
                         truncated = True
+                if hold:
+                    held.append(chunk)
+                    held_bytes += len(chunk)
+                    if held_bytes <= self.dlp.max_scan_bytes:
+                        continue
+                    # too large to scan: stream what is held and the rest unscanned
+                    hold = False
+                    send_head(resp.status, resp.getheader("Content-Length"))
+                    for part in held[:-1]:
+                        if not client_gone:
+                            client_gone = not write_chunk(req, part)
+                    held = []
+                    pending = chunk
+                    dlp_skipped = True
+                    continue
                 if pending and not client_gone:
                     client_gone = not write_chunk(req, pending)
                 pending = chunk
@@ -813,6 +956,18 @@ class Gateway:
                     # Stop reading: closing the upstream connection cancels
                     # generation; usage seen so far is still recorded.
                     break
+            if hold:
+                status_override, data = self.scan_response(agent, provider, policy,
+                                                           resp.getheader("Content-Type", ""), b"".join(held))
+                send_head(status_override or resp.status, len(data))
+                pending = data
+                if status_override:
+                    dlp_blocked_response = True
+                if record_seq is not None:
+                    # Record what the client received, never the unscanned body
+                    captured = bytearray(data[:capture_cap])
+                    truncated = len(data) > capture_cap
+                    recorded_status = status_override or resp.status
         finally:
             if conn is not None:
                 conn.close()
@@ -826,12 +981,16 @@ class Gateway:
             }
             if client_gone:
                 entry["client_disconnected"] = True
+            if getattr(req, "dlp_found", None):
+                entry["dlp"] = req.dlp_found
+            if dlp_blocked_response:
+                entry["dlp_response"] = "blocked"
             if route:
                 entry.update(route)
             if record_seq is not None:
                 rec = self.recorder.build(
                     agent, record_seq, round(self.clock(), 3), provider, req.command, "/" + rest_path, query,
-                    orig_body, resp.status, dict(resp.getheaders()), bytes(captured), model, parser.streaming,
+                    orig_body, recorded_status or resp.status, dict(resp.getheaders()), bytes(captured), model, parser.streaming,
                     truncated)
                 if client_gone:
                     rec["incomplete"] = True
@@ -847,6 +1006,10 @@ class Gateway:
                 entry.update(cost_usd=round(usd, 6), priced=False, usage_estimated=True)
             self.store.count_request(agent, resp.status)
             self.write_log(agent, entry)
+            self.audit.emit("gateway.request", agent, method=req.command, provider=provider, model=model,
+                            status=resp.status, cost_usd=entry.get("cost_usd", 0.0), tokens=usage or None,
+                            duration_ms=entry["duration_ms"], original_model=entry.get("original_model"),
+                            fallback=entry.get("fallback_provider"), dlp_response=entry.get("dlp_response"))
         except Exception:
             log.exception("accounting failed for agent %s", agent)
         finally:
@@ -919,12 +1082,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "agentos-gateway"
 
+    _status = 0
+
+    def send_response(self, code, message=None):
+        self._status = code
+        super().send_response(code, message)
+
     def _dispatch(self):
         self.close_connection = True
+        gw = self.server.gateway
         try:
-            self.server.gateway.dispatch(self, self.server.admin)
+            gw.dispatch(self, self.server.admin)
         except Exception:  # never let one request kill the server
             log.exception("error handling %s %s", self.command, redact(self.path))
+        probe = self.path.split("?")[0].strip("/") in healthmod.HEALTH_PATHS + ("metrics",)
+        if not probe:
+            gw.count_response(self._status or 500)
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _dispatch
 
@@ -969,6 +1142,10 @@ def serve(cfg, store=None, pricing=None):
         os.chmod(sock_path, 0o660)
         unix.gateway = gw
         servers.append(unix)
+    gw.listeners = servers
+    gw.health.add("listening", healthmod.listening_check(lambda: gw.listeners))
+    if sock_path:
+        gw.health.add("admin_socket", healthmod.socket_check(sock_path))
     for srv in servers:
         threading.Thread(target=srv.serve_forever, daemon=True).start()
     return gw, servers
@@ -984,8 +1161,21 @@ def main(argv=None):
     cfg = configmod.load(args.config)
     _, servers = serve(cfg)
     log.info("listening on %s port %s", ", ".join(listen_addresses(cfg)), cfg["gateway"]["port"])
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    sock_path = cfg["gateway"].get("admin_socket")
+    port = int(cfg["gateway"]["port"])
+    first = listen_addresses(cfg)[0]
+    host = "127.0.0.1" if first in ("0.0.0.0", "") else first
+
+    def probe():
+        # Liveness through the real serving path; Redis is /readyz's concern
+        if sock_path:
+            return healthmod.unix_probe(sock_path, "/healthz")
+        return healthmod.http_probe(host, port, "/healthz")
+
     try:
-        threading.Event().wait()
+        healthmod.watchdog_loop(stop, probe)
     except KeyboardInterrupt:
         pass
     finally:

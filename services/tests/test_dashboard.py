@@ -42,9 +42,20 @@ def call(dash, path):
 
 def test_auth_required_everywhere(env):
     dash = env[0]
-    for path in ("/", "/api/agents", "/api/spend", "/api/health", "/nope"):
+    for path in ("/", "/api/agents", "/api/spend", "/api/health", "/api/links", "/nope"):
         for header in (None, "", "Bearer wrong", basic("wrong"), "Token " + TOKEN, "Basic !!!"):
             assert dash.handle(path, header)[0] == 401, (path, header)
+
+
+def test_links_only_pass_http_urls(env):
+    dash = env[0]
+    assert call(dash, "/api/links") == (200, {"links": []})
+    dash.cfg["dashboard"]["links"] = [
+        {"name": "Chat", "url": "http://127.0.0.1:8484/chat/"},
+        {"name": "Bad", "url": "javascript:alert(1)"},
+        {"name": "", "url": "http://x"},
+    ]
+    assert call(dash, "/api/links")[1] == {"links": [{"name": "Chat", "url": "http://127.0.0.1:8484/chat/"}]}
 
 
 def test_auth_accepts_bearer_and_basic(env):

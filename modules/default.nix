@@ -11,8 +11,10 @@
     # Core infrastructure
     ./runtime
     ./security
+    ./audit
     ./observability
     ./dashboard
+    ./agent-fleet-web
     ./fleet
     ./marketplace
     ./storage
@@ -21,6 +23,7 @@
     # Agent intelligence
     ./context
     ./orchestration
+    ./policy
     ./openclaw
 
     # Tool ecosystem
@@ -32,9 +35,12 @@
     ./budget-controller
     ./circuit-breaker
     ./secrets-manager
+    ./backup
+    ./upgrade
 
     # Developer experience
     ./git-automation
+    ./provenance
     ./provisioning
     ./editors
     ./desktop
@@ -58,6 +64,7 @@
     ./ai-ml
     ./gpu
     ./local-ai
+    ./agent-stack
 
     # VIBE integration (853 modes, 5340 skills)
     ./vibe-integration
