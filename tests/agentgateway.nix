@@ -2,10 +2,8 @@
 #
 #   nix build .#checks.x86_64-linux.agentgateway
 #
-# UNBUILT / ONLY WHEN THE PACKAGE BUILDS: this test runs the real
-# `agentgateway` binary (nixos/packages/agentgateway.nix, a Rust build whose
-# `cargoHash` is still a placeholder). Add it to flake.nix checks only after
-# the package has been built once.
+# Runs the real `agentgateway` binary (nixos/packages/agentgateway.nix, a
+# Rust build from source: expect a long first build).
 #
 # Checks:
 #   the generated configuration passes `agentgateway --validate-only`

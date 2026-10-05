@@ -200,6 +200,9 @@
           # OpenShell gateway (mTLS, podman driver), CLI, declared policies, Nestlo
           # model gateway agent for sandbox inference.
           openshell = import ./tests/openshell.nix { inherit pkgs nestloModules; };
+          # agentgateway as the MCP enforcement point: per-agent keys, tool
+          # authorization, a cleared environment for stdio servers.
+          agentgateway = import ./tests/agentgateway.nix { inherit pkgs nestloModules; };
           # Agent Orca: k3s, chart, ModelProviders through the gateway, UI
           orca = import ./tests/orca.nix { inherit pkgs nestloModules; };
           # promptfoo red-team, MCP/skill admission scan, PR-Agent, through the gateway
