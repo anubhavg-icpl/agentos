@@ -555,8 +555,9 @@ def test_orchestrator_audits_submit_approve_reject_cancel_and_finish(orch):
     fin, = fake.of("task.finish")
     assert fin[2]["task"] == g["id"] and fin[2]["status"] == "succeeded" and fin[2]["exit_code"] == 0
     c, = orch.submit({"agent": "fake", "workspace": "demo", "prompt": "later"}, peer)
-    orch.cancel(c["id"], peer)
-    assert fake.of("task.cancel")[0][2]["task"] == c["id"]
+    orch.cancel(c["id"], orch.rbac.identity(peer))
+    (_, who, data), = fake.of("task.cancel")
+    assert data["task"] == c["id"] and who
     assert "SECRET PROMPT TEXT" not in json.dumps(fake.events)
 
 
