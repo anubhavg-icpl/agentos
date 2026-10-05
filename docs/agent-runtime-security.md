@@ -174,6 +174,12 @@ is `1`: kernel pointers stay hidden from every process without `CAP_SYSLOG`
 `boot.kernel.sysctl."kernel.kptr_restrict"` with `lib.mkForce` if you need 2
 and can do without the monitor.
 
+Tetragon 1.6.0 also refuses to start when any function symbol in
+`/proc/kallsyms` sits at address 0. Recent kernels list weak symbols that
+are not linked in that way (`srso_alias_untrain_ret` on 7.x), so the
+module's default `package` carries a one-line patch that exempts weak
+symbols from that check, as upstream's main branch does.
+
 ## Options
 
 | Option | Default | Meaning |
