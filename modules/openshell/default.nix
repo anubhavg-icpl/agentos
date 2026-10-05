@@ -285,9 +285,22 @@ let
       done
       ${cli} status >/dev/null
 
+      # Import a profile, or update it when it already exists (every run
+      # after the first). An update must carry the profile's current
+      # resource_version, so it is read from the gateway and appended to a
+      # copy of the file (a top-level YAML key).
       import_profile() {
-        ${cli} profile import -f "$2" --global >/dev/null 2>&1 \
-          || ${cli} profile update "$1" -f "$2" --global >/dev/null
+        if ${cli} profile import -f "$2" --global >/dev/null 2>&1; then
+          return 0
+        fi
+        local rv tmp
+        rv=$(${cli} profile export "$1" --global -o json \
+          | ${pkgs.jq}/bin/jq -r 'if type == "array" then .[0] else . end | .resource_version // empty')
+        [ -n "$rv" ] || { echo "openshell: cannot read resource_version of profile $1" >&2; return 1; }
+        tmp=$(mktemp)
+        { cat "$2"; printf '\nresource_version: %s\n' "$rv"; } > "$tmp"
+        ${cli} profile update "$1" -f "$tmp" --global >/dev/null
+        rm -f "$tmp"
       }
       ensure_provider() {
         local name=$1; shift
