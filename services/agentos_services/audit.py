@@ -76,6 +76,8 @@ EVENT_TYPES = frozenset({
     "task.submit", "task.approve", "task.reject", "task.cancel", "task.retry", "task.finish",
     "agent.spawn", "agent.kill", "agent.exit",
     "publish.pr",
+    "factory.item.created", "factory.item.state", "factory.item.decision", "factory.item.publish",
+    "factory.line.pause",
     "audit.dropped",        # client-side loss counter
 })
 WRITER_TYPES = frozenset({CHECKPOINT, "audit.retention", "audit.start"})
