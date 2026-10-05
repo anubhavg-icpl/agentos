@@ -578,7 +578,8 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${setupScript}/bin/nestlo-openbao-setup";
-        TimeoutStartSec = 180;
+        # init, policies and roles are ~20 CLI calls (seconds each on a slow VM)
+        TimeoutStartSec = 600;
         ProtectSystem = "strict";
         ReadWritePaths = [ stateDir (builtins.dirOf cfg.unsealKeyFile) ];
         PrivateTmp = true;
