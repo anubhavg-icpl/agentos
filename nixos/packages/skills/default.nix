@@ -15,4 +15,5 @@ in
   anti-slop = callPack ./packs/anti-slop.nix;
   img2threejs = callPack ./packs/img2threejs.nix;
   ui-skills = callPack ./packs/ui-skills.nix;
+  reticle = callPack ./packs/reticle.nix;
 }
