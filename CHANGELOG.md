@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-05
+
 ### Added
 - **Agent Beacon** (`nestlo.beacon`, docs/beacon.md): [Agent Beacon](https://github.com/Asymptote-Labs/agent-beacon) built from source (`packages.<system>.agent-beacon`: `beacon`, `beacon-hooks`, `beacon-otelcol`), local only. A hardened collector on loopback writes one normalized JSONL log of agent sessions, tool calls, file edits and token usage; per-user setup merges Beacon's hooks and OTLP settings into each supported agent's configuration; the sandboxed agent user is relayed into the shared log; retention and archive; optional read-only dashboard; collector metrics scraped by `nestlo.observability`; `nestlo-beacon status|log|repair|archive`. Approved memory goes back to agents through the `beacon` MCP server and skill pack. VM test `beacon`.
 - **Agent security** (`nestlo.agentSecurity`, docs/agent-security.md): `nestlo-redteam` and `nestlo-eval` (promptfoo against the model gateway as agent `redteam`, own budget, hosted generation and telemetry off, optional timer), `nestlo-agent-scan` (local rules over Nestlo's MCP server lists and skill bundle in a unit without network; Snyk agent-scan inspect and remote analysis opt-in) and `nestlo-pr-review` (PR-Agent through the gateway as agent `pr-review`, optional review of the PRs git-automation opens). Gateway tokens only in `/var/lib/nestlo-agent-security`, never in the Nix store. VM test `agent-security`.

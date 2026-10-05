@@ -114,9 +114,13 @@
     {
       # ── NixOS configurations ──────────────────────────────────────────
       nixosConfigurations = lib.foldl' (acc: system: acc // hostsFor system) { } systems
-        # Temporary: .github/workflows/ci.yml still builds the pre-rename name.
-        # Remove once the workflow says nestlo (see CHANGELOG, "Renamed from AgentOS").
-        // { agentos = self.nixosConfigurations.nestlo; };
+        # Temporary: ci.yml and release.yml (its SBOM step) still use the
+        # pre-rename names. Remove once the workflows say nestlo (see
+        # CHANGELOG, "Renamed from AgentOS").
+        // {
+          agentos = self.nixosConfigurations.nestlo;
+          agentos-iso = self.nixosConfigurations.nestlo-iso;
+        };
 
       # ── Packages (each coding agent as an installable package) ─────────
       packages = forEachSystem (system:
