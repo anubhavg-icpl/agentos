@@ -249,6 +249,19 @@ let
     } // lightHardening u;
   };
 
+  # Where each harness keeps its configuration (TUIOS's defaults, relative to
+  # the home). `tuios integration install` refuses a harness that has never
+  # run (no such directory); the agents here are installed by Nix and may
+  # not have run yet, so the directory is created first.
+  harnessDirs = {
+    claude-code = ".claude"; codex = ".codex"; gemini-cli = ".gemini";
+    opencode = ".config/opencode"; amp = ".config/amp"; antigravity = ".gemini/config";
+    copilot = ".copilot"; crush = ".config/crush"; cursor-agent = ".cursor";
+    devin = ".config/devin"; droid = ".factory"; grok = ".grok"; hermes = ".hermes";
+    kilo = ".config/kilo"; kimi = ".kimi-code"; omp = ".omp/agent"; pi = ".pi/agent";
+    qoder = ".qoder"; qwen = ".qwen";
+  };
+
   mkIntegrations = u: lib.nameValuePair "nestlo-tuios-integrations-${u}" {
     description = "Install the TUIOS agent integrations for ${u}";
     wantedBy = [ "multi-user.target" ];
@@ -263,6 +276,9 @@ let
       # agents' PATH need not contain it
       ExecStart = pkgs.writeShellScript "nestlo-tuios-integrations" ''
         rc=0
+        ${lib.concatMapStrings (h: ''
+          ${pkgs.coreutils}/bin/mkdir -p "$HOME"/${lib.escapeShellArg harnessDirs.${h}}
+        '') cfg.integrations}
         for agent in ${lib.escapeShellArgs cfg.integrations}; do
           ${tuios}/bin/tuios integration install "$agent" --command ${tuios}/bin/tuios \
             || { echo "tuios integration $agent failed" >&2; rc=1; }
@@ -279,23 +295,24 @@ let
     let
       cwd = if l.cwd != null then l.cwd else if u == agentUser then rt.workspaceRoot else homeOf u;
       winCwd = w: if w.cwd != null then w.cwd else cwd;
+      # `tuios new` takes no directory (its first shell starts in the
+      # daemon's): a layout without windows gets one shell in `cwd`
+      windows = if l.windows != [ ] then l.windows else [{ name = "shell"; command = [ ]; cwd = null; }];
       windowCmds = lib.concatMapStringsSep "\n" (w: ''
         tuios new-window -s ${lib.escapeShellArg name} --no-focus --cwd ${lib.escapeShellArg (winCwd w)} \
           ${lib.escapeShellArg w.name}${lib.optionalString (w.command != [ ]) " -- ${lib.escapeShellArgs w.command}"} >/dev/null
-      '') l.windows;
+      '') windows;
     in
     ''
       if tuios ls --json | jq -e --arg n ${lib.escapeShellArg name} 'any(.[]; .name == $n)' >/dev/null; then
         echo "session ${name} exists, leaving it as it is"
       else
         echo "creating session ${name}"
-        tuios new ${lib.escapeShellArg name} --detach --cwd ${lib.escapeShellArg cwd} >/dev/null
-        ${lib.optionalString (l.windows != [ ]) ''
-          initial=$(tuios list-windows -s ${lib.escapeShellArg name} --json | jq -r '.windows[0].window_id')
-          ${windowCmds}
-          # the shell the session starts with is not part of the layout
-          tuios close-window -s ${lib.escapeShellArg name} "$initial" >/dev/null
-        ''}
+        tuios new ${lib.escapeShellArg name} --detach >/dev/null
+        initial=$(tuios list-windows -s ${lib.escapeShellArg name} --json | jq -r '.windows[0].window_id')
+        ${windowCmds}
+        # the shell the session starts with is not part of the layout
+        tuios close-window -s ${lib.escapeShellArg name} "$initial" >/dev/null
       fi
     '';
 
@@ -373,6 +390,10 @@ let
         "tls-cert:${toString cfg.web.tls.certFile}"
         "tls-key:${toString cfg.web.tls.keyFile}"
       ];
+      # tuios-web insists on a password file that its user owns (mode 0600);
+      # the credential is root's, so the service keeps its own copy
+      ExecStartPre = lib.optional (cfg.web.passwordFile != null)
+        "${pkgs.coreutils}/bin/install -m 0600 %d/password /run/nestlo-tuios-web/password";
       # %d is the credentials directory
       ExecStart = lib.escapeShellArgs ([
         "${tuios}/bin/tuios-web"
@@ -380,7 +401,7 @@ let
         cfg.web.listen
         "--port"
         (toString cfg.web.port)
-      ] ++ lib.optionals (cfg.web.passwordFile != null) [ "--password-file" "%d/password" ]
+      ] ++ lib.optionals (cfg.web.passwordFile != null) [ "--password-file" "/run/nestlo-tuios-web/password" ]
       ++ lib.optionals (cfg.web.tls.certFile != null) [ "--cert" "%d/tls-cert" "--key" "%d/tls-key" ]
       ++ lib.optional cfg.web.readOnly "--read-only");
       Restart = "on-failure";
@@ -388,7 +409,9 @@ let
       StateDirectory = runName cfg.web.user;
       StateDirectoryMode = "0700";
       UMask = "0077";
-    } // dirs cfg.web.user
+    } // dirs cfg.web.user // {
+      RuntimeDirectory = [ (runName cfg.web.user) "nestlo-tuios-web" ];
+    }
     // (if cfg.web.user == agentUser then agentHardening else lightHardening cfg.web.user);
   };
 
