@@ -10,6 +10,7 @@ git add .github/workflows && git commit -m "ci: supply-chain workflows"
 | File | What it does |
 |:---|:---|
 | `release.yml` | Replaces the current release workflow. Adds `SHA256SUMS`, build provenance for the ISO (`actions/attest-build-provenance`), keyless `cosign sign-blob --bundle` signatures, and a CycloneDX SBOM from `sbomnix` attested to the ISO. Also runs the `backup` VM test. |
+| `pages.yml` | Publishes `site/` (the landing page) to GitHub Pages on pushes to `main` that change it. Needs Settings → Pages → Source: **GitHub Actions**. |
 | `vuln-scan.yml` | Nightly `vulnix` on the closure of the `nestlo` host, uploaded as SARIF to code scanning. |
 | `scorecard.yml` | OpenSSF Scorecard, weekly and on pushes to `main`. |
 | `update-flake-lock.yml` | Weekly `nix flake update`, opened as a pull request with the `gh` CLI. |
