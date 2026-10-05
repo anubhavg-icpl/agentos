@@ -45,7 +45,7 @@ pkgs.testers.runNixOSTest {
   testScript = ''
     import json
 
-    log = "/var/lib/beacon/logs/runtime.jsonl"
+    shared_log = "/var/lib/beacon/logs/runtime.jsonl"
     agent_home = "/var/lib/nestlo/agent-home"
     as_agent = f"runuser -u nestlo-agent -- env HOME={agent_home}"
     as_alice = "runuser -u alice -- env HOME=/home/alice"
@@ -93,8 +93,8 @@ pkgs.testers.runNixOSTest {
             }]}],
         }]})
         machine.succeed(f"curl -sf -XPOST http://127.0.0.1:4318/v1/logs -H 'content-type: application/json' -d '{payload}'")
-        machine.wait_until_succeeds(f"grep -q 'hello from otlp' {log}")
-        ev = [e for e in events(log) if e.get("prompt", {}).get("text") == "hello from otlp"][0]
+        machine.wait_until_succeeds(f"grep -q 'hello from otlp' {shared_log}")
+        ev = [e for e in events(shared_log) if e.get("prompt", {}).get("text") == "hello from otlp"][0]
         assert ev["event"]["action"] == "prompt.submitted" and ev["harness"]["collection_method"] == "otlp", ev
         # the collector's own metrics count it (nestlo.observability scrapes them)
         machine.wait_until_succeeds("curl -sf http://127.0.0.1:9975/metrics | grep -q 'otelcol_exporter_sent_log_records_total{exporter=\"beaconjson\"'")
@@ -103,10 +103,10 @@ pkgs.testers.runNixOSTest {
         assert machine.succeed("stat -c '%U:%G %a' /var/lib/beacon /var/lib/beacon/logs").split() == [
             "beacon:beacon", "2770", "beacon:beacon", "2770"], "state dir"
         assert "alice" in machine.succeed("getent group beacon")
-        machine.succeed(f"{as_alice} cat {log} >/dev/null")
-        machine.fail(f"{as_bob} cat {log}")
-        machine.fail(f"{as_agent} cat {log}")
-        assert machine.succeed(f"stat -c %a {log}").strip() in ("666", "664", "660", "644"), "log mode"
+        machine.succeed(f"{as_alice} cat {shared_log} >/dev/null")
+        machine.fail(f"{as_bob} cat {shared_log}")
+        machine.fail(f"{as_agent} cat {shared_log}")
+        assert machine.succeed(f"stat -c %a {shared_log}").strip() in ("666", "664", "660", "644"), "log mode"
 
     with subtest("an operator's agent configuration is merged with Beacon's, not replaced"):
         settings = json.loads(machine.succeed("cat /home/alice/.claude/settings.json"))
@@ -115,7 +115,7 @@ pkgs.testers.runNixOSTest {
         assert "[otel.exporter.\"otlp-grpc\"]" in machine.succeed("cat /home/alice/.codex/config.toml")
         machine.succeed("test -f /home/alice/.config/opencode/plugins/beacon.ts")
         # the hook commands name the shared log
-        assert log in json.dumps(settings["hooks"]), settings["hooks"]
+        assert shared_log in json.dumps(settings["hooks"]), settings["hooks"]
         # a setting of the user's survives a re-run, with a single backup
         settings["model"] = "opus"
         settings["hooks"]["PreToolUse"] = settings["hooks"].get("PreToolUse", []) + [
@@ -132,11 +132,11 @@ pkgs.testers.runNixOSTest {
         hook = (
             "echo '{\"session_id\":\"alice-1\",\"cwd\":\"/home/alice\",\"hook_event_name\":\"UserPromptSubmit\","
             "\"prompt\":\"alice asks\"}' | "
-            f"{as_alice} beacon-hooks --platform claude --log {log} prompt-submit"
+            f"{as_alice} beacon-hooks --platform claude --log {shared_log} prompt-submit"
         )
         machine.succeed(hook)
         assert any(e.get("prompt", {}).get("text") == "alice asks" and e["harness"]["collection_method"] == "hook"
-                   for e in events(log))
+                   for e in events(shared_log))
 
     with subtest("the agent user logs under its home, the relay appends it, and it cannot read the shared log"):
         # the agent's own hook configuration points at its home log, which the sandbox lets it write
@@ -148,14 +148,14 @@ pkgs.testers.runNixOSTest {
             "\"prompt\":\"agent works\"}' | "
             f"{as_agent} beacon-hooks --platform claude --log {agent_log} prompt-submit"
         )
-        machine.wait_until_succeeds(f"grep -q 'agent works' {log}")
+        machine.wait_until_succeeds(f"grep -q 'agent works' {shared_log}")
         props = machine.succeed("systemctl show beacon-relay-nestlo-agent -p SupplementaryGroups -p ProtectSystem")
         assert "beacon" in props and "ProtectSystem=strict" in props, props
-        machine.fail(f"{as_agent} cat {log}")
-        machine.fail(f"{as_agent} sh -c 'echo x >> {log}'")
+        machine.fail(f"{as_agent} cat {shared_log}")
+        machine.fail(f"{as_agent} sh -c 'echo x >> {shared_log}'")
 
     with subtest("rotated segments are archived and old archives are pruned"):
-        machine.succeed(f"echo '{{\"old\":true}}' > {log}.1 && touch -d '10 minutes ago' {log}.1 && chown beacon:beacon {log}.1")
+        machine.succeed(f"echo '{{\"old\":true}}' > {shared_log}.1 && touch -d '10 minutes ago' {shared_log}.1 && chown beacon:beacon {shared_log}.1")
         machine.succeed("touch -d '3 days ago' /var/lib/beacon/archive/runtime-20200101T000000Z-1.jsonl.zst")
         machine.succeed("systemctl start beacon-archive.service")
         fresh = machine.succeed("ls /var/lib/beacon/archive/ | grep -v 20200101").split()
@@ -201,7 +201,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("the beacon CLI reads the system collector's log without flags"):
         assert "Warm" in machine.succeed(f"cd {proj} && {as_alice} beacon memory list")
-        out = machine.succeed(f"{as_alice} beacon endpoint status --system --log-path {log}")
+        out = machine.succeed(f"{as_alice} beacon endpoint status --system --log-path {shared_log}")
         assert "running=true" in out, out
   '';
 }
