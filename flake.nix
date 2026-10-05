@@ -154,6 +154,12 @@
             inherit pkgs;
             host = hostFor system "agentos";
           };
+          # Every skill pack and the combined bundle build, skills have front
+          # matter, no name collisions, pack.json is valid (no VM).
+          skills-eval = import ./tests/skills-eval.nix {
+            inherit pkgs;
+            packs = lib.filterAttrs (n: _: lib.hasPrefix "skills-" n) self.packages.${system};
+          };
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           # Boots a VM with the AgentOS service stack and drives an agent
@@ -171,6 +177,8 @@
           container = import ./tests/container.nix { inherit pkgs agentosModules; };
           # Pullrun daemon: operators-only socket, agents in Pullrun containers.
           pullrun = import ./tests/pullrun.nix { inherit pkgs agentosModules; };
+          # Skill packs linked into the agent user's CLI skills directories.
+          skills = import ./tests/skills.nix { inherit pkgs agentosModules; };
           # Web dashboard, fleet registry and marketplace.
           platform = import ./tests/platform.nix { inherit pkgs agentosModules; };
           # agent-fleet chat and hub: static server on loopback, wasm/COOP/COEP.

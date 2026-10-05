@@ -28,6 +28,7 @@
 
     # Tool ecosystem
     ./mcp-registry
+    ./skills
     ./mcp-servers
     ./pullrun
 

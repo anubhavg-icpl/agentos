@@ -56,6 +56,11 @@ in
             type = lib.types.bool;
             default = true;
           };
+          description = lib.mkOption {
+            type = lib.types.str;
+            default = "";
+            description = "What the server does, shown by `agentos-tools list`";
+          };
         };
       });
       default = { };
@@ -183,7 +188,13 @@ in
           category = "security";
           enabled = true;
         }
-      ];
+      ] ++ lib.mapAttrsToList
+        (name: server: {
+          inherit name;
+          inherit (server) description command args env enabled;
+          category = "extra";
+        })
+        cfg.extraToolServers;
     };
 
     # ─ MCP tool management CLI ───────────────────────────────────────

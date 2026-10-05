@@ -87,6 +87,7 @@ stdenvNoCC.mkDerivation {
 
   passthru = {
     inherit pack mcp tools defaultEnable;
+    packMeta = meta;
     skillNames = lib.attrNames skills;
   };
 

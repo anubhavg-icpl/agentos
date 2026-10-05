@@ -162,6 +162,9 @@
       autoInstallOnBoot = true;
     };
 
+    # Skill packs (docs/skills.md), linked into every agent CLI's skills directory
+    skills.enable = true;
+
     # MCP server registry (50+ preconfigured servers)
     mcp-servers = {
       enable = true;
