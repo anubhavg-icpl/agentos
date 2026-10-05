@@ -2,6 +2,7 @@
 
 import http.client
 import json
+import socket
 import threading
 import time
 
@@ -286,8 +287,14 @@ def test_error_data_follows_the_dialect(server):
 
 
 def test_oversized_and_malformed_http(server):
-    resp, _ = http_call(server, "POST", "/agents/coder", raw=b"x" * (2 * 1024 * 1024))
-    assert resp.status == 413
+    # Only the headers: the server answers 413 from Content-Length and
+    # closes without reading the body, so sending a real 2 MiB body races
+    # that close (BrokenPipe on a slow machine)
+    with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=10) as s:
+        s.sendall(b"POST /agents/coder HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer " + TOKEN.encode()
+                  + b"\r\nContent-Type: application/json\r\nContent-Length: 2097152\r\n\r\n")
+        head = s.recv(65536)
+    assert head.split(b"\r\n", 1)[0].split()[1] == b"413", head
     resp, _ = http_call(server, "GET", "/agents/coder")
     assert resp.status == 405
     for path in ("/agents/..%2f..%2fetc/", "/agents/Coder", "/nothing", "/agents/coder/../x"):
