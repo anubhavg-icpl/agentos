@@ -170,9 +170,10 @@ pkgs.testers.runNixOSTest {
         machine.wait_until_succeeds(f"{alice} capture-pane -s ci -w probe | grep -q ROUNDTRIP-42", timeout=120)
 
     with subtest("a tape needs an attached client; a broken tape is refused"):
-        machine.succeed("printf 'Run \"echo hi\"\\n' > /tmp/good.tape")
+        machine.succeed("printf 'NewWindow\\nSleep 100ms\\n' > /tmp/good.tape")
         machine.succeed("printf 'NotACommand foo\\n' > /tmp/bad.tape")
         machine.succeed("chmod 644 /tmp/*.tape")
+        machine.succeed(f"{alice} tape validate /tmp/good.tape")
         rc, out = machine.execute(f"{alice} tape exec -s ci /tmp/good.tape 2>&1")
         assert rc != 0 and "attached client" in out, (rc, out)
         rc, out = machine.execute(f"{alice} tape exec -s ci /tmp/bad.tape 2>&1")
