@@ -227,4 +227,14 @@
     rev = "e35f3937b0efe40ec0dab675709c68e1d8e8c9e6";
     hash = "sha256-3X3G75QuJcSTc3x2iblKZJgXUSrSWa9BlkybqlGm5Bw=";
   };
+
+  # NVIDIA OpenShell: sandboxed runtime for AI agents. Its skills/ teach an
+  # agent to use the openshell CLI, write sandbox policies and debug gateways
+  # and inference (nestlo.openshell, docs/openshell.md).
+  openshell = fetchFromGitHub {
+    owner = "NVIDIA";
+    repo = "OpenShell";
+    rev = "e7fdd6beef98f7f92d86271a169fdd4d3be44cf3";
+    hash = "sha256-GY3f0C7kfaeKXPVuzVcCyZ+BcfmhuBLj1caPOnv0wK8=";
+  };
 }
