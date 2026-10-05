@@ -60,7 +60,7 @@ jobs:
           test -s release-notes.md || echo "See CHANGELOG.md" > release-notes.md
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          name: AgentOS ${{ github.ref_name }}
+          name: Nestlo ${{ github.ref_name }}
           body_path: release-notes.md
 
   iso:
@@ -85,51 +85,51 @@ jobs:
       - name: Build the ISO
         run: |
           nix build -L .#iso-image
-          cp result/iso/*.iso "agentos-${TAG}.iso"
+          cp result/iso/*.iso "nestlo-${TAG}.iso"
 
       - name: SBOM (CycloneDX, sbomnix)
         run: |
           # sbomnix is in the pinned nixpkgs; `nix run .#sbom` wraps it
-          OUT="agentos-${TAG}.cdx.json" nix run .#sbom -- \
-            ".#nixosConfigurations.agentos-iso.config.system.build.toplevel"
-          test -s "agentos-${TAG}.cdx.json"
+          OUT="nestlo-${TAG}.cdx.json" nix run .#sbom -- \
+            ".#nixosConfigurations.nestlo-iso.config.system.build.toplevel"
+          test -s "nestlo-${TAG}.cdx.json"
 
       - name: Checksums
-        run: sha256sum "agentos-${TAG}.iso" "agentos-${TAG}.cdx.json" > SHA256SUMS
+        run: sha256sum "nestlo-${TAG}.iso" "nestlo-${TAG}.cdx.json" > SHA256SUMS
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            agentos-${{ github.ref_name }}.iso
-            agentos-${{ github.ref_name }}.cdx.json
+            nestlo-${{ github.ref_name }}.iso
+            nestlo-${{ github.ref_name }}.cdx.json
             SHA256SUMS
 
       - name: Attest the SBOM (CycloneDX) to the ISO
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: agentos-${{ github.ref_name }}.iso
+          subject-path: nestlo-${{ github.ref_name }}.iso
           predicate-type: https://cyclonedx.org/bom
-          predicate-path: agentos-${{ github.ref_name }}.cdx.json
+          predicate-path: nestlo-${{ github.ref_name }}.cdx.json
 
       - name: Sign with cosign (keyless)
         run: |
-          cosign sign-blob --yes --bundle "agentos-${TAG}.iso.sigstore.json" "agentos-${TAG}.iso"
+          cosign sign-blob --yes --bundle "nestlo-${TAG}.iso.sigstore.json" "nestlo-${TAG}.iso"
           cosign sign-blob --yes --bundle "SHA256SUMS.sigstore.json" SHA256SUMS
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-assets
           path: |
-            agentos-*.iso
-            agentos-*.cdx.json
+            nestlo-*.iso
+            nestlo-*.cdx.json
             *.sigstore.json
             SHA256SUMS
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
-            agentos-*.iso
-            agentos-*.cdx.json
+            nestlo-*.iso
+            nestlo-*.cdx.json
             *.sigstore.json
             SHA256SUMS
