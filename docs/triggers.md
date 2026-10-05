@@ -125,12 +125,21 @@ A match submits a task with `origin = "gh:<repo>#<n>"` and `dedupe_key = "gh:" +
 
 ## Publishing
 
-`publish.py` runs inside the root task runner after the agent finishes (or as a `kind: "publish"` workflow node that follows it). The task record can only *ask* for a publish; the destination is decided by root-owned configuration:
+`publish.py` runs inside the root task runner after the agent finishes (or as a task of `kind: "publish"`, see [orchestration.md](orchestration.md)). The task record can only *ask* for a publish; the destination is decided by root-owned configuration:
 
 - the repository must be listed in `agentos.git-automation.publish.repos`; the push URL defaults to `https://github.com/<repo>.git`, `base` is the PR target;
 - only branches named `agent/<task-id>` are pushed, never `base` or a name matching `protectedBranches` (default `main master develop dev trunk release/* production prod stable`), never with `--force`;
 - uncommitted changes are committed on the branch first (as the agent user, hooks off; `commitUncommitted = false` to disable); **an empty diff against the task's starting commit is refused** and nothing is pushed;
 - the PR is opened with `POST /repos/<repo>/pulls` (head `agent/<id>`, base from the config); if one exists, its URL is reused. The result has `pr_url` and a `publish` block; a task that asked for a PR and could not get one is `failed` with the reason (the agent's output is kept), a task published by `autoPR` stays `succeeded` with `publish.status = "skipped"/"error"`.
+
+**Auto-merge (off by default).** A `publish` block may carry `merge: {method: "squash"|"merge"|"rebase", require_checks: true}` (`agentos-task publish ... --merge squash`). It is a request only: it is honoured for a repository with `agentos.git-automation.publish.repos.<repo>.allowAutoMerge = true` (services setting `publish.repos.<repo>.allow_auto_merge`, default `false`); otherwise `publish.merge` is `{status: "skipped", reason: ...}` and the PR stays open. When allowed, the runner polls (every 20 s, at most `publish.mergeWaitSec`, default 1800) the PR and the pushed commit through the REST API and merges only if all of these hold:
+
+- the PR is open, not a draft, mergeable, and targets the repository's configured `base` (nothing else is ever merged into);
+- its head is still the commit the runner pushed, and the merge request carries that commit as `sha`, so GitHub refuses (409) a head that moved in between;
+- every check run on the head concluded `success`, `neutral` or `skipped` (a failure or cancellation ends the wait at once as `skipped`; running checks are waited for) and the combined commit status is `success`;
+- `require_checks` (default true): at least one check run or status must exist (a repository with only check runs has combined status "pending" with no statuses, which counts as no status); with `require_checks: false` a head with no checks at all may merge.
+
+The outcome is `publish.merge = {status: "merged"|"skipped"|"error", reason, sha, method}` (`sha` is the merge commit). A refusal, timeout or error never fails the task, and every outcome is audited (`publish.merge`). The root runner holds the token while it waits, which is why the wait is bounded; the `agentos-task-runner@` unit has no start timeout of its own. Branch protection on the repository still applies on top of this: GitHub's own 405/422 answers are recorded as `skipped`.
 
 **How it authenticates.** The token file is root-only (0400) and handed to the `agentos-task-runner@` unit as a systemd credential (`LoadCredential`); `publish.py` also refuses a token file readable by group or others, and a symlink. The agent's sandbox is a different unit and never receives it. The agent controls the repository (config, hooks), and a root process must not run those, so the push is split: as the agent user (no token) the branch is bundled; as root the bundle is fetched into a fresh bare repository with an empty config, and that repository is pushed to the URL from the configuration with the token as an `http.extraHeader` in git's environment (not argv). The API call uses `Authorization: Bearer`, redirects are never followed, and `apiUrl` must be https (or loopback for tests). Token strings are redacted from error messages.
 
