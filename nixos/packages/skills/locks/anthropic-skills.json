@@ -1,0 +1,15 @@
+{
+ "academy-guide": "skills/academy-guide",
+ "algorithmic-art": "skills/algorithmic-art",
+ "brand-guidelines": "skills/brand-guidelines",
+ "canvas-design": "skills/canvas-design",
+ "discernment-nudge": "skills/discernment-nudge",
+ "frontend-design": "skills/frontend-design",
+ "internal-comms": "skills/internal-comms",
+ "mcp-builder": "skills/mcp-builder",
+ "skill-creator": "skills/skill-creator",
+ "slack-gif-creator": "skills/slack-gif-creator",
+ "theme-factory": "skills/theme-factory",
+ "web-artifacts-builder": "skills/web-artifacts-builder",
+ "webapp-testing": "skills/webapp-testing"
+}

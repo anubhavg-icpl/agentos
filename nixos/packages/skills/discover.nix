@@ -20,9 +20,21 @@
 # The directory listing reads the pinned source at evaluation time, so a
 # pack that uses this needs its source in the store when the pack's skills
 # are needed (when it is built or enabled); mkSkillPack keeps that lazy.
-{ lib, runCommand }:
+#
+# Locks: listing a source at evaluation time is import from derivation, which
+# `nix flake check` refuses and which makes every evaluation fetch and read the
+# sources. So the result of findSkills is committed per pack in
+# locks/<pack>.json and read from there; nixos/packages/skills/update-locks.sh
+# regenerates the locks (with useLocks = false) after a source is bumped. A
+# pack whose lock is missing fails with a message saying so.
+{ lib, runCommand, pack ? null, useLocks ? true }:
 
-{
+let
+  lockFile = ./locks + "/${pack}.json";
+  locked = pack != null && useLocks;
+in
+
+rec {
   # renameSkills { pack, src, skills, rename, rewrite ? [ ], prune ? [ ] }
   #
   # Installs some skills of a discovered set under other names, to resolve a
@@ -54,7 +66,13 @@
     (removeAttrs skills olds)
     // lib.listToAttrs (map (old: lib.nameValuePair rename.${old} "${tree}/${rename.${old}}") olds);
 
-  findSkills =
+  findSkills = args:
+    if locked then
+      (if builtins.pathExists lockFile then lib.importJSON lockFile
+       else throw "skill pack ${pack}: no lock file locks/${pack}.json; run nixos/packages/skills/update-locks.sh")
+    else findSkillsUnlocked args;
+
+  findSkillsUnlocked =
     { src
     , roots ? [ "skills" ]
     , exclude ? [ ]

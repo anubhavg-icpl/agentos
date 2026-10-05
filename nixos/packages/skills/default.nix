@@ -1,13 +1,21 @@
 # AgentOS skill packs: one attribute per pack, each built with mkSkillPack
 # (lib.nix) from a pinned source (sources.nix). See docs/skills.md.
-{ pkgs }:
+# useLocks = false makes discovery read the pinned sources at evaluation time
+# (import from derivation); update-locks.sh does that to regenerate locks/.
+{ pkgs, useLocks ? true }:
 
 let
   mkSkillPack = pkgs.callPackage ./lib.nix { };
   sources = pkgs.callPackage ./sources.nix { };
-  discover = import ./discover.nix { inherit (pkgs) lib runCommand; };
+  discoverFor = pack: import ./discover.nix {
+    inherit (pkgs) lib runCommand;
+    inherit pack useLocks;
+  };
   # a pack declares only the helpers it uses
-  callPack = file: pkgs.lib.callPackageWith (pkgs // { inherit mkSkillPack sources discover; }) file { };
+  # The pack name is the file name; discovery uses that pack's lock file
+  callPack = file:
+    let pack = pkgs.lib.removeSuffix ".nix" (baseNameOf (toString file));
+    in pkgs.lib.callPackageWith (pkgs // { inherit mkSkillPack sources; discover = discoverFor pack; }) file { };
 in
 {
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;

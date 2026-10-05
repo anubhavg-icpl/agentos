@@ -1,0 +1,20 @@
+{
+ "changelog-generator": "changelog-generator",
+ "competitive-ads-extractor": "competitive-ads-extractor",
+ "connect": "connect",
+ "connect-apps": "connect-apps",
+ "content-research-writer": "content-research-writer",
+ "developer-growth-analysis": "developer-growth-analysis",
+ "domain-name-brainstormer": "domain-name-brainstormer",
+ "file-organizer": "file-organizer",
+ "image-enhancer": "image-enhancer",
+ "invoice-organizer": "invoice-organizer",
+ "langsmith-fetch": "langsmith-fetch",
+ "lead-research-assistant": "lead-research-assistant",
+ "meeting-insights-analyzer": "meeting-insights-analyzer",
+ "raffle-winner-picker": "raffle-winner-picker",
+ "skill-share": "skill-share",
+ "tailored-resume-generator": "tailored-resume-generator",
+ "twitter-algorithm-optimizer": "twitter-algorithm-optimizer",
+ "video-downloader": "video-downloader"
+}
