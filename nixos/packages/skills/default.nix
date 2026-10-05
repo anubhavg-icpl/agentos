@@ -9,4 +9,6 @@ let
 in
 {
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;
+  karpathy-guidelines = callPack ./packs/karpathy-guidelines.nix;
+  karpathy-claude-skills = callPack ./packs/karpathy-claude-skills.nix;
 }

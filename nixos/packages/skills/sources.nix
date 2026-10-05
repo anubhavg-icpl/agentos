@@ -61,4 +61,18 @@
     rev = "c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b";
     hash = "sha256-LfkM/9AZBaZV67MsqrVgiKSPJk8AjrErFdzIBApz69E=";
   };
+
+  karpathy-guidelines = fetchFromGitHub {
+    owner = "multica-ai";
+    repo = "andrej-karpathy-skills";
+    rev = "2c606141936f1eeef17fa3043a72095b4765b9c2";
+    hash = "sha256-4z/wRdYH7UXRzF8RJU0sw8xbpx0BW/7CBv5sVEC2knY=";
+  };
+
+  karpathy-claude-skills = fetchFromGitHub {
+    owner = "benfngu";
+    repo = "karpathy-claude-skills";
+    rev = "f01a9330440f06b3c9ddcfdbec71c726307ebd5b";
+    hash = "sha256-gtL3mbf6+clvQMsMPFFpsq2Wc6GvoS/6stfr3M2SsDU=";
+  };
 }

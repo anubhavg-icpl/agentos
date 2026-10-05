@@ -21,7 +21,13 @@
 #                { <name> = { command = "..."; args = [ ... ]; env = { }; }; }
 #   description, homepage, license (an SPDX id string), notes (free text,
 #                e.g. license caveats or what needs the network)
-{ lib, stdenvNoCC, jq, symlinkJoin }:
+#   defaultEnable  false makes the pack opt-in under agentos.skills (for packs
+#                that change agent behaviour or cost many context tokens)
+#
+# Every skill is checked against the Agent Skills spec (validate.py): front
+# matter with a valid `name` equal to the directory name and a description
+# of at most 1024 characters. The build fails on a violation.
+{ lib, stdenvNoCC, jq, python3 }:
 
 { pack
 , version
@@ -33,6 +39,7 @@
 , homepage
 , license
 , notes ? ""
+, defaultEnable ? true
 }:
 
 assert lib.assertMsg (builtins.match "[a-z0-9-]+" pack != null) "skill pack name ${pack} must be [a-z0-9-]+";
@@ -40,7 +47,7 @@ assert lib.assertMsg (skills != { }) "skill pack ${pack} has no skills";
 
 let
   meta = {
-    inherit pack version description homepage license notes;
+    inherit pack version description homepage license notes defaultEnable;
     skills = lib.attrNames skills;
     mcp = mcp;
     tools = map (t: t.pname or t.name) tools;
@@ -52,18 +59,14 @@ let
     fi
     mkdir -p "$root/${name}"
     cp -r --no-preserve=mode ${lib.escapeShellArg "${src}/${dir}"}/. "$root/${name}/"
-    # Every skill needs front matter with a name and a description
-    head -1 "$root/${name}/SKILL.md" | grep -qx -- '---' \
-      || { echo "skill ${pack}/${name}: SKILL.md has no YAML front matter" >&2; exit 1; }
-    sed -n '2,/^---$/p' "$root/${name}/SKILL.md" | grep -q '^description:' \
-      || { echo "skill ${pack}/${name}: front matter has no description" >&2; exit 1; }
+    python3 ${./validate.py} ${lib.escapeShellArg pack} "$root/${name}"
   '';
 in
 stdenvNoCC.mkDerivation {
   pname = "agentos-skills-${pack}";
   inherit version;
   dontUnpack = true;
-  nativeBuildInputs = [ jq ];
+  nativeBuildInputs = [ jq (python3.withPackages (ps: [ ps.pyyaml ])) ];
 
   installPhase = ''
     runHook preInstall
@@ -83,7 +86,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   passthru = {
-    inherit pack mcp tools;
+    inherit pack mcp tools defaultEnable;
     skillNames = lib.attrNames skills;
   };
 
