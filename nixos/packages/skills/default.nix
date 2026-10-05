@@ -9,4 +9,6 @@ let
 in
 {
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;
+  chisle = callPack ./packs/chisle.nix;
+  anti-slop = callPack ./packs/anti-slop.nix;
 }
