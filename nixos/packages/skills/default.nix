@@ -5,7 +5,9 @@
 let
   mkSkillPack = pkgs.callPackage ./lib.nix { };
   sources = pkgs.callPackage ./sources.nix { };
-  callPack = file: pkgs.callPackage file { inherit mkSkillPack sources; };
+  discover = import ./discover.nix { inherit (pkgs) lib runCommand; };
+  # a pack declares only the helpers it uses
+  callPack = file: pkgs.lib.callPackageWith (pkgs // { inherit mkSkillPack sources discover; }) file { };
 in
 {
   fwc-swiftui-skills = callPack ./packs/fwc-swiftui-skills.nix;
@@ -18,4 +20,28 @@ in
   reticle = callPack ./packs/reticle.nix;
   caliper = callPack ./packs/caliper.nix;
   ouroboros = callPack ./packs/ouroboros.nix;
+
+  # Community collections (docs/skills.md): all opt-in
+  composio-awesome-claude-skills = callPack ./packs/composio-awesome-claude-skills.nix;
+  composio-automation = callPack ./packs/composio-automation.nix;
+  superpowers = callPack ./packs/superpowers.nix;
+  anthropic-skills = callPack ./packs/anthropic-skills.nix;
+  mattpocock-skills = callPack ./packs/mattpocock-skills.nix;
+  gstack = callPack ./packs/gstack.nix;
+  ui-ux-pro-max = callPack ./packs/ui-ux-pro-max.nix;
+  everything-claude-code = callPack ./packs/everything-claude-code.nix;
+  scientific-skills = callPack ./packs/scientific-skills.nix;
+  caveman = callPack ./packs/caveman.nix;
+  pstack = callPack ./packs/pstack.nix;
+  cursor-plugins = callPack ./packs/cursor-plugins.nix;
+  vibe-security = callPack ./packs/vibe-security.nix;
+  no-ai-slop = callPack ./packs/no-ai-slop.nix;
+  ponytail = callPack ./packs/ponytail.nix;
+  hyperframes = callPack ./packs/hyperframes.nix;
+  impeccable = callPack ./packs/impeccable.nix;
+  taste-skill = callPack ./packs/taste-skill.nix;
+  unlazy = callPack ./packs/unlazy.nix;
+  ai-job-search = callPack ./packs/ai-job-search.nix;
+  agent-reach = callPack ./packs/agent-reach.nix;
+  open-design = callPack ./packs/open-design.nix;
 }

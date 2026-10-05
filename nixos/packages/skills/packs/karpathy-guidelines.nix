@@ -15,4 +15,5 @@ mkSkillPack {
   description = "Karpathy-inspired coding guidelines: assumptions, surgical changes, simplicity, verifiable goals";
   homepage = "https://github.com/multica-ai/andrej-karpathy-skills";
   license = "MIT";
+  collections = [ "dev-workflow" ];
 }

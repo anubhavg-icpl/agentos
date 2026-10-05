@@ -119,6 +119,7 @@ mkSkillPack {
   description = "Reticle: opens the app in a browser, uses it, and marks each check worked / did not work / not enough information, so an agent cannot call unfinished work done";
   homepage = "https://www.reticle.sh";
   license = "FSL-1.1-ALv2";
+  collections = [ "dev-workflow" ];
   notes = ''
     Skills are Apache-2.0. The reticle CLI and MCP server (@reticlehq/server,
     @reticlehq/init) are FSL-1.1-ALv2: free for internal use, development and

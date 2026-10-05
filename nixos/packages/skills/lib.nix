@@ -15,7 +15,8 @@
 #   pack         pack name (lower-case, [a-z0-9-])
 #   src          pinned source (nixos/packages/skills/sources.nix)
 #   skills       attrset { <skill name> = "<dir in src containing SKILL.md>"; }
-#                The skill name is the directory name the CLIs see.
+#                The skill name is the directory name the CLIs see. The value
+#                may also be an absolute store path (discover.renameSkills).
 #   tools        list of derivations whose bin/ is merged into $out/bin
 #   mcp          attrset of MCP servers the pack provides:
 #                { <name> = { command = "..."; args = [ ... ]; env = { }; }; }
@@ -23,6 +24,12 @@
 #                e.g. license caveats or what needs the network)
 #   defaultEnable  false makes the pack opt-in under agentos.skills (for packs
 #                that change agent behaviour or cost many context tokens)
+#   licenseSrc   where to copy LICENSE/NOTICE files from (default src); they land in
+#                $out/share/doc/agentos-skills/<pack>/ so the licence text travels
+#                with the skills. Set it when `src` is a derived tree
+#   collections  names of the collections the pack belongs to; listing one in
+#                agentos.skills.collections (or setting agentos.skills.enableAll)
+#                enables the pack unless packs.<name>.enable is set explicitly
 #
 # Every skill is checked against the Agent Skills spec (validate.py): front
 # matter with a valid `name` equal to the directory name and a description
@@ -40,32 +47,37 @@
 , license
 , notes ? ""
 , defaultEnable ? true
+, collections ? [ ]
+, licenseSrc ? src
 }:
 
 assert lib.assertMsg (builtins.match "[a-z0-9-]+" pack != null) "skill pack name ${pack} must be [a-z0-9-]+";
-assert lib.assertMsg (skills != { }) "skill pack ${pack} has no skills";
-
 let
+  # `skills` is only forced when the pack is built or its skill names are read,
+  # so evaluating a configuration with the pack disabled never enumerates its
+  # source (packs that discover their skills with discover.nix read the source)
+  skills' = if skills == { } then throw "skill pack ${pack} has no skills" else skills;
+
   meta = {
-    inherit pack version description homepage license notes defaultEnable;
-    skills = lib.attrNames skills;
+    inherit pack version description homepage license notes defaultEnable collections;
+    skills = lib.attrNames skills';
     mcp = mcp;
     # The command each tool provides (what agentos-skills list shows)
     tools = map (t: t.meta.mainProgram or t.pname or t.name) tools;
   };
-  copySkill = name: dir: ''
-    if [ ! -f ${lib.escapeShellArg "${src}/${dir}"}/SKILL.md ]; then
-      echo "skill pack ${pack}: ${dir}/SKILL.md not found" >&2
-      exit 1
-    fi
-    mkdir -p "$root/${name}"
-    cp -r --no-preserve=mode ${lib.escapeShellArg "${src}/${dir}"}/. "$root/${name}/"
-    python3 ${./validate.py} ${lib.escapeShellArg pack} "$root/${name}"
-  '';
+  # `dir` is relative to src, or an absolute store path (a skill that
+  # discover.renameSkills built under a new name). The list goes through a file
+  # (passAsFile): a pack with hundreds of skills would overflow the builder's
+  # environment if it were spelled out in the install script.
+  skillList = lib.concatStringsSep "\n" (lib.mapAttrsToList
+    (name: dir: "${name}\t${if lib.hasPrefix "/" dir then dir else "${src}/${dir}"}")
+    skills') + "\n";
 in
 stdenvNoCC.mkDerivation {
   pname = "agentos-skills-${pack}";
-  inherit version;
+  inherit version skillList;
+  metaJson = builtins.toJSON meta;
+  passAsFile = [ "skillList" "metaJson" ];
   dontUnpack = true;
   nativeBuildInputs = [ jq (python3.withPackages (ps: [ ps.pyyaml ])) ];
 
@@ -73,8 +85,27 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     root=$out/share/agentos/skills/${pack}
     mkdir -p "$root"
-    ${lib.concatStringsSep "\n" (lib.mapAttrsToList copySkill skills)}
-    echo ${lib.escapeShellArg (builtins.toJSON meta)} | jq . > "$root/pack.json"
+    dirs=()
+    while IFS=$'\t' read -r name from; do
+      if [ ! -f "$from/SKILL.md" ]; then
+        echo "skill pack ${pack}: $name: $from/SKILL.md not found" >&2
+        exit 1
+      fi
+      mkdir -p "$root/$name"
+      cp -r --no-preserve=mode "$from"/. "$root/$name/"
+      dirs+=("$root/$name")
+    done < "$skillListPath"
+    if [ "''${#dirs[@]}" -ne ${toString (lib.length (lib.attrNames skills'))} ]; then
+      echo "skill pack ${pack}: installed ''${#dirs[@]} skills, expected ${toString (lib.length (lib.attrNames skills'))}" >&2
+      exit 1
+    fi
+    python3 ${./validate.py} ${lib.escapeShellArg pack} "''${dirs[@]}"
+    jq . "$metaJsonPath" > "$root/pack.json"
+    doc=$out/share/doc/agentos-skills/${pack}
+    mkdir -p "$doc"
+    for f in ${licenseSrc}/LICENSE* ${licenseSrc}/LICENCE* ${licenseSrc}/COPYING* ${licenseSrc}/NOTICE*; do
+      if [ -f "$f" ]; then cp --no-preserve=mode "$f" "$doc/"; fi
+    done
     ${lib.optionalString (tools != [ ]) ''
       mkdir -p $out/bin
       for t in ${lib.concatMapStringsSep " " (t: "${t}") tools}; do
@@ -87,9 +118,11 @@ stdenvNoCC.mkDerivation {
   '';
 
   passthru = {
-    inherit pack mcp tools defaultEnable;
+    inherit pack mcp tools defaultEnable collections src;
     packMeta = meta;
-    skillNames = lib.attrNames skills;
+    # skill name -> directory in src (used by nixos/packages/skills/collisions.py)
+    skillDirs = skills';
+    skillNames = lib.attrNames skills';
   };
 
   meta = {

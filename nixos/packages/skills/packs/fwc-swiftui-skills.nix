@@ -13,4 +13,5 @@ mkSkillPack {
   description = "SwiftUI skills: Liquid Glass buttons and menus (iOS 26), iPhone Duo foldable layouts";
   homepage = "https://github.com/FloWritesCode/fwc-swiftui-skills";
   license = "MIT";
+  collections = [ "design" ];
 }

@@ -11,6 +11,8 @@
 #     the pack ships; license and description are set
 #   - the bundle has one link per skill and its manifest lists every pack
 #   - tools named in pack.json exist in the pack's bin/
+#   - no skill ships a LICENSE file that says "All rights reserved" (Anthropic's
+#     docx, pdf, pptx and xlsx skills must stay out of the packs)
 { pkgs, packs }:
 
 let
@@ -44,6 +46,7 @@ pkgs.runCommand "agentos-skills-eval"
           and (.description | type == "string" and length > 0)
           and (.homepage | type == "string" and length > 0)
           and (.skills | type == "array" and length > 0)
+          and (.collections | type == "array")
           and (.tools | type == "array")
           and (.mcp | type == "object")
         ' "$meta" > /dev/null || fail "$pname: pack.json is invalid"
@@ -60,6 +63,11 @@ pkgs.runCommand "agentos-skills-eval"
           skill=$(basename "$dir")
           file="$dir/SKILL.md"
           [ -f "$file" ] || fail "$pname/$skill: no SKILL.md"
+          for lic in "$dir"LICENSE*; do
+            if [ -f "$lic" ] && grep -qi 'all rights reserved' "$lic"; then
+              fail "$pname/$skill: $(basename "$lic") says all rights reserved; the skill must not be redistributed"
+            fi
+          done
           if [ -n "''${seen[$skill]:-}" ]; then
             fail "skill name collision: $skill is in ''${seen[$skill]} and $pname"
           fi

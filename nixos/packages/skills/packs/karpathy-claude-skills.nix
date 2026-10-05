@@ -22,5 +22,6 @@ mkSkillPack {
   description = "Karpathy's working methods as skills: coding loop, context engineering, task routing, verification";
   homepage = "https://github.com/benfngu/karpathy-claude-skills";
   license = "MIT";
+  collections = [ "dev-workflow" ];
   notes = "Overlaps karpathy-guidelines (upstream treats that skill as superseded by this set); enable one or both.";
 }

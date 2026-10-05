@@ -47,6 +47,7 @@ mkSkillPack {
   description = "UI Skills: UI cleanup, accessibility, metadata and motion-performance fixes, DESIGN.md authoring, UI audits";
   homepage = "https://github.com/ibelick/ui-skills";
   license = "MIT";
+  collections = [ "design" ];
   notes = ''
     The bundled skills work offline. The `ui-skills` CLI (start, categories,
     list, get) and the ui-skills MCP server read the skill registry from

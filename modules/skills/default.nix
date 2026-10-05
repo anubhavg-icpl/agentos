@@ -10,6 +10,10 @@
 #   - the packs' tools in systemPackages and their MCP servers in the MCP
 #     registry
 #   - `agentos-skills list|doctor|path`
+#
+# Which packs are on: a pack's own default (opt-in packs are off), turned on
+# by agentos.skills.enableAll or by agentos.skills.collections naming one of
+# the pack's collections; packs.<name>.enable set explicitly always wins.
 { config, pkgs, lib, ... }:
 
 let
@@ -18,6 +22,18 @@ let
   allPacks = import ../../nixos/packages/skills { inherit pkgs; };
   enabledPacks = lib.filterAttrs (name: _: cfg.packs.${name}.enable) allPacks;
   packList = lib.attrValues enabledPacks;
+
+  # Every collection a pack declares (mkSkillPack `collections`)
+  knownCollections = lib.sort (a: b: a < b) (lib.unique (lib.concatMap (p: p.collections) (lib.attrValues allPacks)));
+  wanted = pack: cfg.enableAll || lib.any (c: lib.elem c cfg.collections) pack.collections;
+
+  # Each skill's name and description is part of every agent session's
+  # context (the agent decides from it when to load a skill)
+  skillCount = lib.foldl' (n: p: n + lib.length p.skillNames) 0 packList;
+  warnAbove = 300;
+  tokensPerSkill = 100;
+  biggest = lib.take 5 (lib.sort (a: b: a.n > b.n)
+    (map (p: { inherit (p) pack; n = lib.length p.skillNames; }) packList));
 
   # Where each CLI looks for user-level skills, relative to $HOME. Checked
   # against the CLIs' own source or binaries (docs/skills.md lists how).
@@ -137,6 +153,34 @@ in
   options.agentos.skills = {
     enable = lib.mkEnableOption "AgentOS agent skill packs, linked into every agent CLI";
 
+    enableAll = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Enable every skill pack, including the opt-in ones (the community
+        collections: Superpowers, gstack, Everything Claude Code, the
+        scientific skills, 800+ Composio app automations, ...). A pack
+        whose `enable` is set explicitly keeps that value. This adds
+        well over a thousand skills; each costs about ${toString tokensPerSkill}
+        tokens of context in every agent session, so evaluation warns above
+        ${toString warnAbove} skills.
+      '';
+    };
+
+    collections = lib.mkOption {
+      type = lib.types.listOf (lib.types.enum knownCollections);
+      default = [ ];
+      example = [ "community" "security" ];
+      description = ''
+        Enable every pack that belongs to one of these collections (a pack
+        can belong to several). A pack whose `enable` is set explicitly keeps
+        that value. Collections: ${lib.concatStringsSep ", " knownCollections}.
+        `community` is the moderate-size set of community packs; `large`
+        marks packs with more than 150 skills and `automation` the Composio
+        packs, which need an account; see docs/skills.md.
+      '';
+    };
+
     packs = lib.mapAttrs
       (name: pack: {
         enable = lib.mkOption {
@@ -173,6 +217,20 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # enableAll / collections switch packs on at mkDefault priority: above the
+    # option default, below an explicit packs.<name>.enable
+    agentos.skills.packs = lib.mapAttrs
+      (_: pack: { enable = lib.mkIf (wanted pack) (lib.mkDefault true); })
+      allPacks;
+
+    warnings = lib.optional (skillCount > warnAbove)
+      ("agentos.skills: ${toString skillCount} skills are enabled. Every agent session lists each skill's name and "
+        + "description (about ${toString tokensPerSkill} tokens per skill), roughly ${toString (skillCount * tokensPerSkill / 1000)}k tokens "
+        + "of context before any work, which also dilutes which skill the agent picks. Largest packs: "
+        + lib.concatMapStringsSep ", " (b: "${b.pack} (${toString b.n})") biggest
+        + ". Turn packs off with agentos.skills.packs.<name>.enable = false or choose collections "
+        + "instead of agentos.skills.enableAll.");
+
     assertions = [
       {
         assertion = collisions == { };

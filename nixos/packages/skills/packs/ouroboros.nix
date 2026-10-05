@@ -34,6 +34,7 @@ mkSkillPack {
   pack = "ouroboros";
   version = "0.55.4";
   src = prefixed;
+  licenseSrc = sources.ouroboros;
   skills = lib.listToAttrs (map (n: lib.nameValuePair "ouroboros-${n}" "ouroboros-${n}") names);
   tools = [ (callPackage ../tools/ouroboros.nix { inherit sources; }) ];
   mcp.ouroboros = {
@@ -43,5 +44,6 @@ mkSkillPack {
   description = "Spec-first workflow: interview, seed, run, then evaluate the app against the plan";
   homepage = "https://github.com/Q00/ouroboros";
   license = "MIT";
+  collections = [ "dev-workflow" ];
   notes = "Telemetry is off by default (DO_NOT_TRACK=1, OUROBOROS_TELEMETRY=0 in the wrapper). Runs call the model through an agent CLI or API key. Uses gh/git when skills publish or star.";
 }

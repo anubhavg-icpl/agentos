@@ -15,6 +15,7 @@ mkSkillPack {
   description = "Oxlint plugin that flags specific coding mistakes in JS/TS projects, with the `anti-slop` command";
   homepage = "https://github.com/dmmulroy/anti-slop";
   license = "MIT";
+  collections = [ "dev-workflow" ];
   notes = ''
     The upstream install-anti-slop skill vendors the plugin into a repository and
     installs @oxlint/plugins and oxlint from npm. On AgentOS the `anti-slop`

@@ -1,6 +1,8 @@
 # agentos-skills: inspect the skill packs installed by agentos.skills.
 #
-#   agentos-skills list            packs, skills, tools, MCP servers, licenses
+#   agentos-skills list [--all]    packs, skills, tools, MCP servers, licenses
+#                                  (long skill lists are cut at 40; --all shows every name)
+#   agentos-skills list --collections   enabled packs grouped by collection
 #   agentos-skills doctor          per user and target: links present or broken
 #   agentos-skills path <skill>    store path of a skill
 #
@@ -20,11 +22,33 @@ writeShellApplication {
     bundle=$(jq -r .bundle "$conf")
 
     cmd_list() {
-      jq -r '
+      all=false
+      collections=false
+      for a in "$@"; do
+        case "$a" in
+          --all) all=true ;;
+          --collections) collections=true ;;
+          *) echo "usage: agentos-skills list [--all] [--collections]" >&2; exit 2 ;;
+        esac
+      done
+      if [ "$collections" = true ]; then
+        jq -r '
+          [ .packs[] | . as $p | ((.collections // []) | if length == 0 then ["(none)"] else . end)[]
+            | { c: ., pack: $p.pack, n: ($p.skills | length) } ]
+          | group_by(.c)[]
+          | "\(.[0].c)  (\(map(.n) | add) skills)",
+            (.[] | "  \(.pack) (\(.n))"),
+            ""
+        ' "$bundle/manifest.json"
+        return
+      fi
+      jq -r --argjson all "$all" '
         .packs[] |
+        (.skills | length) as $n |
         "\(.pack) \(.version)  [\(.license)]",
         "  \(.description)",
-        "  skills: \(.skills | join(", "))",
+        (if (.collections // []) | length > 0 then "  collections: \(.collections | join(", "))" else empty end),
+        "  skills (\($n)): \(if $n > 40 and ($all | not) then (.skills[:40] | join(", ")) + ", ... (+\($n - 40) more; agentos-skills list --all)" else .skills | join(", ") end)",
         "  tools:  \(if (.tools | length) > 0 then .tools | join(", ") else "-" end)",
         "  mcp:    \(if (.mcp | length) > 0 then .mcp | keys | join(", ") else "-" end)",
         (if .notes != "" then "  notes:  \(.notes | rtrimstr("\n") | gsub("\n"; "\n          "))" else empty end),
@@ -80,11 +104,11 @@ writeShellApplication {
     }
 
     case "''${1:-list}" in
-      list) cmd_list ;;
+      list) shift; cmd_list "$@" ;;
       doctor) cmd_doctor ;;
       path) shift; cmd_path "$@" ;;
       *)
-        echo "usage: agentos-skills <list|doctor|path <skill>>" >&2
+        echo "usage: agentos-skills <list [--all] [--collections]|doctor|path <skill>>" >&2
         exit 2
         ;;
     esac

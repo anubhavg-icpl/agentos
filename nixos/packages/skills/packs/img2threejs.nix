@@ -34,6 +34,7 @@ mkSkillPack {
   description = "img2threejs: rebuild an object or character reference image as a quality-gated procedural Three.js model";
   homepage = "https://github.com/img2threejs/img2threejs";
   license = "Apache-2.0";
+  collections = [ "design" ];
   notes = ''
     Token-heavy: the skill runs a staged pipeline (intake, spec, build,
     review with an AI-vision self-correction loop) and reads many reference

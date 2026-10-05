@@ -15,5 +15,6 @@ mkSkillPack {
   description = "Test whether agent skills help: run the agent with and without a skill and compare";
   homepage = "https://github.com/edonadei/caliper";
   license = "MIT";
+  collections = [ "dev-workflow" ];
   notes = "caliper runs agent CLIs (claude, codex, ...) from PATH; evaluation runs call the model and need that agent logged in or keyed. git is needed only for specs with git skill sources.";
 }

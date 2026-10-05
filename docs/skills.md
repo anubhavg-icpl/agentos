@@ -23,13 +23,16 @@ images do not.
 | Option | Default | Meaning |
 |--------|---------|---------|
 | `agentos.skills.enable` | `false` | Install the enabled packs |
-| `agentos.skills.packs.<name>.enable` | `true` (see below) | One option per pack in `nixos/packages/skills`; new packs appear automatically |
+| `agentos.skills.packs.<name>.enable` | `true` (see below) | One option per pack in `nixos/packages/skills`; new packs appear automatically. An explicit value always wins over `enableAll` and `collections` |
+| `agentos.skills.enableAll` | `false` | Enable every pack, including the opt-in ones (see [Community collections](#community-collections)) |
+| `agentos.skills.collections` | `[ ]` | Enable every pack that belongs to one of these collections (`community`, `design`, `security`, `writing`, `research`, `dev-workflow`, `productivity`, `science`, `automation`, `large`) |
 | `agentos.skills.targets` | all | Which CLI directories get links (table below) |
 | `agentos.skills.includeAgentUser` | `agentos.runtime.enable` | Link into the home of `agentos-agent` (`agentos.runtime.agentHome`) |
 | `agentos.skills.users` | `[ ]` | More users whose home gets the links |
 
 A pack is on by default unless its derivation sets `passthru.defaultEnable =
-false` (`defaultEnable = false;` in `mkSkillPack`). Examples:
+false` (`defaultEnable = false;` in `mkSkillPack`); all the community packs
+below are opt-in. Examples:
 
 ```nix
 agentos.skills = {
@@ -108,7 +111,9 @@ with `agentos spawn` look. Your own login needs `agentos.skills.users = [ "you" 
 ## `agentos-skills`
 
 ```
-agentos-skills list            # packs, skills, tools, MCP servers, licenses, notes
+agentos-skills list            # packs, skills, tools, MCP servers, licenses, notes (long skill lists cut at 40)
+agentos-skills list --all      # the same with every skill name
+agentos-skills list --collections   # enabled packs grouped by collection, with skill counts
 agentos-skills doctor          # per user and target: ok / missing / broken links; exit 1 on a problem
 agentos-skills path <skill>    # store path of a skill
 ```
@@ -300,6 +305,161 @@ Works through an app's details before building, asks about the decisions that ch
 
 <!-- Entries for further packs go here, in the same form. -->
 
+## Community collections
+
+Twenty-two further packs bring in popular community skill collections. All
+of them are **opt-in** (`defaultEnable = false`): nothing here is installed
+unless you enable it. Each is built from a source pinned in `sources.nix`, and
+only skills whose licence allows redistribution are included (see "What is
+left out" below). Skills are discovered from the pinned source with
+`builtins.readDir` (`nixos/packages/skills/discover.nix`), not listed by hand,
+so a pin update picks up new skills; the build still fails on a skill that
+breaks the Agent Skills spec.
+
+```nix
+agentos.skills = {
+  enable = true;
+  collections = [ "community" "security" ];   # every pack tagged with one of these
+  packs.gstack.enable = false;                # an explicit value always wins
+  packs.scientific-skills.enable = true;      # or pick packs one by one
+  # enableAll = true;                         # every pack, see the cost below
+};
+```
+
+`agentos.skills.collections` takes any of these names; a pack can be in
+several. `agentos-skills list --collections` shows the enabled packs grouped
+by collection.
+
+| Collection | Contents |
+|------------|----------|
+| `community` | The general-purpose community packs of moderate size (about 240 skills together) |
+| `design` | UI and design: ui-skills, ui-ux-pro-max, impeccable, taste-skill, open-design, hyperframes, anthropic-skills, img2threejs, fwc-swiftui-skills |
+| `security` | vibe-security |
+| `writing` | no-ai-slop, caveman, mattpocock-skills, pstack |
+| `research` | agent-reach |
+| `productivity` | composio-awesome-claude-skills, ai-job-search |
+| `dev-workflow` | Engineering workflows: superpowers, gstack, mattpocock-skills, pstack, cursor-plugins, ponytail, unlazy, caveman, anthropic-skills and the existing karpathy-*, anti-slop, reticle, caliper, ouroboros packs |
+| `science` | scientific-skills |
+| `automation` | composio-automation (needs a Composio account) |
+| `large` | Packs with more than 150 skills: everything-claude-code, scientific-skills |
+
+`chisle` is in no collection because it installs Claude Code hooks; only
+`enableAll` or its own `enable` turns it on.
+
+### Context cost
+
+An agent lists every installed skill's name and description in each session.
+That is roughly **100 tokens per skill** before it has done anything, and a
+long list also makes the right skill harder to pick. `enableAll = true` installs
+about 1,600 skills (around 160k tokens), which exceeds many models' useful
+context. When more than **300** skills are enabled, evaluation prints a warning
+that names the largest packs. It is a warning, not an error. Prefer
+collections or single packs; the three largest are `composio-automation` (806
+skills), `everything-claude-code` (274) and `scientific-skills` (171).
+
+### Pack table
+
+Skill counts are what the pinned sources give now. Every pack's `notes` field
+(shown by `agentos-skills list`) has the full list of runtimes, keys and
+caveats. None of the packs installs a dependency: scripts inside skills are
+shipped as they are.
+
+| Pack | Source | Licence | Skills | Collections | Needs / notes |
+|------|--------|---------|--------|-------------|---------------|
+| `superpowers` | [obra/superpowers](https://github.com/obra/superpowers) | MIT | 15 | community, dev-workflow | Markdown plus small Node/shell helpers; the plugin's session hook that forces `using-superpowers` is not packaged |
+| `anthropic-skills` | [anthropics/skills](https://github.com/anthropics/skills) | Apache-2.0 (per skill) | 13 | community, design, dev-workflow | Python helpers need Pillow, Playwright and similar (not provided). docx, pdf, pptx, xlsx are not shipped (all rights reserved) |
+| `mattpocock-skills` | [mattpocock/skills](https://github.com/mattpocock/skills) | MIT | 27 | community, dev-workflow, writing | `gh` and `git`; `retro` is installed as `mattpocock-skills-retro` |
+| `gstack` | [garrytan/gstack](https://github.com/garrytan/gstack) | MIT | 54 | community, dev-workflow | Skills call upstream's Bun-built helpers and `browse` tool, which are not packaged (planning and review skills work as prose); `ios-*` need macOS and Xcode |
+| `ui-ux-pro-max` | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | MIT (ui-styling Apache-2.0) | 7 | community, design | Python 3 scripts (no packages); `design` needs a Gemini, Atlas Cloud or MuAPI key; scripts are addressed through `CLAUDE_PLUGIN_ROOT` |
+| `impeccable` | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | Apache-2.0 | 1 | community, design | The skill runs a launcher that downloads upstream's compiled binary on first use (network) |
+| `taste-skill` | [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) | MIT | 12 | community, design | Image-direction skills expect an image-generation tool |
+| `open-design` | [nexu-io/open-design](https://github.com/nexu-io/open-design) | Apache-2.0 (web-clone MIT) | 8 | community, design | Small, hand-vetted selection from a large repository (below) |
+| `caveman` | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | Apache-2.0 | 16 | community, writing, dev-workflow | `caveman-compress` calls the Anthropic API or the `claude` CLI; the six Caveman Cloud skills are not shipped |
+| `ponytail` | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) | MIT | 6 | community, dev-workflow | Markdown only; hooks and MCP server not packaged |
+| `pstack` | [cursor/plugins](https://github.com/cursor/plugins) `pstack/` | MIT (pstack/LICENSE) | 50 | community, dev-workflow, writing | Markdown; `tdd` and `teach` are installed as `pstack-tdd`, `pstack-teach` |
+| `no-ai-slop` | [petergyang/no-ai-slop](https://github.com/petergyang/no-ai-slop) | MIT | 1 | community, writing | Markdown only |
+| `vibe-security` | [raroque/vibe-security-skill](https://github.com/raroque/vibe-security-skill) | MIT | 1 | community, security | Markdown only |
+| `unlazy` | [Leonxlnx/unlazy](https://github.com/Leonxlnx/unlazy) | MIT | 1 | community, dev-workflow | Node 16+ for the gate scripts; no network |
+| `composio-awesome-claude-skills` | [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Apache-2.0 (README only, see below) | 18 | community, productivity | `connect`, `connect-apps` need a Composio account; `langsmith-fetch` a LangSmith key; `video-downloader` yt-dlp |
+| `agent-reach` | [Panniantong/Agent-Reach](https://github.com/Panniantong/Agent-Reach) | MIT | 1 | community, research | Router for the `agent-reach` CLI (not packaged) and per-platform tools; some channels need cookies or logins |
+| `ai-job-search` | [MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search) | MIT | 5 | community, productivity | Meant for a forked project checkout; the search skills run with Bun |
+| `hyperframes` | [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) | Apache-2.0 | 19 | design | `npx hyperframes` (npm, Node 22+), FFmpeg, Chromium; optional HeyGen, ElevenLabs or Gemini keys |
+| `cursor-plugins` | [cursor/plugins](https://github.com/cursor/plugins) (all plugins with their own MIT LICENSE except pstack) | MIT (per plugin) | 48 | dev-workflow | Many assume Cursor features; the Google Workspace and X skills need MCP servers and accounts |
+| `everything-claude-code` | [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code) | MIT | 274 | large | Large; some skills need service accounts; agents, commands and hooks are not packaged |
+| `scientific-skills` | [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills) | MIT | 171 | science, large | Python packages and public databases, some with API keys; none installed |
+| `composio-automation` | [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) `composio-skills/` | Apache-2.0 (README only) | 806 | automation | **Needs a Composio account**: every skill drives the hosted Rube MCP server (https://rube.app/mcp) and a login or key per app; useless without it; about 80k tokens of descriptions |
+
+### What is left out
+
+Only material that may be redistributed is packaged. Everything below is
+excluded on purpose; the reasons are also in the header of each pack file.
+
+- **Licence.** Anthropic's `docx`, `pdf`, `pptx` and `xlsx` (including the
+  copies under awesome-claude-skills' `document-skills/`) are "© Anthropic,
+  PBC. All rights reserved." `doc-coauthoring` (anthropic-skills) has no licence
+  file of its own and the repository README only says "many skills" are
+  Apache-2.0, so it is out. Scientific skills with a restrictive or unknown
+  `license:` field are out (`deepspot-m` PolyForm Noncommercial, `what-if-oracle`
+  CC BY-NC-SA, `rowan` proprietary, `glycoengineering`, `phylogenetics`,
+  `primekg` unknown). hyperframes' `talking-head-recut` and `music-to-video`
+  bundle GSAP (GreenSock, all rights reserved, Standard License); the 19
+  Pixabay sound effects of `media-use` are removed from that skill (Pixabay
+  licence). open-design keeps only its own skills and one MIT skill
+  (`web-clone`); copies of other projects' skills (Anthropic, Leonxlnx's taste
+  skills, GreenSock, Vercel, Emil Kowalski, OpenAI) are not repeated there.
+- **No licence file at the root.** `awesome-claude-skills` has none; its README
+  states Apache-2.0 (and that individual skills may differ), which is what the
+  pack records. `cursor/plugins` has none either: only plugin directories with
+  their own MIT `LICENSE` are used.
+- **Not valid under the Agent Skills spec** (the build would fail):
+  `claude-api` (anthropic-skills; description 1,068 characters),
+  `cursor-sdk` (cursor-plugins; 1,045 characters), `check-agent-compatibility`
+  (cursor-plugins; the description is not valid YAML), and four Danish job-board
+  skills of ai-job-search (`jobbank-search`, `jobdanmark-search`,
+  `jobindex-search`, `jobnet-search`; 1,122 to 1,241 characters).
+- **Test fixtures, templates, examples, repo-internal skills.** Template skills
+  (`template-skill`), `examples/` and `test/` trees, the per-agent copies of
+  skills that repositories generate (`.claude/`, `.cursor/`, `.openclaw/`, ...),
+  translations (everything-claude-code's `docs/*/skills`), hyperframes'
+  `registry/` blocks and its own `.claude` development skills, open-design's
+  `design-templates/`, plugin catalogue and its 85 catalogue stubs, gstack's
+  OpenClaw variants, mattpocock's `misc` and `in-progress`, pstack's
+  `automations/`, and the 19 everything-claude-code skills that exist only to
+  operate ECC itself.
+- **Duplicates.** The older copies of Anthropic skills in awesome-claude-skills
+  (they ship in anthropic-skills from the original repository), 26
+  underscore-named composio directories that duplicate the hyphen-named ones,
+  and `taste-skill-v1`.
+- **Needs a vendor's service, not just an account:** the six Caveman Cloud
+  skills, gstack's router skill `gstack`, and `gstack-upgrade`.
+- **Hooks, MCP servers, CLIs and plugin agents** that these repositories also
+  ship are not packaged. Pack notes say which skills depend on them.
+
+### Name clashes
+
+`agentos.skills` fails when two enabled packs install a skill with the same
+directory name, and `enableAll` enables all of them, so the whole set is kept
+collision-free. `python3 nixos/packages/skills/collisions.py` evaluates every
+pack and reports name clashes and identical `SKILL.md` text; it currently
+finds none among 32 packs and 1,618 skills. Where different skills shared a
+name, the later or less canonical one is prefixed with its pack name (the way
+`ouroboros-*` already was): `everything-claude-code-benchmark`,
+`everything-claude-code-design-system`, `everything-claude-code-exa-search`,
+`mattpocock-skills-retro` (with the one reference to it in `ask-matt`
+updated), `pstack-tdd` and `pstack-teach` (with the reference in pstack's
+poteto-mode bug-fix playbook updated), and `cursor-pr-review-canvas`. Other
+installed names differ from the upstream directory only where the spec
+requires it (`Make Bot UI` becomes `make-bot-ui`, taste-skill's `*-skill`
+directories take the `name:` from their front matter, two Composio
+directories lose a leading hyphen).
+
+### Licences and notices
+
+Each pack keeps its upstream licence in `pack.json`, and the build copies the
+upstream `LICENSE`/`NOTICE` files of the source into
+`share/doc/agentos-skills/<pack>/` of the pack. `agentos-skills list` prints
+the licence and notes of every enabled pack.
+
 ## Licenses
 
 Each pack keeps its upstream license; `agentos-skills list` prints it.
@@ -316,6 +476,9 @@ Each pack keeps its upstream license; `agentos-skills list` prints it.
 | `reticle` | FSL-1.1-ALv2 (CLI and MCP server); skills and SDK Apache-2.0 |
 | `caliper` | MIT |
 | `ouroboros` | MIT |
+| `superpowers`, `gstack`, `mattpocock-skills`, `ponytail`, `pstack`, `cursor-plugins`, `no-ai-slop`, `vibe-security`, `unlazy`, `agent-reach`, `ai-job-search`, `everything-claude-code`, `scientific-skills`, `taste-skill`, `ui-ux-pro-max` | MIT (`ui-ux-pro-max`'s `ui-styling` Apache-2.0; `cursor-plugins` MIT per plugin directory) |
+| `anthropic-skills`, `hyperframes`, `impeccable`, `caveman`, `open-design` | Apache-2.0 (`open-design`'s `web-clone` MIT; `anthropic-skills` per skill) |
+| `composio-awesome-claude-skills`, `composio-automation` | Apache-2.0 as stated in the repository README (no LICENSE file) |
 
 Reticle's server package, which provides the `reticle` CLI and MCP server, is
 under the Functional Source License 1.1 (Apache-2.0 future): internal use,
@@ -335,6 +498,11 @@ Building the packs needs only the pinned source tarballs. At run time:
 | `ui-skills` MCP server | `www.ui-skills.com` (through `npx mcp-remote`, which also needs the npm registry once) |
 | `img2threejs install` / `update` | npm registry and GitHub (through `npx`) |
 
+The community packs add no network access of their own either, but many of
+their skills send the agent to the network or to hosted services (Composio's
+Rube MCP server, HeyGen, Caveman, ui-ux-pro-max's image APIs, `npx hyperframes`,
+the launcher of impeccable); each pack's notes list them.
+
 When `agentos.security` restricts egress, allow these hosts or leave the
 affected pack's tools unused.
 
@@ -345,12 +513,20 @@ affected pack's tools unused.
 2. Add `packs/<name>.nix` calling `mkSkillPack` and list it in
    `nixos/packages/skills/default.nix`. `skills` maps the skill name to its
    directory in the source; every directory needs a `SKILL.md` with front matter.
+   For a large source use `discover.findSkills { src; roots; exclude; filter; }`
+   (`nixos/packages/skills/discover.nix`) instead of a list, and
+   `discover.renameSkills` to install a clashing skill under a prefixed name.
+   Set `collections = [ ... ]` and, for anything that should not be on by
+   default, `defaultEnable = false;`.
 3. `nix build .#checks.x86_64-linux.skills-eval` builds every pack and the
    bundle and checks front matter, name collisions and `pack.json`. Every
    skill is also checked against the Agent Skills spec while its pack builds
    (`validate.py`): the name is 1-64 characters of a-z, 0-9 and single
    hyphens and equals the directory name, and the description is present and
    at most 1024 characters.
+4. `python3 nixos/packages/skills/collisions.py` lists name clashes between
+   all packs (it must report none) and identical `SKILL.md` text installed
+   twice.
 
 `checks.x86_64-linux.skills` is a VM test of the module: links in the agent
 user's `.claude`, `.codex` and `.agents` directories, user-created skills left

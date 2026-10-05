@@ -70,6 +70,10 @@ pkgs.testers.runNixOSTest {
         print(out)
         for needle in ["ui-skills", "img2threejs", "fwc-swiftui-skills", "Apache-2.0", "mcp:"]:
             assert needle in out, needle
+        coll = machine.succeed("agentos-skills list --collections")
+        print(coll)
+        for needle in ["design", "dev-workflow", "ui-skills (7)"]:
+            assert needle in coll, needle
         path = machine.succeed("agentos-skills path baseline-ui").strip()
         machine.succeed(f"test -f {path}/SKILL.md")
         machine.fail("agentos-skills path no-such-skill")
