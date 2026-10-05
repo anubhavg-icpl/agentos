@@ -33,7 +33,7 @@
 { pkgs, nestloModules }:
 
 let
-  mockUpstream = pkgs.writers.writePython3Bin "mock-upstream" { } ''
+  mockUpstream = pkgs.writers.writePython3Bin "mock-upstream" { flakeIgnore = [ "E501" ]; } ''
     import http.server
     import json
 
@@ -69,7 +69,7 @@ let
   '';
 
   # A GitHub API with one agent/ pull request, one human one and one draft
-  mockGithub = pkgs.writers.writePython3Bin "mock-github" { } ''
+  mockGithub = pkgs.writers.writePython3Bin "mock-github" { flakeIgnore = [ "E501" ]; } ''
     import http.server
     import json
 

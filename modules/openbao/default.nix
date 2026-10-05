@@ -229,6 +229,8 @@ let
   syncScript = pkgs.writeShellApplication {
     name = "nestlo-openbao-sync";
     runtimeInputs = [ pkgs.coreutils pkgs.jq pkgs.getent ];
+    # the secret list is rendered from Nix and may hold a single name
+    excludeShellChecks = [ "SC2043" ];
     text = ''
       ${clientEnv}
       BAO_TOKEN=$(cat ${syncTokenFile})

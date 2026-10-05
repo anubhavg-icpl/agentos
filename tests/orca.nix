@@ -16,7 +16,7 @@
 
 let
   # Mock upstream: Chat Completions (Anthropic's OpenAI-compatible endpoint)
-  mockLlm = pkgs.writers.writePython3Bin "mock-llm" { } ''
+  mockLlm = pkgs.writers.writePython3Bin "mock-llm" { flakeIgnore = [ "E501" ]; } ''
     import http.server
     import json
 

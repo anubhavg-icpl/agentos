@@ -15,7 +15,7 @@
 { pkgs, nestloModules }:
 
 let
-  mockLlm = pkgs.writers.writePython3Bin "mock-llm" { } ''
+  mockLlm = pkgs.writers.writePython3Bin "mock-llm" { flakeIgnore = [ "E501" ]; } ''
     import http.server
     import json
 
@@ -45,7 +45,7 @@ let
     http.server.ThreadingHTTPServer(("127.0.0.1", 9999), H).serve_forever()
   '';
 
-  otlpSink = pkgs.writers.writePython3Bin "otlp-sink" { } ''
+  otlpSink = pkgs.writers.writePython3Bin "otlp-sink" { flakeIgnore = [ "E501" ]; } ''
     import http.server
     import json
 
