@@ -149,7 +149,7 @@ or `POST /tasks {"kind": "publish", "source_task": "<id>", "workspace": "<same>"
 
 ### How each agent is run
 
-`nestlo.orchestration.taskCommands` maps an agent name (or its command) to an argument vector; `{prompt}`, `{workspace}` and `{task_id}` are replaced inside single arguments. Defaults exist for claude, codex, aider, gemini, qwen, goose, opencode, amp, cursor-agent, copilot and droid. Add or replace entries:
+`nestlo.orchestration.taskCommands` maps an agent name (or its command) to an argument vector; `{prompt}`, `{workspace}` and `{task_id}` are replaced inside single arguments. Defaults exist for claude, codex, aider, agy (Antigravity CLI), gemini (deprecated), qwen, goose, opencode, amp, cursor-agent, copilot and droid. Add or replace entries:
 
 ```nix
 nestlo.orchestration.taskCommands.my-agent = [ "my-agent" "--headless" "--prompt" "{prompt}" ];

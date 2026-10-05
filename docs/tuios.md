@@ -197,7 +197,9 @@ That writes hook entries into the harness's own settings (for Claude Code
 `~/.claude/settings.json`) so it reports its state and conversation id to the
 pane it runs in; without them TUIOS relies on screen rules. Valid harnesses:
 `claude-code codex gemini-cli opencode amp antigravity copilot crush
-cursor-agent devin droid grok hermes kilo kimi omp pi qoder qwen`. TUIOS
+cursor-agent devin droid grok hermes kilo kimi omp pi qoder qwen`. The `antigravity`
+harness is Antigravity CLI (`agy`; configuration in `~/.gemini/config`, which Nestlo
+creates before installing the integration); `gemini-cli` is the deprecated Gemini CLI. TUIOS
 leaves entries it did not write alone. It is opt-in because it edits files the
 agent's own software reads.
 

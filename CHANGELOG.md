@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Antigravity CLI** (`agy`, `packages.<system>.antigravity-cli`), Google's successor to Gemini CLI (retired 2026-06-18), as a first-class agent: `nestlo spawn agy`, orchestrator command, runtime map, secrets example, docs/AGENTS.md. With a `gemini` provider on the gateway, `nestlo spawn` now routes Gemini CLI and Antigravity CLI through it (`GOOGLE_GEMINI_BASE_URL`, managed key). **Grok CLI** (`grok`) added too. Gemini CLI stays installable and is marked deprecated.
+
 ## [0.5.0] - 2026-10-05
 
 ### Added

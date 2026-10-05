@@ -106,6 +106,7 @@ in
       claude = [ "claude" "-p" "{prompt}" "--permission-mode" "acceptEdits" ];
       codex = [ "codex" "exec" "{prompt}" ];
       aider = [ "aider" "--yes-always" "--message" "{prompt}" ];
+      agy = [ "agy" "--mode" "accept-edits" "-p" "{prompt}" ];
       gemini = [ "gemini" "-p" "{prompt}" ];
       qwen = [ "qwen" "-p" "{prompt}" ];
       goose = [ "goose" "run" "-t" "{prompt}" ];

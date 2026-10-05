@@ -31,7 +31,8 @@
 # │ Claude Code      │ claude       │ claude-code           │ nixpkgs   │
 # │ Codex CLI        │ codex        │ codex                 │ nixpkgs   │
 # │ Aider            │ aider        │ aider                 │ nixpkgs   │
-# │ Gemini CLI       │ gemini       │ gemini-cli            │ nixpkgs   │
+# │ Antigravity CLI  │ agy          │ antigravity-cli       │ nixpkgs   │
+# │ Gemini CLI (dep.)│ gemini       │ gemini-cli            │ nixpkgs   │
 # │ Qwen Code        │ qwen         │ qwen-code             │ nixpkgs   │
 # │ Amp              │ amp          │ amp                   │ nixpkgs   │
 # │ Goose            │ goose        │ goose                 │ nixpkgs   │
@@ -44,6 +45,7 @@
 # │ Kiro CLI         │ kiro-cli     │ kiro-cli              │ nixpkgs   │
 # │ Codebuff         │ codebuff     │ codebuff              │ nixpkgs   │
 # │ Pi               │ pi           │ pi-coding-agent       │ nixpkgs   │
+# │ Grok CLI         │ grok         │ grok-cli              │ nixpkgs   │
 # │ Factory Droid    │ droid        │ factory-droid         │ npm       │
 # │ Cline            │ cline        │ cline                 │ npm       │
 # │ Continue         │ cn           │ continue-cli          │ npm       │
@@ -159,6 +161,12 @@ rec {
   claude-code = up.claude-code;
   codex = up.codex;
   aider = up.aider-chat;
+  # Antigravity CLI (Google, successor of Gemini CLI, which Google retired on
+  # 2026-06-18). nixpkgs pins the vendor's release archive by hash (fetched
+  # from storage.googleapis.com, patched with autoPatchelfHook), so there is
+  # no curl | bash installer to run; unfree binary, hence allowUnfree.
+  antigravity-cli = up.antigravity-cli;
+  # Deprecated: kept installable for existing setups; use antigravity-cli.
   gemini-cli = up.gemini-cli;
   qwen-code = withAliases { pkg = up.qwen-code; aliases = { qwen-code = "qwen"; }; };
   amp = up.amp-cli;
@@ -175,6 +183,8 @@ rec {
   kiro-cli = up.kiro-cli;
   codebuff = up.codebuff;
   pi-coding-agent = up.pi-coding-agent;
+  # superagent-ai/grok-cli (MIT): xAI-backed terminal agent
+  grok-cli = up.grok-cli;
 
   # herdr: persistent terminal workspaces for the agents above (nestlo.herdr,
   # docs/herdr.md). Not an agent, so not part of all-agents; the module
@@ -240,9 +250,9 @@ rec {
   all-agents = pkgs.buildEnv {
     name = "nestlo-all-agents";
     paths = [
-      claude-code codex aider gemini-cli qwen-code amp goose opencode
+      claude-code codex aider antigravity-cli gemini-cli qwen-code amp goose opencode
       crush cursor-cli github-copilot-cli
-      kilocode-cli mistral-vibe kiro-cli codebuff pi-coding-agent
+      kilocode-cli mistral-vibe kiro-cli codebuff pi-coding-agent grok-cli
       factory-droid cline continue-cli open-interpreter
     ];
     ignoreCollisions = true;
@@ -252,9 +262,9 @@ rec {
   nix-agents = pkgs.buildEnv {
     name = "nestlo-nix-agents";
     paths = [
-      claude-code codex aider gemini-cli qwen-code amp goose opencode
+      claude-code codex aider antigravity-cli gemini-cli qwen-code amp goose opencode
       crush cursor-cli github-copilot-cli
-      kilocode-cli mistral-vibe kiro-cli codebuff pi-coding-agent
+      kilocode-cli mistral-vibe kiro-cli codebuff pi-coding-agent grok-cli
     ];
     ignoreCollisions = true;
   };

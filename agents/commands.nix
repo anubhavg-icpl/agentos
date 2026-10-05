@@ -8,6 +8,8 @@
   claude-code = [ "claude" ];
   codex = [ "codex" ];
   aider = [ "aider" ];
+  antigravity-cli = [ "agy" ];
+  # Deprecated upstream (retired 2026-06-18); use antigravity-cli
   gemini-cli = [ "gemini" ];
   qwen-code = [ "qwen" "qwen-code" ];
   amp = [ "amp" ];
@@ -21,6 +23,7 @@
   kiro-cli = [ "kiro-cli" ];
   codebuff = [ "codebuff" ];
   pi-coding-agent = [ "pi" ];
+  grok-cli = [ "grok" ];
   factory-droid = [ "droid" ];
   cline = [ "cline" ];
   continue-cli = [ "cn" "continue" ];

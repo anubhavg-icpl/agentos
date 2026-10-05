@@ -187,6 +187,9 @@ in
       claude-code = "claude";
       codex = "codex";
       aider = "aider";
+      agy = "agy";
+      antigravity = "agy";
+      antigravity-cli = "agy";
       gemini = "gemini";
       gemini-cli = "gemini";
       qwen = "qwen";
@@ -209,6 +212,8 @@ in
       codebuff = "codebuff";
       pi = "pi";
       pi-coding-agent = "pi";
+      grok = "grok";
+      grok-cli = "grok";
       interpreter = "interpreter";
       open-interpreter = "interpreter";
       droid = "droid";

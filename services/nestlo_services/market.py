@@ -38,8 +38,8 @@ FIELDS_OPTIONAL = ("commands",)
 
 # Names `nestlo spawn` already knows (modules/runtime/default.nix)
 BUILTIN = frozenset("""
-claude claude-code codex aider gemini gemini-cli qwen qwen-code amp goose opencode crush
-cursor cursor-agent copilot interpreter open-interpreter droid factory-droid cline cn continue
+claude claude-code codex aider agy antigravity antigravity-cli gemini gemini-cli qwen qwen-code amp goose opencode crush
+cursor cursor-agent copilot grok grok-cli interpreter open-interpreter droid factory-droid cline cn continue
 """.split())
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")

@@ -442,6 +442,7 @@ writeShellApplication {
       if [ -n "$model" ]; then
         env+=("NESTLO_MODEL=$model")
       fi
+      local gemini_routed=""
       if [ "$GATEWAY_ENABLED" = "true" ]; then
         local health agent_gateway="$GATEWAY"
         health=$(curl -fsS -m 5 "$GATEWAY/_nestlo/health") || die "model gateway is not responding at $GATEWAY"
@@ -475,6 +476,15 @@ writeShellApplication {
             env+=("$keyvar=''${!keyvar}")
           fi
         done
+        # Gemini CLI and Antigravity CLI (GEMINI_API_KEY sessions): only when
+        # the gateway has a gemini provider, as in nestlo-acp
+        if [ "$(echo "$health" | jq -r '.providers.gemini // empty | type')" = object ]; then
+          env+=("GOOGLE_GEMINI_BASE_URL=$agent_gateway/agent/$id:$token/gemini")
+          if [ "$(echo "$health" | jq -r '.providers.gemini.managed_key // false')" = "true" ]; then
+            env+=("GEMINI_API_KEY=nestlo-managed")
+            gemini_routed=1
+          fi
+        fi
         if [ -n "$budget" ]; then
           [ -w "$ADMIN_SOCKET" ] || die "--budget needs membership in the nestlo group"
           admin_api PUT "budget/$id" "$(jq -cn --argjson usd "$budget" '{daily_usd: $usd}')" >/dev/null
@@ -487,6 +497,9 @@ writeShellApplication {
       # Other provider credentials pass through, unmetered
       local var
       for var in GEMINI_API_KEY GOOGLE_API_KEY DASHSCOPE_API_KEY FACTORY_API_KEY GITHUB_TOKEN GH_TOKEN; do
+        if [ "$var" = GEMINI_API_KEY ] && [ -n "$gemini_routed" ]; then
+          continue
+        fi
         if [ -n "''${!var:-}" ]; then
           env+=("$var=''${!var}")
         fi

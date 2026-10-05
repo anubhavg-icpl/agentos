@@ -259,8 +259,8 @@
     ║                                              ║
     ╚══════════════════════════════════════════════╝
 
-    Agents: claude codex aider gemini qwen amp goose opencode crush
-            cursor-agent copilot kilocode vibe kiro-cli codebuff pi
+    Agents: claude codex aider agy gemini qwen amp goose opencode crush
+            cursor-agent copilot kilocode vibe kiro-cli codebuff pi grok
             droid cline cn interpreter
 
     Quick start:

@@ -106,6 +106,8 @@ in
       aider:
         - ANTHROPIC_API_KEY
         - OPENAI_API_KEY
+      antigravity-cli:
+        - GEMINI_API_KEY
       gemini-cli:
         - GOOGLE_API_KEY
       github-copilot-cli:
