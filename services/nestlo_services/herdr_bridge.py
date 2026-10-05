@@ -93,7 +93,9 @@ def run_json(argv, timeout=10):
         return None, "herdr not found"
     except subprocess.TimeoutExpired:
         return None, "timed out"
-    for line in reversed((p.stdout or "").strip().splitlines()):
+    # results come on stdout; herdr prints a failure's JSON on stderr
+    lines = (p.stdout or "").strip().splitlines() + (p.stderr or "").strip().splitlines()
+    for line in reversed(lines):
         try:
             data = json.loads(line)
         except ValueError:

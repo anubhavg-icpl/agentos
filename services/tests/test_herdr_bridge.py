@@ -198,3 +198,12 @@ def test_monitor_http_endpoints(herdr):
             urllib.request.urlopen(base + "/etc/passwd")
     finally:
         srv.shutdown()
+
+
+def test_run_json_reads_an_error_from_stderr():
+    # herdr prints a failure's JSON on stderr, with a non-zero exit
+    err = '{"id":"cli:pane:list","error":{"code":"server_not_running","message":"no herdr server is running"}}'
+    res, code = hb.run_json(["sh", "-c", f"echo '{err}' >&2; exit 1"])
+    assert res is None and code == "server_not_running"
+    res, code = hb.run_json(["sh", "-c", 'echo \'{"result": {"panes": []}}\''])
+    assert res == {"panes": []} and code is None
