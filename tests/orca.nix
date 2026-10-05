@@ -159,7 +159,8 @@ pkgs.testers.runNixOSTest {
             assert "/agent/orca:" in base and base.endswith("/anthropic/v1"), base
             assert mp["spec"]["litellmModel"] == "claude-test", mp
             sel = json.loads(kubectl(f"get modelselector -n {ns} default -o json"))
-            assert {"name": "claude-sonnet"} in sel["spec"]["providers"], sel
+            # the CRD defaults each entry's weight (100)
+            assert "claude-sonnet" in [p["name"] for p in sel["spec"]["providers"]], sel
         key = kubectl("get secret -n default nestlo-gateway-key -o jsonpath='{.data.api-key}' | base64 -d")
         assert key == "nestlo-managed", key
         mode = machine.succeed("stat -c %a /var/lib/nestlo-orca/gateway-token").strip()
