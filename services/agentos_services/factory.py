@@ -59,6 +59,9 @@ DEFAULTS = {
         "metrics_port": 9960,
         "metrics_listen": "127.0.0.1",
         "item_ttl_days": 90,
+        # The scope guard runs inside the verify sandbox, where the services
+        # package is not on PATH; the NixOS module sets its store path
+        "scope_check": "agentos-factory-scope",
         "lines": {},
     },
 }
@@ -709,7 +712,7 @@ class Factory:
                 body["start_from"] = item["builder_task"]
             verify = list(line["verify"] or [])
             if line["enforce_scope"] and item["scope"]:
-                pre = ["agentos-factory-scope"]
+                pre = [self.opts.get("scope_check") or "agentos-factory-scope"]
                 for g in item["scope"]:
                     pre += ["--allow", g]
                 if line["base_branch"]:

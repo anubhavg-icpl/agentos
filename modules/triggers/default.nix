@@ -71,17 +71,32 @@ let
           applied the label vetted it.
         '';
       };
+      factory = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "web";
+        description = ''
+          Name of an `agentos.factory.lines` entry. A matching issue is then
+          POSTed to the factory (`/items`: line, title, body, source) instead
+          of being submitted as an orchestrator task; `workspace`, `agent`
+          and `prompt` are not used. Trust rules, sanitisation and
+          deduplication are the same. `issues` events only.
+        '';
+      };
       workspace = lib.mkOption {
-        type = lib.types.str;
-        description = "Workspace name or path under agentos.runtime.workspaceRoot (never taken from the event)";
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Workspace name or path under agentos.runtime.workspaceRoot (never taken from the event). Required unless `factory` is set.";
       };
       agent = lib.mkOption {
-        type = lib.types.str;
+        type = lib.types.nullOr lib.types.str;
+        default = null;
         example = "claude";
-        description = "Agent to run; it needs an entry in agentos.orchestration.taskCommands";
+        description = "Agent to run; it needs an entry in agentos.orchestration.taskCommands. Required unless `factory` is set.";
       };
       prompt = lib.mkOption {
-        type = lib.types.str;
+        type = lib.types.nullOr lib.types.str;
+        default = null;
         example = "Fix issue #{issue.number}: {issue.title}\n\n{issue.body}";
         description = ''
           Prompt template. Placeholders: `{issue.title}` `{issue.body}`
@@ -89,7 +104,7 @@ let
           `{check.output}` `{check.name}` `{repo}`. Event text is untrusted:
           it is substituted as plain data (stripped of control characters and
           length-capped), never into a shell. Say in the template that it is
-          data, not instructions.
+          data, not instructions. Required unless `factory` is set.
         '';
       };
       publish = lib.mkOption {
@@ -124,9 +139,13 @@ let
 
   toRule = _: r:
     {
-      inherit (r) event action repo prompt workspace agent publish gate conclusion;
+      inherit (r) event action repo publish gate conclusion;
       trust_labeler = r.trustLabeler;
     }
+    // lib.optionalAttrs (r.factory != null) { inherit (r) factory; }
+    // lib.optionalAttrs (r.prompt != null) { inherit (r) prompt; }
+    // lib.optionalAttrs (r.workspace != null) { inherit (r) workspace; }
+    // lib.optionalAttrs (r.agent != null) { inherit (r) agent; }
     // lib.optionalAttrs (r.label != null) { inherit (r) label; }
     // lib.optionalAttrs (r.commandPrefix != null) { command_prefix = r.commandPrefix; }
     // lib.optionalAttrs (r.budgetUSD != null) { budget_usd = r.budgetUSD; }
@@ -215,7 +234,21 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = lib.mkMerge [
+    # Rules for the factory lines that take GitHub issues (agentos.factory).
+    # mkDefault on the whole rule: a user rule named factory-<line> replaces it.
+    {
+      agentos.triggers.rules = lib.mapAttrs'
+        (name: l: lib.nameValuePair "factory-${name}" (lib.mkDefault {
+          event = "issues";
+          action = [ "opened" "labeled" ];
+          label = l.intake.github.label;
+          repo = l.intake.github.repo;
+          factory = name;
+        }))
+        (lib.filterAttrs (_: l: l.intake.github != null) config.agentos.factory.lines);
+    }
+    (lib.mkIf cfg.enable {
     assertions = [
       {
         assertion = rt.enable;
@@ -232,6 +265,18 @@ in
       {
         assertion = lib.all (r: !r.publish) (lib.attrValues cfg.rules) || config.agentos.git-automation.publish.repos != { };
         message = "agentos.triggers rules with publish = true need agentos.git-automation.publish.repos";
+      }
+      {
+        assertion = lib.all (r: r.factory != null || (r.agent != null && r.workspace != null && r.prompt != null)) (lib.attrValues cfg.rules);
+        message = "agentos.triggers rules need agent, workspace and prompt unless they set `factory`";
+      }
+      {
+        assertion = lib.all (r: r.factory == null || builtins.hasAttr r.factory config.agentos.factory.lines) (lib.attrValues cfg.rules);
+        message = "agentos.triggers rules with `factory` must name a line of agentos.factory.lines";
+      }
+      {
+        assertion = lib.all (r: r.factory == null || (config.agentos.factory.enable && r.event == "issues")) (lib.attrValues cfg.rules);
+        message = "agentos.triggers rules with `factory` need agentos.factory.enable and event = \"issues\"";
       }
     ];
 
@@ -280,5 +325,6 @@ in
         UMask = "0077";
       };
     };
-  };
+    })
+  ];
 }
