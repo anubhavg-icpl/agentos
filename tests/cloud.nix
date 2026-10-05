@@ -82,7 +82,8 @@ pkgs.testers.runNixOSTest {
         machine.wait_for_unit(unit)
     machine.succeed("install -Dm600 ${aliceKey} /root/.ssh/id_ed25519")
     machine.succeed("printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n' > /root/.ssh/config")
-    lobby = "ssh -o BatchMode=yes lobby@localhost"
+    # -n: never read the test driver's console as stdin
+    lobby = "ssh -n -o BatchMode=yes lobby@localhost"
 
     with subtest("the lobby knows alice and nobody else"):
         try:
@@ -100,7 +101,7 @@ pkgs.testers.runNixOSTest {
         assert out["https_url"] == "https://web.${domain}/", out
         machine.wait_until_succeeds(lobby + " ssh web true", timeout=120)
         assert machine.succeed(lobby + " ssh web cat /etc/hostname").strip() == "web"
-        machine.succeed(lobby + " ssh web 'nohup python3 -m http.server 8000 --directory /etc </dev/null >/dev/null 2>&1 &'")
+        machine.succeed(lobby + " ssh web 'nohup python3 -m http.server 8000 --directory /etc </dev/null >/dev/null 2>&1 &'", timeout=60)
         machine.wait_until_succeeds("curl -sk -o /dev/null -w '%{http_code}' https://web.${domain}/hostname | grep -q 401", timeout=60)
         machine.succeed(lobby + " share set-public web")
         machine.wait_until_succeeds("curl -sk https://web.${domain}/hostname | grep -q web", timeout=60)
