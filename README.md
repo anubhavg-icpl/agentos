@@ -382,6 +382,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | networking | Metering model gateway, agent bridge, NAT | automatic |
 | context | Qdrant vector DB, persistent memory | `agentos-memory` |
 | orchestration | Multi-agent coordination † | `agentos-orchestrate` |
+| factory | Software factory: planner, builder, verify, reviewer, fix loop, QA, then PR or auto-merge | `agentos-factory` |
 | policy | Typed policy-as-code and RBAC roles on the orchestrator socket | `agentos-task policy show`, `whoami` |
 | mcp-registry | 14 core MCP tools | `agentos-tools` |
 | mcp-servers | 36 MCP servers (8 categories) | `agentos-mcp` |
@@ -549,6 +550,7 @@ agentos/
 - [x] Desktop edition: i3 with gaps (or sway/Hyprland), VS Code, Zed ([docs](docs/desktop.md))
 - [x] Approval gates, DAG workflows, retries and swarm judging in the orchestrator
 - [x] GitHub triggers and issue → pull request publishing ([docs](docs/triggers.md))
+- [x] Software factory: work items through plan, build, verify, review, fix loop and QA to a pull request ([docs](docs/factory.md))
 - [x] Signed provenance for AI-authored commits, verifiable offline ([docs](docs/provenance.md))
 - [x] Hash-chained, signed audit log with SIEM export ([docs](docs/audit.md))
 - [x] DLP in the gateway: mask or block secrets and PII in prompts ([docs](docs/dlp.md))

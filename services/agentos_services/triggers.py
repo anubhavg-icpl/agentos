@@ -4,6 +4,8 @@
                                                               │ verify HMAC, dedupe, match rules
                                                               ▼
                                          orchestrator socket: POST /tasks  (origin = gh:<repo>#<n>)
+                                         or, for a rule with `factory = "<line>"`,
+                                         factory socket: POST /items (a work item for that line)
 
 Security model (docs/triggers.md has the long version):
 
@@ -109,19 +111,29 @@ def compile_rules(raw):
         repo = r.get("repo")
         if not isinstance(repo, str) or not _REPO.match(repo):
             raise ConfigError("rule %s: repo must look like owner/name" % name)
-        for key in ("agent", "workspace", "prompt"):
-            if not isinstance(r.get(key), str) or not r[key]:
-                raise ConfigError("rule %s: %s is required" % (name, key))
-        for ph in re.findall(r"\{([^{}]*)\}", r["prompt"]):
-            if ph not in PLACEHOLDERS:
-                raise ConfigError("rule %s: unknown placeholder {%s}" % (name, ph))
+        factory = r.get("factory") or None
+        if factory is not None:
+            # A factory rule hands the issue to a factory line: the line decides
+            # agents, workspace and prompts, so the rule carries none of them
+            if event != "issues":
+                raise ConfigError("rule %s: factory rules only apply to issues events" % name)
+            if not isinstance(factory, str) or not _RULE_NAME.match(factory):
+                raise ConfigError("rule %s: factory must be a line name" % name)
+        else:
+            for key in ("agent", "workspace", "prompt"):
+                if not isinstance(r.get(key), str) or not r[key]:
+                    raise ConfigError("rule %s: %s is required" % (name, key))
+            for ph in re.findall(r"\{([^{}]*)\}", r["prompt"]):
+                if ph not in PLACEHOLDERS:
+                    raise ConfigError("rule %s: unknown placeholder {%s}" % (name, ph))
         prefix = r.get("command_prefix")
         if prefix and event not in ("issue_comment", "pull_request_review_comment"):
             raise ConfigError("rule %s: command_prefix only applies to comment events" % name)
         out = {
             "name": name, "event": event, "action": list(actions), "repo": repo.lower(),
             "label": r.get("label") or None, "command_prefix": prefix or None,
-            "agent": r["agent"], "workspace": r["workspace"], "prompt": r["prompt"],
+            "agent": r.get("agent") or "", "workspace": r.get("workspace") or "", "prompt": r.get("prompt") or "",
+            "factory": factory,
             "publish": bool(r.get("publish", False)), "gate": bool(r.get("gate", False)),
             "conclusion": list(r.get("conclusion") or []), "trust_labeler": bool(r.get("trust_labeler", True)),
             "budget_usd": r.get("budget_usd"), "timeout_sec": r.get("timeout_sec"),
@@ -190,6 +202,8 @@ def extract(event, payload, opts):
         number, assoc = issue.get("number"), issue.get("author_association")
         values["issue.title"] = sanitize(issue.get("title"), t)
         values["issue.body"] = sanitize(issue.get("body"), body)
+        url = issue.get("html_url")
+        values["issue.url"] = url[:300] if isinstance(url, str) and re.match(r"^https?://[^\s]+$", url) else ""
     if event in ("issue_comment", "pull_request_review_comment"):
         comment = _get(payload, "comment") or {}
         assoc = comment.get("author_association")
@@ -346,6 +360,12 @@ def orchestrator_client(socket_path):
     return submit, task_status
 
 
+def factory_client(socket_path):
+    def submit(body):
+        return call(socket_path, "POST", "/items", body)
+    return submit
+
+
 def task_ids(obj):
     return [t["id"] for t in (obj.get("tasks") or []) if isinstance(t, dict) and isinstance(t.get("id"), str)] \
         if isinstance(obj, dict) else []
@@ -356,8 +376,10 @@ class Transient(Exception):
 
 
 class TriggerService:
-    def __init__(self, cfg, secret, state, submit, task_status, publish_state=None, clock=time.time):
+    def __init__(self, cfg, secret, state, submit, task_status, publish_state=None, clock=time.time,
+                 factory_submit=None):
         self.opts = settings(cfg)
+        self.factory_submit = factory_submit
         self.secret = secret
         self.rules = compile_rules(self.opts["rules"])
         if self.opts["submit_style"] not in SUBMIT_STYLES:
@@ -414,8 +436,35 @@ class TriggerService:
         except OSError:
             return False
 
+    def submit_factory(self, rule, number, values):
+        """Hand an issue to a factory line (POST /items). Returns a result dict; raises Transient."""
+        if self.factory_submit is None:
+            return {"rule": rule["name"], "status": "rejected", "error": "no factory socket configured"}
+        item = {
+            "line": rule["factory"],
+            "title": (values.get("issue.title") or "issue #%d" % number).split("\n")[0],
+            "body": values.get("issue.body") or "",
+            "source": {"kind": "github", "repo": rule["repo"], "number": number, "url": values.get("issue.url") or ""},
+        }
+        try:
+            status, obj = self.factory_submit(item)
+        except OSError as exc:
+            raise Transient("factory unreachable: %s" % exc)
+        obj = obj if isinstance(obj, dict) else {}
+        if status in (200, 201):
+            dup = status == 200 or bool(obj.get("duplicate") or obj.get("deduplicated"))
+            return {"rule": rule["name"], "status": "duplicate" if dup else "submitted", "style": "factory",
+                    "line": rule["factory"], "item": obj.get("id") or (obj.get("item") or {}).get("id")}
+        if status == 409:
+            return {"rule": rule["name"], "status": "duplicate", "line": rule["factory"]}
+        if status >= 500:
+            raise Transient("factory returned %d" % status)
+        return {"rule": rule["name"], "status": "rejected", "error": str(obj.get("error") or "HTTP %d" % status)[:300]}
+
     def submit(self, rule, number, values, event):
         """Submit one match. Returns a result dict; raises Transient."""
+        if rule.get("factory"):
+            return self.submit_factory(rule, number, values)
         bodies, dedupe, block = self.bodies(rule, number, values, event)
         last = None
         for style, body in bodies:
@@ -581,8 +630,9 @@ def main(argv=None):
         print("cannot start: %s" % exc, file=sys.stderr)
         return 2
     submit, task_status = orchestrator_client(T.settings(cfg, "orchestrator")["socket"])
+    factory_socket = (cfg.get("factory") or {}).get("socket") or "/run/agentos-factory/factory.sock"
     try:
-        service = TriggerService(cfg, secret, state, submit, task_status)
+        service = TriggerService(cfg, secret, state, submit, task_status, factory_submit=factory_client(factory_socket))
     except ConfigError as exc:
         print("invalid trigger configuration: %s" % exc, file=sys.stderr)
         return 2

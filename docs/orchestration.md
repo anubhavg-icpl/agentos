@@ -133,6 +133,20 @@ agentos-task submit --agent aider --workspace myproj --prompt "Speed up the buil
 - `concurrency_key`: at most one *running* task per key (`[A-Za-z0-9][A-Za-z0-9._:/@#-]{0,99}`), across all groups.
 - `dedupe_key`: a submit whose key belongs to a task that has not finished (awaiting approval, queued, backing off or running) returns that task (HTTP 200, `deduplicated: true`) and queues nothing; once it finished the key is free again. The check is atomic in Redis. Not allowed with `swarm` or in workflow nodes.
 
+### Continuing a branch: `start_from`
+
+`start_from: "<task-id>"` (needs `isolate: true`) makes the task's worktree and branch `agent/<id>` start from the tip of `agent/<that task>` instead of the workspace HEAD, so a fix round continues the previous round's work. The earlier task must exist and be in the same workspace (checked at submit); while it is still unfinished the new task also waits for it (it is added to `depends_on`), once it is finished any status is accepted. The runner checks that the branch exists when the task starts and otherwise fails the task (`setup failed: start_from: branch agent/<id> does not exist`). Work the earlier agent left uncommitted in its worktree is committed first (hooks off). A retry recreates the worktree from the same start point. The result records `base_sha` (the start commit), `start_from` and `chain_base_sha`, the `base_sha` of the first task of the chain. `start_from` is refused in workflow nodes (it names a task id, not a node; submit the follow-up as its own task).
+
+### Publish tasks: `kind: "publish"`
+
+`kind` is `"agent"` (default) or `"publish"`. A publish task runs no agent: the root task runner publishes the branch of `source_task` with `publish.py`, using the usual `publish` block (`{repo, title, body, merge?}`).
+
+```sh
+agentos-task publish <source-task-id> --repo acme/widgets --title "Fix the crash" [--body-file f] [--merge squash]
+```
+
+or `POST /tasks {"kind": "publish", "source_task": "<id>", "workspace": "<same>", "publish": {...}}` (`agent` and `prompt` are optional and ignored). `source_task` is required, must be in the same workspace, must have `succeeded` and have produced a branch; a publish task cannot be a swarm, take `isolate` or `start_from`. In a workflow, a publish node instead names its source by `depends_on` (the first succeeded dependency with a branch). Every rule of `publish.py` applies: repository allow-list, `agent/<id>` branches only, protected branches, the bundle-then-push split, a provenance note when enabled. The empty-diff check compares against the diff base `chain_base_sha` of the source (else its `base_sha`), so a fix round that changes nothing itself is still publishable when an earlier round of its `start_from` chain did. The task's result has `pr_url`, `pr_number`, `branch`, `source_task` and the `publish` block (`status`, `merge` when asked for); a refused publish fails the task with `publish refused: <reason>`. Publish tasks do not hold the workspace, count as publishing for the policy (`require_approval.mode = "publish"`, `publish.enable`) and are audited (`publish.pr`, `publish.merge`). Merging is described in [triggers.md](triggers.md#publishing).
+
 ### How each agent is run
 
 `agentos.orchestration.taskCommands` maps an agent name (or its command) to an argument vector; `{prompt}`, `{workspace}` and `{task_id}` are replaced inside single arguments. Defaults exist for claude, codex, aider, gemini, qwen, goose, opencode, amp, cursor-agent, copilot and droid. Add or replace entries:

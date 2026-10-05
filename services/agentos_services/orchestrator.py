@@ -178,6 +178,32 @@ class Orchestrator:
         """Validate and queue a task (or a swarm). Returns the new tasks."""
         return self.submit_ex(body, peer)[0]
 
+    def _check_links(self, fields):
+        """`start_from` and `source_task` must name tasks of the same workspace.
+
+        start_from: any earlier task of the workspace; while it is unfinished the
+        new task also waits for it (it is added to depends_on). The branch itself
+        is checked by the task runner when the task starts.
+        source_task (kind publish): must have succeeded and produced a branch."""
+        for name in ("start_from", "source_task"):
+            ref = fields.get(name)
+            if not ref:
+                continue
+            other = self.tasks.get(ref)
+            if other is None:
+                raise T.ValidationError("unknown %s: %s" % (name, ref))
+            if other.get("workspace") != fields["workspace"]:
+                raise T.ValidationError("%s %s belongs to another workspace" % (name, ref))
+            if other.get("kind") == "publish":
+                raise T.ValidationError("%s %s is a publish task and has no branch of its own" % (name, ref))
+            if name == "source_task":
+                if other["status"] != T.SUCCEEDED:
+                    raise T.ValidationError("source_task %s has not succeeded (%s)" % (ref, other["status"]))
+                if not (other.get("result") or {}).get("branch"):
+                    raise T.ValidationError("source_task %s produced no branch" % ref)
+            elif other["status"] not in T.TERMINAL and ref not in fields["depends_on"]:
+                fields["depends_on"] = fields["depends_on"] + [ref]
+
     def submit_ex(self, body, peer=None):
         """Like submit; returns (tasks, deduplicated). When a live task with the
         same dedupe_key exists, that task is returned and nothing is queued."""
@@ -187,18 +213,22 @@ class Orchestrator:
         rt = self.runtime()
         swarm = T.validate_swarm(body, self.opts)
         fields = T.validate_fields({k: v for k, v in body.items() if k not in ("swarm", "judge")}, rt, self.opts)
-        T.task_command(self.opts, rt, fields["agent"])
+        if fields["kind"] != "publish":
+            T.task_command(self.opts, rt, fields["agent"])
         self._check_origin(fields.get("origin"), peer)
         judge = None
         if body.get("judge") is not None:
             if swarm < 2:
                 raise T.ValidationError("judge needs a swarm of at least 2")
             judge = T.validate_judge(body["judge"], rt, self.opts)
+        if fields["kind"] == "publish" and swarm > 1:
+            raise T.ValidationError("a publish task cannot be a swarm")
         if fields["dedupe_key"] and swarm > 1:
             raise T.ValidationError("dedupe_key cannot be combined with swarm")
         for dep in fields["depends_on"]:
             if self.tasks.get(dep) is None:
                 raise T.ValidationError("unknown dependency: %s" % dep)
+        self._check_links(fields)
         group = fields["group"]
         if swarm > 1:
             group = group or T.new_id("swarm", self.clock)
@@ -262,7 +292,7 @@ class Orchestrator:
                 raise T.ValidationError("invalid node name %r (letters, digits, - and _; at most 32)" % str(name)[:40])
             if not isinstance(spec, dict):
                 raise T.ValidationError("node %s must be an object" % name)
-            bad = sorted(set(spec) & {"swarm", "judge", "group", "after", "dedupe_key"})
+            bad = sorted(set(spec) & {"swarm", "judge", "group", "after", "dedupe_key", "start_from"})
             if bad:
                 raise T.ValidationError("node %s: %s not allowed in a workflow node" % (name, ", ".join(bad)))
             listed = spec.get("depends_on") or []
@@ -302,7 +332,9 @@ class Orchestrator:
                 spec["origin"] = body["origin"]
             try:
                 fields = T.validate_fields(spec, rt, self.opts, node_refs=ancestors[n])
-                T.task_command(self.opts, rt, fields["agent"])
+                if fields["kind"] != "publish":
+                    T.task_command(self.opts, rt, fields["agent"])
+                self._check_links(fields)
                 when = nodes[n].get("when")
                 if when is not None:
                     T.parse_when(when, nodes=set(deps[n]))
@@ -513,7 +545,7 @@ class Orchestrator:
             # Higher priority first, then submission order
             ready.sort(key=lambda t: (-int(t.get("priority") or 0), t["created_at"], t["id"]))
             slots = self._free_slots(running)
-            busy = {t["workspace"] for t in running if not t.get("isolate")}
+            busy = {t["workspace"] for t in running if not t.get("isolate") and t.get("kind") != "publish"}
             keys = {t["concurrency_key"] for t in running if t.get("concurrency_key")}
             # Policy max_parallel: a concurrency key with a limit above one
             pol_running = {}
@@ -530,7 +562,7 @@ class Orchestrator:
                 pol = task.get("policy") or {}
                 if pol.get("max_parallel") and pol_running.get(pol["name"], 0) >= pol["max_parallel"]:
                     continue
-                if not task.get("isolate"):
+                if not task.get("isolate") and task.get("kind") != "publish":
                     # Non-isolated tasks share the working tree: one at a time
                     if task["workspace"] in busy:
                         continue
