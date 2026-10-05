@@ -129,7 +129,8 @@ def enforce(eff, name, version, fields, runtime, spent_today=0.0, reserved=0.0, 
     if iso == "container" and runtime.get("default_isolation", "sandbox") != "container":
         raise PolicyError(rule("isolation"), "container isolation is required but the host runs agents in a sandbox")
 
-    if fields.get("publish") is not None and eff.get("publish_enable") is False:
+    publishing = fields.get("publish") is not None or fields.get("kind") == "publish"
+    if publishing and eff.get("publish_enable") is False:
         raise PolicyError(rule("publish.enable"), "publishing a pull request is not allowed")
 
     model = fields.get("model")
@@ -163,7 +164,7 @@ def enforce(eff, name, version, fields, runtime, spent_today=0.0, reserved=0.0, 
     if mode not in APPROVAL_MODES:
         raise PolicyError(rule("require_approval"), "unknown mode %r" % mode)
     gate = (mode == "always"
-            or (mode == "publish" and fields.get("publish") is not None)
+            or (mode == "publish" and publishing)
             or (mode == "costAbove" and (budget is None or budget > float(ra.get("threshold_usd", 0)))))
     if gate and not fields.get("gate"):
         fields["gate"] = True

@@ -71,6 +71,17 @@ in
               default = [ ];
               description = "Workspaces whose tasks belong to this repository (for autoPR)";
             };
+            allowAutoMerge = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                Let a task's `publish.merge` request merge its pull request into
+                `base` once every check run is green, the combined status is
+                success and the head is still the pushed commit. Off by default;
+                a request for a repository that does not set this is recorded as
+                skipped and the PR stays open. Never merges into any other branch.
+              '';
+            };
           };
         });
         default = { };
@@ -112,6 +123,16 @@ in
         description = "Open pull requests as drafts";
       };
 
+      mergeWaitSec = lib.mkOption {
+        type = lib.types.ints.between 0 86400;
+        default = 1800;
+        description = ''
+          How long the root task runner polls a pull request's checks before it
+          gives up on an auto-merge (see `repos.<repo>.allowAutoMerge`). The
+          runner unit has no start timeout, so this is the only bound.
+        '';
+      };
+
       commitUncommitted = lib.mkOption {
         type = lib.types.bool;
         default = true;
@@ -151,8 +172,9 @@ in
       protected_branches = cfg.publish.protectedBranches;
       draft = cfg.publish.draft;
       commit_uncommitted = cfg.publish.commitUncommitted;
+      merge_wait_sec = cfg.publish.mergeWaitSec;
       repos = lib.mapAttrs
-        (_: r: { base = r.base; workspaces = r.workspaces; } // lib.optionalAttrs (r.url != null) { inherit (r) url; })
+        (_: r: { base = r.base; workspaces = r.workspaces; allow_auto_merge = r.allowAutoMerge; } // lib.optionalAttrs (r.url != null) { inherit (r) url; })
         cfg.publish.repos;
     };
 

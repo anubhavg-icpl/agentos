@@ -97,6 +97,7 @@ class TaskRunner:
         self.cancel = threading.Event()
         self.proc = None
         self.base_sha = None
+        self.chain_base_sha = None    # start_from: base of the first task of the chain
         # publisher(publish_opts) -> P.Publisher; replaced in tests
         self.publisher = publisher or self._make_publisher
         self.prov_opts = PV.settings(cfg)
@@ -127,6 +128,35 @@ class TaskRunner:
             raise RunnerError("git %s failed: %s" % (" ".join(args[:2]), (res.stderr or "").strip()[:300]))
         return res
 
+    def start_point(self, task, ws):
+        """For `start_from`: the ref of the earlier task's branch, else None.
+
+        The earlier task must be in the same workspace and its branch must exist.
+        Work its agent left uncommitted in its worktree is committed first, so the
+        new branch continues from everything that task did. Records the root of
+        the chain in self.chain_base_sha (the diff base a later publish needs)."""
+        ref_id = task.get("start_from")
+        if not ref_id:
+            return None
+        prev = self.tasks.get(ref_id)
+        if prev is None:
+            raise RunnerError("start_from: no such task: %s" % ref_id)
+        if prev.get("workspace") != task["workspace"]:
+            raise RunnerError("start_from: task %s belongs to another workspace" % ref_id)
+        ref = "refs/heads/agent/" + ref_id
+        if self.git(["rev-parse", "--verify", "--quiet", ref + "^{commit}"], ws, check=False).returncode != 0:
+            raise RunnerError("start_from: branch agent/%s does not exist in %s" % (ref_id, ws))
+        wt = (prev.get("result") or {}).get("worktree")
+        if wt and os.path.isdir(wt) and self.git(["-C", wt, "symbolic-ref", "--short", "-q", "HEAD"], ws, check=False).stdout.strip() == "agent/" + ref_id:
+            safe = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"]
+            if self.git([*safe, "status", "--porcelain"], wt, check=False).stdout.strip():
+                ident = ["-c", "user.name=AgentOS", "-c", "user.email=agentos@localhost", "-c", "commit.gpgsign=false"]
+                self.git([*safe, "add", "-A"], wt)
+                self.git([*safe, *ident, "commit", "--quiet", "--no-verify", "-m", "AgentOS: changes from the agent"], wt)
+        pres = prev.get("result") or {}
+        self.chain_base_sha = pres.get("chain_base_sha") or pres.get("base_sha")
+        return ref
+
     def prepare_workspace(self, task):
         """Create the agent's branch. Returns (working dir, branch, writable paths)."""
         ws, branch = task["workspace"], "agent/" + task["id"]
@@ -140,13 +170,14 @@ class TaskRunner:
             if self.git(["rev-parse", "--verify", "--quiet", "HEAD"], ws, check=False).returncode != 0:
                 self.git(["-c", "user.name=AgentOS", "-c", "user.email=agentos@localhost",
                           "commit", "--quiet", "--allow-empty", "-m", "Initialize workspace"], ws)
-            self.base_sha = self.git(["rev-parse", "HEAD"], ws).stdout.strip()
+            start = self.start_point(task, ws)
+            self.base_sha = self.git(["rev-parse", (start or "HEAD") + "^{commit}"], ws).stdout.strip()
             wt = os.path.join(os.path.dirname(ws), "%s.%s" % (os.path.basename(ws), task["id"]))
             if int(task.get("attempt") or 1) > 1:
                 # A retry (orchestrator `max_retries`): start clean, drop the failed attempt's worktree and branch
                 self.git(["worktree", "remove", "--force", wt], ws, check=False)
                 self.git(["branch", "-D", branch], ws, check=False)
-            self.git(["worktree", "add", "--quiet", "-b", branch, wt], ws)
+            self.git(["worktree", "add", "--quiet", "-b", branch, wt, self.base_sha], ws)
             return wt, branch, [wt, os.path.join(ws, ".git")]
         exists = self.git(["rev-parse", "--verify", "--quiet", "refs/heads/" + branch], ws, check=False).returncode == 0
         args = ["checkout", "--quiet", branch] if exists else ["checkout", "--quiet", "-b", branch]
@@ -446,24 +477,48 @@ class TaskRunner:
         except Exception:  # never let a publish bug lose the agent's result
             log.exception("task %s: publish crashed", task["id"])
             return {"publish": {"status": "error", "error": "internal error"}}, "internal error"
-        return {"pr_url": info["pr_url"], "publish": dict(info, status="published")}, None
+        return {"pr_url": info["pr_url"], "pr_number": info.get("pr_number"), "publish": self.merged(popts, spec, task["id"], dict(info, status="published"))}, None
+
+    def merged(self, popts, spec, task_id, info):
+        """Add the outcome of a requested auto-merge to a published `info` dict. The
+        PR stays open when anything is off; this never fails the task."""
+        if not spec.get("merge"):
+            return info
+        try:
+            info["merge"] = self.publisher(popts).merge_pr(spec, info, task_id)
+        except Exception:
+            log.exception("task %s: merge crashed", task_id)
+            info["merge"] = {"status": "error", "reason": "internal error", "sha": None}
+        return info
+
+    def publish_source(self, task, workspace):
+        """The succeeded task whose branch a publish task publishes.
+
+        `source_task` when the record has one, else the first succeeded dependency
+        that produced a branch (workflow nodes: depends_on). It must belong to the
+        same workspace as the publish task."""
+        ids = [task["source_task"]] if task.get("source_task") else list(task.get("depends_on") or task.get("after") or [])
+        for dep_id in ids:
+            dep = self.tasks.get(dep_id) or {}
+            if dep.get("status") != T.SUCCEEDED or not (dep.get("result") or {}).get("branch"):
+                continue
+            if os.path.realpath(str(dep.get("workspace") or "")) != workspace:
+                raise P.PublishError("task %s belongs to another workspace" % dep_id)
+            return dep
+        raise P.PublishError("no successful dependency produced a branch to publish")
 
     def run_publish_task(self, task):
-        """A task of kind "publish": publish the branch a dependency produced."""
+        """A task of kind "publish": publish the branch of its source task.
+
+        The diff base for the empty-diff check is the source's `chain_base_sha`
+        (the base of the first task of a start_from chain) or its `base_sha`."""
         task_id = task["id"]
         try:
             if not configmod.valid_agent_id(task_id):
                 raise P.PublishError("malformed task record")
             workspace = T.resolve_workspace(task.get("workspace"), self.runtime["workspace_root"])
-            source = {}
-            for dep_id in task.get("depends_on") or task.get("after") or []:
-                dep = self.tasks.get(dep_id) or {}
-                if dep.get("status") == T.SUCCEEDED and (dep.get("result") or {}).get("branch"):
-                    source = dep
-                    break
-            res = source.get("result") or {}
-            if not res.get("branch"):
-                raise P.PublishError("no successful dependency produced a branch to publish")
+            source = self.publish_source(task, workspace)
+            res = source["result"]
             popts = P.settings(self.cfg)
             spec = P.resolve_spec(dict(task, kind="publish", workspace=workspace,
                                        origin=task.get("origin") or source.get("origin")),
@@ -471,13 +526,14 @@ class TaskRunner:
             attest = self.reuse_callback(((res.get("provenance") or {}).get("envelope")))
             extra = {"attest": attest} if attest else {}
             info = self.publisher(popts).publish(spec, task_id, res.get("worktree") or workspace, res["branch"],
-                                                 res.get("base_sha"), **extra)
+                                                 res.get("chain_base_sha") or res.get("base_sha"), **extra)
         except (P.PublishError, T.ValidationError) as exc:
             self.tasks.finish(task_id, T.FAILED, error="publish refused: %s" % exc)
             log.error("task %s: %s", task_id, exc)
             return 1
-        self.tasks.finish(task_id, T.SUCCEEDED, pr_url=info["pr_url"], branch=info["branch"],
-                          publish=dict(info, status="published"), exit_code=0)
+        info = self.merged(popts, spec, task_id, dict(info, status="published"))
+        self.tasks.finish(task_id, T.SUCCEEDED, pr_url=info["pr_url"], pr_number=info.get("pr_number"),
+                          branch=info["branch"], source_task=source["id"], publish=info, exit_code=0)
         return 0
 
     # ── verify contract (docs/orchestration.md) ────────────────────────
@@ -661,6 +717,9 @@ class TaskRunner:
             "worktree": workdir if workdir != task["workspace"] else None,
             "base_sha": self.base_sha,
         }
+        if task.get("start_from"):
+            result["start_from"] = task["start_from"]
+            result["chain_base_sha"] = self.chain_base_sha or self.base_sha
         if error:
             result["error"] = error
         skip = None
