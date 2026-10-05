@@ -297,7 +297,7 @@ let
         rv=$(${cli} profile export "$1" --global -o json \
           | ${pkgs.jq}/bin/jq -r 'if type == "array" then .[0] else . end | .resource_version // empty')
         [ -n "$rv" ] || { echo "openshell: cannot read resource_version of profile $1" >&2; return 1; }
-        tmp=$(mktemp)
+        tmp=$(mktemp --suffix=.yaml)   # the CLI picks the parser by extension
         { cat "$2"; printf '\nresource_version: %s\n' "$rv"; } > "$tmp"
         ${cli} profile update "$1" -f "$tmp" --global >/dev/null
         rm -f "$tmp"
