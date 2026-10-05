@@ -648,10 +648,22 @@ class TaskStore:
     def active_ids(self):
         return sorted(self.r.smembers(self._k("tasks", "active")))
 
+    def get_many(self, task_ids, chunk=500):
+        """Tasks for `task_ids` (missing ones skipped), one MGET per chunk."""
+        ids = [i for i in task_ids if configmod.valid_agent_id(i)]
+        out = []
+        for n in range(0, len(ids), chunk):
+            raws = self.r.mget([self._k("task", i) for i in ids[n:n + chunk]])
+            out.extend(json.loads(raw) for raw in raws if raw)
+        return out
+
     def active(self):
-        tasks = [self.get(i) for i in self.active_ids()]
-        tasks = [t for t in tasks if t]
+        tasks = self.get_many(self.active_ids())
         return sorted(tasks, key=lambda t: (t["created_at"], t["id"]))
+
+    def since(self, ts):
+        """Every stored task created at or after `ts` (no limit)."""
+        return self.get_many(self.r.zrangebyscore(self._k("tasks"), ts, "+inf"))
 
     def list(self, status=None, group=None, limit=100):
         if group:

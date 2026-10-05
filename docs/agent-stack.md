@@ -187,8 +187,8 @@ Unix socket and is not reachable at all.
 - Container images are untested in the VM test (no network): only the
   generated unit and options are checked. First start pulls the image, so the
   unit is slow to start and fails until the registry is reachable (it retries).
-- There is no dashboard link list in the AgentOS dashboard, so the apps are not
-  linked from it.
+- Each enabled app is linked from the AgentOS dashboard (`/api/links`) when
+  the dashboard is enabled.
 - The cap-drop default is conservative. If an image misbehaves (entrypoints
   that `chown` or `su`), add the capability for that app instead of
   `--privileged`.

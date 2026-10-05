@@ -253,7 +253,7 @@ agentos-breaker reset <id>  # close an open circuit
 
 | Feature | Description |
 |:---|:---|
-| **Health and readiness** | Every service answers `/healthz` and `/readyz`; units are `Type=notify` with a watchdog |
+| **Health and readiness** | The gateway, daemon, orchestrator and dashboard answer `/healthz` and `/readyz`; their units are `Type=notify` with a watchdog |
 | **Alerting and SLO** | Prometheus rules for service, gateway, budget, circuit, loop, queue, disk and Redis, plus a 99.5% gateway SLO with burn-rate alerts; optional Alertmanager (`agentos.observability.alertmanager`) |
 | **Backup and restore** | `agentos.backup` (restic) saves state, Redis, audit and secrets; `agentos-restore` and a tested drill |
 | **Safe upgrades** | `agentos.upgrade` wraps `system.autoUpgrade` and rolls back when the health gate fails |

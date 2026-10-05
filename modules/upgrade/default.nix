@@ -18,7 +18,13 @@ let
   gwSocket = config.agentos.services.settings.gateway.admin_socket or "/run/agentos-gateway/admin.sock";
   daemonPort = config.agentos.services.settings.daemon.metrics_port or 9950;
   orchSocket = config.agentos.services.settings.orchestrator.socket or "/run/agentos-orchestrator/orchestrator.sock";
-  dashHost = if config.agentos.dashboard.address == "0.0.0.0" then "127.0.0.1" else config.agentos.dashboard.address;
+  dashAddr = config.agentos.dashboard.address;
+  # Wildcard binds are probed on loopback; IPv6 literals need brackets in a URL
+  dashHost =
+    if dashAddr == "0.0.0.0" then "127.0.0.1"
+    else if dashAddr == "::" then "[::1]"
+    else if lib.hasInfix ":" dashAddr then "[${dashAddr}]"
+    else dashAddr;
 
   checks = lib.concatStringsSep "\n" (
     lib.optional config.agentos.networking.enable
@@ -95,11 +101,12 @@ let
       ${gate.alertmanagerUrl}/api/v2/alerts -d "[{\"labels\":{\"alertname\":\"AgentOSUpgradeRolledBack\",\"severity\":\"critical\"},\"annotations\":{\"summary\":\"An upgrade failed its health gate and was rolled back\",\"description\":\"$msg\",\"runbook_url\":\"${runbook}\"}}]" \
       || echo "could not reach Alertmanager" >&2
     ''}
-    rm -f ${marker}
     ${config.system.build.nixos-rebuild}/bin/nixos-rebuild switch --rollback
     rc=$?
     echo "rollback finished with status $rc" >&2
     ${pkgs.util-linux}/bin/logger -t agentos-upgrade -p user.crit "rollback finished with status $rc"
+    # Keep the marker when the rollback failed, so the boot-time gate retries
+    [ "$rc" -eq 0 ] && rm -f ${marker}
     exit 1
   '';
 in

@@ -327,3 +327,41 @@ def test_replay_check_compares_transcript_and_tree(tmp_path, capsys):
     (rec / "000001.json").write_text('{"seq": 1, "tampered": true}')
     assert PV.main(base) == 1
     assert "FAIL transcript" in capsys.readouterr().out
+
+
+def test_branch_and_note_are_pushed_atomically(env, tmp_path):
+    env.gh = StatusGitHub()
+    env.pub.opener = env.gh
+    signer, _ = make_signer(tmp_path)
+    seen, real = [], env.pub.git
+
+    def spy(args, cwd=None, env=None, as_agent=False):
+        seen.append(list(args))
+        return real(args, cwd=cwd, env=env, as_agent=as_agent)
+    env.pub.git = spy
+    (env.ws / "n.txt").write_text("n")
+    env.pub.publish(env.spec, "task-1", str(env.ws), "agent/task-1", env.base, attest=attest_with(signer))
+    push, = [a for a in seen if "push" in a]
+    assert "--atomic" in push and PV.NOTES_REF + ":" + PV.NOTES_REF in push
+
+
+def test_failed_run_signs_only_commits_the_agent_made(cfg, runtime, taskstore, tmp_path, env):
+    (tmp_path / "real").mkdir()
+    os.symlink(tmp_path / "real", tmp_path / "system")
+    runner, pub = prov_runner(cfg, runtime, taskstore, tmp_path)
+    runtime["agent_home"] = str(tmp_path)
+    runner.agent_exe = shutil.which("git")
+    runner.base_sha = sh("git", "rev-parse", "HEAD", cwd=env.ws)
+    sh("git", "checkout", "-q", "-b", "agent/task-9", cwd=env.ws)
+    task = {"id": "task-9", "agent": "claude", "resolved_prompt": "x", "origin": "manual",
+            "started_at": runner.clock(), "attempt": 1}
+    runner.attest_unpublished(task, {"exit_code": 1}, str(env.ws), "agent/task-9", new_only=True)
+    assert runner.envelope is None              # nothing new on the branch: nothing to sign
+    (env.ws / "w.txt").write_text("work")
+    sh("git", "add", "w.txt", cwd=env.ws)
+    sh("git", "commit", "-q", "-m", "partial", cwd=env.ws)
+    runner.attest_unpublished(task, {"exit_code": 1}, str(env.ws), "agent/task-9", new_only=True)
+    sha = sh("git", "rev-parse", "HEAD", cwd=env.ws)
+    res = PV.verify_envelope(runner.envelope, PV.parse_public_keys(pub), sha)
+    assert res["ok"], res["checks"]
+    assert runner.provenance_fields()["provenance"]["sha256"]

@@ -152,7 +152,7 @@ class Orchestrator:
         reserve = reserve if reserve is not None else {}
         spent = 0.0
         if eff.get("daily_budget_usd") is not None and not judge:
-            spent = policymod.day_spent(self.tasks.list(limit=1000), name, self.clock())
+            spent = policymod.day_spent(self.tasks.since(policymod.utc_day_start(self.clock())), name, self.clock())
         try:
             rec = policymod.enforce(eff, name, self.policy.version, fields, rt, spent_today=spent,
                                     reserved=reserve.get(name, 0.0), count=count, judge=judge)

@@ -35,4 +35,4 @@ Out of scope: vulnerabilities in third-party agents, MCP servers and packages th
 
 ## Verifying releases
 
-Release assets carry a SHA256SUMS file, GitHub build provenance, a keyless cosign signature and a CycloneDX SBOM. See [docs/operations.md](docs/operations.md#release-verification).
+Once the release workflow in `ci/proposed-workflows/release.yml` is installed in `.github/workflows`, release assets carry a SHA256SUMS file, GitHub build provenance, a keyless cosign signature and a CycloneDX SBOM; releases made before that do not. See [docs/operations.md](docs/operations.md#release-verification).

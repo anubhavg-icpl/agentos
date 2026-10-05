@@ -102,7 +102,7 @@ agentos.backup = {
 What is saved (paths that do not exist are skipped):
 
 - `/var/lib/agentos` (registry, logs, workspaces, tasks), minus `cache/` and btrbk `snapshots/`
-- the control-plane Redis data directory `/var/lib/redis-agentos`. Before each backup the unit runs `redis-cli BGSAVE` and waits until the RDB is on disk (fails after `redisSaveTimeoutSec`, default 300)
+- the control-plane Redis data directory `/var/lib/redis-agentos`. Before each backup the unit runs `redis-cli BGSAVE` and waits until the RDB is on disk (fails after `redisSaveTimeoutSec`, default 300). The AOF is not backed up, since restic could catch it mid-write; an in-place `agentos-restore` loads the restored `dump.rdb` into a temporary Redis, writes a fresh AOF from it and keeps the old AOF as `appendonlydir.pre-restore-<time>`
 - `/var/lib/agentos-stack` and `/var/lib/agentos-audit`
 - the sops secrets file (`agentos.secrets-manager.secretsFile`) and, with `includeDecryptionKeys` (default on), the keys that decrypt it (`/var/lib/sops-nix`, the SSH host key, `sops.age.keyFile`). Turn that off if you hold those keys elsewhere.
 - anything in `extraPaths`

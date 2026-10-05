@@ -13,6 +13,9 @@ let
   redisEnabled = redisCfg.enable or false;
   redisSocket = redisCfg.unixSocket or null;
   redisCli = "${pkgs.redis}/bin/redis-cli -s ${toString redisSocket}";
+  redisDir = "/var/lib/redis-agentos";
+  redisUser = redisCfg.user or "redis-agentos";
+  redisBin = "${config.services.redis.package}/bin";
 
   secretsCfg = config.agentos.secrets-manager;
 
@@ -34,7 +37,9 @@ let
   '';
 
   # BGSAVE and wait until the RDB is on disk, so the snapshot holds a
-  # consistent dump rather than whatever the last periodic save left.
+  # consistent dump rather than whatever the last periodic save left. The
+  # AOF is not backed up (restic could catch it mid-write); a restore
+  # rebuilds it from the RDB, see rebuild_redis below.
   prepare = ''
     #!${pkgs.runtimeShell}
     set -eu
@@ -103,11 +108,16 @@ let
       dry=0
       restart=1
       includes=()
+      redis_included=0
+      redis_dir=${redisDir}
       while [ $# -gt 0 ]; do
         case "$1" in
           --snapshot) snapshot="$2"; shift 2 ;;
           --target) target="$2"; shift 2 ;;
-          --include) includes+=(--include "$2"); shift 2 ;;
+          --include)
+            includes+=(--include "$2")
+            case "$redis_dir/" in "''${2%/}/"*) redis_included=1 ;; esac
+            shift 2 ;;
           --dry-run) dry=1; shift ;;
           --no-restart) restart=0; shift ;;
           -h|--help) usage; exit 0 ;;
@@ -126,6 +136,10 @@ let
       args=(restore "$snapshot" --target "$target")
       if [ "''${#includes[@]}" -gt 0 ]; then args+=("''${includes[@]}"); fi
 
+      # Without --include everything, Redis included, is restored
+      redis_restored=1
+      if [ "''${#includes[@]}" -gt 0 ]; then redis_restored=$redis_included; fi
+
       if [ "$dry" -eq 1 ]; then
         "$restic" "''${args[@]}" --dry-run --verbose
         exit 0
@@ -143,6 +157,49 @@ let
 
       "$restic" "''${args[@]}" --verbose
 
+      ${lib.optionalString redisEnabled ''
+      # Redis with appendonly=yes ignores dump.rdb when there is no AOF and
+      # would start empty, so load the restored RDB into a temporary server
+      # and let it write a fresh AOF before the unit starts.
+      rebuild_redis() {
+        dir=${redisDir}
+        if [ ! -f "$dir/dump.rdb" ]; then
+          echo "no dump.rdb restored; Redis keeps the data it has"
+          return 0
+        fi
+        if [ -e "$dir/appendonlydir" ]; then
+          mv "$dir/appendonlydir" "$dir/appendonlydir.pre-restore-$(date +%s)"
+        fi
+        sock="$dir/restore.sock"
+        ${pkgs.util-linux}/bin/runuser -u ${redisUser} -- ${redisBin}/redis-server \
+          --port 0 --unixsocket "$sock" --dir "$dir" --appendonly no --save "" --daemonize yes
+        cli() { ${redisBin}/redis-cli -s "$sock" "$@"; }
+        i=0
+        until [ "$(cli PING 2>/dev/null)" = PONG ]; do
+          i=$((i + 1))
+          if [ "$i" -gt 600 ]; then echo "temporary Redis did not start" >&2; return 1; fi
+          sleep 1
+        done
+        cli CONFIG SET appendonly yes >/dev/null
+        i=0
+        while :; do
+          info=$(cli INFO persistence)
+          case "$info" in
+            *aof_enabled:1*)
+              case "$info" in *aof_rewrite_in_progress:0*) break ;; esac ;;
+          esac
+          i=$((i + 1))
+          if [ "$i" -gt ${toString cfg.redisSaveTimeoutSec} ]; then echo "timed out rebuilding the AOF" >&2; cli SHUTDOWN NOSAVE || true; return 1; fi
+          sleep 1
+        done
+        case "$info" in *aof_last_bgrewrite_status:ok*) ;; *) echo "AOF rewrite failed" >&2; cli SHUTDOWN NOSAVE || true; return 1 ;; esac
+        echo "redis: rebuilt the AOF from the restored dump"
+        cli SHUTDOWN >/dev/null 2>&1 || true
+      }
+      if [ "$inplace" -eq 1 ] && [ "$redis_restored" -eq 1 ]; then
+        rebuild_redis
+      fi
+      ''}
       if [ "$inplace" -eq 1 ] && [ "$restart" -eq 1 ]; then
         echo "starting services"
         systemctl daemon-reload
@@ -265,7 +322,8 @@ in
 
   config = lib.mkIf cfg.enable {
     services.restic.backups.${cfg.name} = {
-      inherit (cfg) repository passwordFile exclude extraBackupArgs;
+      inherit (cfg) repository passwordFile extraBackupArgs;
+      exclude = cfg.exclude ++ lib.optionals redisEnabled [ "${redisDir}/appendonlydir" "${redisDir}/*.aof" ];
       environmentFile = cfg.environmentFile;
       initialize = true;
       dynamicFilesFrom = "${existingPaths}";

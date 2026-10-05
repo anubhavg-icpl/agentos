@@ -402,3 +402,12 @@ def test_policy_gate_plus_four_eyes(cfg, taskstore, runtime, clock, systemctl, m
     t = o.tasks.list(limit=1)[0]
     assert t["status"] == "awaiting_approval" and t["policy"]["name"] == "default"
     assert call(o, "sam", "POST", "/tasks/%s/approve" % t["id"]) == 403
+
+
+def test_daily_budget_counts_every_task_of_the_day(porch, clock):
+    submit(porch, origin="gh:acme/widgets#1", budget_usd=2)
+    submit(porch, origin="gh:acme/widgets#2", budget_usd=2)
+    now = clock()
+    for i in range(1100):  # more than any list window
+        porch.tasks.create({"id": "task-filler%04d" % i, "created_at": now + 1 + i * 1e-3, "status": "succeeded"})
+    assert "acme/widgets.daily_budget_usd" in refused(porch, origin="gh:acme/widgets#3", budget_usd=2)

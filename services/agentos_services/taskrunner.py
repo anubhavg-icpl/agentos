@@ -359,13 +359,16 @@ class TaskRunner:
             return None if problem else envelope
         return attest
 
-    def attest_unpublished(self, task, result, workdir, branch):
+    def attest_unpublished(self, task, result, workdir, branch, new_only=False):
         """Provenance for a task that was not (or could not be) published: sign the
-        branch tip and attach the note locally."""
+        branch tip and attach the note locally. With `new_only` (a failed, timed
+        out or cancelled run) only a tip the agent moved past the base is signed."""
         if not self.prov_opts["enable"] or self.envelope is not None or branch != "agent/" + task["id"]:
             return
         try:
             sha = self.git(["rev-parse", "--verify", "refs/heads/" + branch], workdir).stdout.strip()
+            if new_only and (not sha or sha == self.base_sha):
+                return
             envelope = self.build_envelope(task, result, sha, workdir)
             PV.add_note(self.git, workdir, sha, envelope)
         except (PV.ProvenanceError, RunnerError) as exc:
@@ -674,7 +677,10 @@ class TaskRunner:
             else:
                 self.attest_unpublished(task, result, workdir, branch)
             self.bind_pr(task, result, workdir)
-            result.update(self.provenance_fields())
+        else:
+            # Never published, but commits the agent made still get signed
+            self.attest_unpublished(task, result, workdir, branch, new_only=True)
+        result.update(self.provenance_fields())
         self.tasks.finish(task_id, outcome, **result)
         try:
             self.tasks.store.publish({"type": "task_finished", "task": task_id, "agent": task_id,

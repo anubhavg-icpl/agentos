@@ -1,6 +1,6 @@
 # Verifiable AI-authored code (provenance)
 
-When an orchestrator task finishes, the root task runner signs a statement about the commit the agent produced: which agent, on which system closure, with which models, at what cost, from which prompt (by hash), approved by whom, and whether the session was recorded. The signed envelope is stored as a git note on the commit, pushed with the branch, summarised in the PR body, and surfaced as a commit status you can require before merging. `agentos-provenance` verifies it.
+When an orchestrator task finishes, the root task runner signs a statement about the commit the agent produced: which agent, on which system closure, with which models, at what cost, from which prompt (by hash), approved by whom, and whether the session was recorded. A run that fails, times out or is cancelled after committing still gets its commit signed (the predicate records the exit code), but is never published. The signed envelope is stored as a git note on the commit, pushed with the branch (in one atomic push, so the branch never lands without its note), summarised in the PR body, and surfaced as a commit status you can require before merging. `agentos-provenance` verifies it.
 
 Code: `services/agentos_services/provenance.py` (statement, DSSE signing, verification, CLI), `taskrunner.py` (builds it), `publish.py` (note push, PR body, status). NixOS module: `agentos.provenance`.
 

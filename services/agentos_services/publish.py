@@ -294,7 +294,9 @@ class Publisher:
                          "GIT_COMMITTER_NAME": "AgentOS", "GIT_COMMITTER_EMAIL": "agentos@localhost"}
                 self._git([*safe, "notes", "--ref=" + prov.NOTES_REF, "merge", "-s", "union", remote],
                           cwd=bare, env=dict(env, **ident), what="git notes merge")
-        self._git([*safe, "push", "--quiet", url, *refspecs], cwd=bare, env=env, what="git push")
+        # Atomic: the branch must never land without its provenance note
+        atomic = ["--atomic"] if notes else []
+        self._git([*safe, "push", "--quiet", *atomic, url, *refspecs], cwd=bare, env=env, what="git push")
         return self._git(["rev-parse", "refs/heads/" + branch], cwd=bare, env=env).stdout.strip()
 
     # -- GitHub REST
