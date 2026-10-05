@@ -208,6 +208,10 @@
           agent-identity = import ./tests/agent-identity.nix { inherit pkgs nestloModules; };
           # OpenBao: init/unseal, KV, JWT login by SPIRE identity, /run/secrets sync
           openbao = import ./tests/openbao.nix { inherit pkgs nestloModules; };
+          # LocalAI (container/package) and vLLM backends: keys, units, gateway providers
+          local-ai-backends = import ./tests/local-ai-backends.nix { inherit pkgs nestloModules; };
+          # Tetragon policies for agents: a decoy secret read raises an alert
+          agent-runtime-security = import ./tests/agent-runtime-security.nix { inherit pkgs nestloModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs nestloModules; };
           # Local inference backend registered as a gateway provider.

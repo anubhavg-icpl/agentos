@@ -37,6 +37,9 @@
     ./llm-observability
     ./agent-identity
     ./openbao
+    ./local-ai/localai.nix
+    ./local-ai/vllm.nix
+    ./agent-runtime-security
     ./openshell
 
     # Safety & control
