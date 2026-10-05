@@ -149,7 +149,7 @@ pkgs.testers.runNixOSTest {
             assert f"{crd}.agentorca.agentorca.io" in crds, crds
 
     with subtest("agent orca is registered and the ModelProviders point at the gateway"):
-        machine.wait_for_unit("nestlo-orca-setup.service", timeout=900)
+        machine.wait_until_succeeds(KC + "get modelprovider -n default claude-sonnet", timeout=900)
         for ns in ["agent-orca-system", "default"]:
             mp = json.loads(kubectl(f"get modelprovider -n {ns} claude-sonnet -o json"))
             base = mp["spec"]["baseURL"]

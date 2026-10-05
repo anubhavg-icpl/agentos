@@ -434,8 +434,10 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "k3s.service" "nestlo-model-gateway.service" ];
         wants = [ "k3s.service" "nestlo-model-gateway.service" ];
+        # Not a oneshot: the CRDs can take minutes to appear and boot
+        # (multi-user.target) must not wait for them
         serviceConfig = {
-          Type = "oneshot";
+          Type = "simple";
           RemainAfterExit = true;
           ExecStart = lib.getExe setupScript;
           Restart = "on-failure";
