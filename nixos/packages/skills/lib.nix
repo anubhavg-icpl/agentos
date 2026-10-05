@@ -50,7 +50,8 @@ let
     inherit pack version description homepage license notes defaultEnable;
     skills = lib.attrNames skills;
     mcp = mcp;
-    tools = map (t: t.pname or t.name) tools;
+    # The command each tool provides (what agentos-skills list shows)
+    tools = map (t: t.meta.mainProgram or t.pname or t.name) tools;
   };
   copySkill = name: dir: ''
     if [ ! -f ${lib.escapeShellArg "${src}/${dir}"}/SKILL.md ]; then

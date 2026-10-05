@@ -137,6 +137,8 @@ and a `pack.json`.
 | `chisle` (opt-in) | `chisle`, `chisle-review`, `chisle-audit`, `chisle-help` | Claude Code hooks | none | MIT | none |
 | `anti-slop` | `install-anti-slop` | `anti-slop` | none | MIT | none (the upstream skill's `pnpm add` path uses npm) |
 | `reticle` | 19 skills (see below) | `reticle` | `reticle` | FSL-1.1-ALv2 (skills Apache-2.0) | none; drives the local Chromium |
+| `caliper` | `grill-skill`, `evaluate-skill` | `caliper` | none | MIT | runs agent CLIs, which call their model APIs |
+| `ouroboros` | 23 skills, `ouroboros-*` | `ooo`, `ouroboros`, `ozo` | `ouroboros` | MIT | drives the `claude` CLI; telemetry off |
 
 ### fwc-swiftui-skills
 
@@ -274,6 +276,28 @@ audit-log functionality that nothing else imports; the build deletes it, so it i
 not in the output. The pack's `license` field is `FSL-1.1-ALv2` because that is
 the most restrictive licence of what ships.
 
+### caliper
+
+Tests whether a skill actually helps. Caliper runs the agent on the same tasks with and without the skill (it also works for MCP servers and other instructions), judges the results and compares them. Source: edonadei/caliper 0.17.0 (MIT).
+
+- Skills: `grill-skill`, `evaluate-skill`.
+- Tool: `caliper` on PATH (`caliper run my-skill.eval.yaml`, `caliper report`, `caliper compare`).
+- Caliper drives agent CLIs (`claude`, `codex`, `pi`, `hermes`) that it finds on PATH; it is not wrapped and brings none of them. Enable the agent you want to evaluate.
+- Network and keys: the unit tests are offline, but every real evaluation calls the agent's model, so the agent CLI must be logged in or keyed (an Anthropic or OpenAI key, or a subscription login), and it costs tokens. Git skill sources (`git:` entries in a spec) need `git` on PATH and network access. Nothing else phones home.
+- Build: `python3Packages.buildPythonApplication` from the pinned source with nixpkgs dependencies, no patches. The full upstream test suite (1035 tests) runs during the build.
+
+### ouroboros
+
+Works through an app's details before building, asks about the decisions that change behavior, then checks the finished app against the plan and sends problems back (interview, seed, run, evaluate, evolve). Source: Q00/ouroboros 0.55.4 (MIT).
+
+- Skills: all 23 upstream skills, installed as `ouroboros-<name>` (for example `ouroboros-seed`, `ouroboros-interview`, `ouroboros-evaluate`, `ouroboros-run`, `ouroboros-unstuck`). The prefix keeps them from colliding with other packs (`evaluate`, `config`, `update`, `publish`, `cancel`, ...). Upstream skills call each other by relative path (`../setup/SKILL.md`), so the pack rewrites those paths and each skill's front matter `name` to match the new directory. Text such as `ooo seed` (the CLI command) is unchanged; `/ouroboros:seed` is the upstream plugin-namespaced spelling and becomes `/ouroboros-seed` here. The CLI keeps its own bundled copy of the skills and does not depend on directory names.
+- Tools: `ooo`, `ouroboros` and `ozo` on PATH. The optional native Rust monitor (`crates/ouroboros-tui`, started by `ouroboros tui monitor --backend slt`) is not built; the Python `ouroboros tui` is included.
+- MCP: registers `ouroboros` as `ouroboros mcp serve --runtime claude-cli --llm-backend claude_code` (36 tools). The runtime is the upstream default and drives the `claude` CLI; point it at another runtime with `ouroboros mcp serve --runtime <name>`. The server needs the MCP 2 SDK, which nixpkgs lacks, so the pack builds `mcp` 2.0.0 plus `mcp-types`, `httpcore2` and `httpx2` from the pinned PyPI wheels.
+- Telemetry: upstream sends anonymous usage events (install, daily command and workflow outcomes; no code, prompts or paths; see its TELEMETRY.md) by default. The wrapper sets `DO_NOT_TRACK=1` and `OUROBOROS_TELEMETRY=0`, so it is off. Both are defaults: export `DO_NOT_TRACK=0` together with `OUROBOROS_TELEMETRY=1` to opt in.
+- Network and keys: the interview, seed, run and evaluate steps call a model through the selected agent CLI (logged in) or, for the `litellm` backend, a provider API key. Some skills use `gh` and `git` (starring the repo, publishing); the CLI otherwise needs no network.
+- Known gap: httpx2 asks for idna 3.18 and nixpkgs has 3.15, so the dependency check for that single bound is skipped. Only internationalized host names in the HTTP MCP transport allow-list are affected (two upstream tests for that are disabled). The stdio MCP server used by agents is unaffected.
+- Build: version set with `SETUPTOOLS_SCM_PRETEND_VERSION` (CHANGELOG.md stops at 0.41.0; the plugin manifests and the pinned source say 0.55.4). `tests/unit` runs in the build (23323 pass); files that need `/bin/bash`, the codex/ourocode/dsh agent CLIs, a nested sandbox, Windows behavior or a non-UTF-8 locale are disabled in `tools/ouroboros.nix`.
+
 <!-- Entries for further packs go here, in the same form. -->
 
 ## Licenses
@@ -290,6 +314,8 @@ Each pack keeps its upstream license; `agentos-skills list` prints it.
 | `chisle` | MIT |
 | `anti-slop` | MIT |
 | `reticle` | FSL-1.1-ALv2 (CLI and MCP server); skills and SDK Apache-2.0 |
+| `caliper` | MIT |
+| `ouroboros` | MIT |
 
 Reticle's server package, which provides the `reticle` CLI and MCP server, is
 under the Functional Source License 1.1 (Apache-2.0 future): internal use,
