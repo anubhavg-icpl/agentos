@@ -355,6 +355,10 @@ pkgs.testers.runNixOSTest {
         machine.succeed("rm -f " + STATE + "/pr-agent-calls.txt")
 
     with subtest("the auto unit reviews the agent/ pull request once per head commit"):
+        # the timer (5 min after boot) may already have run on a slow VM:
+        # stop it and start from no reviewed pull requests
+        machine.succeed("systemctl stop nestlo-pr-review.timer")
+        machine.succeed(f"rm -f {STATE}/pr-review/seen.json {STATE}/pr-agent-calls.txt")
         machine.succeed("systemctl start nestlo-pr-review.service")
         calls = machine.succeed(f"cat {STATE}/pr-agent-calls.txt")
         assert calls.count("ARGS --pr_url=https://github.com/acme/w/pull/7 review") == 1, calls
