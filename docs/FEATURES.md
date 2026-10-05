@@ -319,6 +319,21 @@ See [skills.md](skills.md). Checks: `skills-eval` (no VM) and the VM test `skill
 
 ---
 
+## herdr (`modules/herdr`)
+
+`agentos.herdr` integrates [herdr](https://herdr.dev), persistent terminal workspaces in which panes are marked working, blocked or idle.
+
+- A headless herdr server for the agent user (`agentos-herdr-server-agentos-agent`, sandboxed, not restarted by rebuilds); operators attach with `agentos-herdr attach`.
+- Management bridge `agentos-herdr status|metrics|monitor`: panes and agents per user and state, loopback Prometheus metrics (`agentos_herdr_panes{user,state}`, scraped by `agentos.observability`), and a notification through `agentos.notifications` when an agent stays blocked.
+- The AgentOS herdr plugin (`integrations/herdr-plugin`): orchestrator tasks, factory items, budgets, approve and cancel for gated tasks.
+- Declarative plugins (`agentos.herdr.plugins`, pinned to a commit, idempotent, uninstalls only what it installed) and `agentos-herdr-plugins` (marketplace catalog, review, pinned install, `install-all`, update with manifest diff).
+- Opt-in daily marketplace sweep (`marketplace.installAll`): unreviewed third-party code, off by default, warned about for the agent user.
+- Skill pack `herdr`, `packages.<system>.herdr`, desktop launcher entry.
+
+See [herdr.md](herdr.md). VM test `herdr`; unit tests `services/tests/test_herdr_*.py`.
+
+---
+
 ## MCP Server Registry (36 servers)
 
 Preconfigured Model Context Protocol servers, written to `/etc/agentos/mcp-servers.json`. Each entry runs a published npm package (`npx -y`) or PyPI package (`uvx`), fetched on first start. Runtime enable/disable changes are stored in `/var/lib/agentos/mcp-servers.json`.

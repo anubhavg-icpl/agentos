@@ -144,6 +144,7 @@ and a `pack.json`.
 | `reticle` | 19 skills (see below) | `reticle` | `reticle` | FSL-1.1-ALv2 (skills Apache-2.0) | none; drives the local Chromium |
 | `caliper` | `grill-skill`, `evaluate-skill` | `caliper` | none | MIT | runs agent CLIs, which call their model APIs |
 | `ouroboros` | 23 skills, `ouroboros-*` | `ooo`, `ouroboros`, `ozo` | `ouroboros` | MIT | drives the `claude` CLI; telemetry off |
+| `herdr` | `herdr` | none (`agentos.herdr` installs the CLI) | none | Apache-2.0 | none |
 
 ### fwc-swiftui-skills
 
@@ -302,6 +303,14 @@ Works through an app's details before building, asks about the decisions that ch
 - Network and keys: the interview, seed, run and evaluate steps call a model through the selected agent CLI (logged in) or, for the `litellm` backend, a provider API key. Some skills use `gh` and `git` (starring the repo, publishing); the CLI otherwise needs no network.
 - Known gap: httpx2 asks for idna 3.18 and nixpkgs has 3.15, so the dependency check for that single bound is skipped. Only internationalized host names in the HTTP MCP transport allow-list are affected (two upstream tests for that are disabled). The stdio MCP server used by agents is unaffected.
 - Build: version set with `SETUPTOOLS_SCM_PRETEND_VERSION` (CHANGELOG.md stops at 0.41.0; the plugin manifests and the pinned source say 0.55.4). `tests/unit` runs in the build (23323 pass); files that need `/bin/bash`, the codex/ourocode/dsh agent CLIs, a nested sandbox, Windows behavior or a non-UTF-8 locale are disabled in `tools/ouroboros.nix`.
+
+### herdr
+
+The skill from [herdrdev/herdr](https://github.com/herdrdev/herdr) (0.9.3, Apache-2.0) that teaches an agent running inside herdr to inspect and drive panes, tabs, workspaces and other agents through the `herdr` CLI (`herdr pane list`, `herdr agent prompt`, `herdr agent wait`, ...).
+
+- The skill describes itself as active only when the user mentions herdr, and requires `HERDR_ENV=1`, which herdr sets in every pane, so it costs a short description in the context elsewhere and nothing else.
+- The pack ships no tools: the `herdr` binary, the agent-user server, the status bridge and the plugin management come from `agentos.herdr` ([herdr.md](herdr.md)). Enabling the pack without the module leaves the skill with no CLI to call.
+- No network use.
 
 <!-- Entries for further packs go here, in the same form. -->
 
@@ -479,6 +488,7 @@ Each pack keeps its upstream license; `agentos-skills list` prints it.
 | `superpowers`, `gstack`, `mattpocock-skills`, `ponytail`, `pstack`, `cursor-plugins`, `no-ai-slop`, `vibe-security`, `unlazy`, `agent-reach`, `ai-job-search`, `everything-claude-code`, `scientific-skills`, `taste-skill`, `ui-ux-pro-max` | MIT (`ui-ux-pro-max`'s `ui-styling` Apache-2.0; `cursor-plugins` MIT per plugin directory) |
 | `anthropic-skills`, `hyperframes`, `impeccable`, `caveman`, `open-design` | Apache-2.0 (`open-design`'s `web-clone` MIT; `anthropic-skills` per skill) |
 | `composio-awesome-claude-skills`, `composio-automation` | Apache-2.0 as stated in the repository README (no LICENSE file) |
+| `herdr` | Apache-2.0 |
 
 Reticle's server package, which provides the `reticle` CLI and MCP server, is
 under the Functional Source License 1.1 (Apache-2.0 future): internal use,
@@ -518,7 +528,11 @@ affected pack's tools unused.
    `discover.renameSkills` to install a clashing skill under a prefixed name.
    Set `collections = [ ... ]` and, for anything that should not be on by
    default, `defaultEnable = false;`.
-3. `nix build .#checks.x86_64-linux.skills-eval` builds every pack and the
+3. If the pack discovers its skills (`discover.findSkills`), run
+   `nixos/packages/skills/update-locks.sh <pack>` and commit
+   `nixos/packages/skills/locks/<pack>.json`: evaluation reads the lock, never
+   the source (no import from derivation), and fails if the lock is missing.
+4. `nix build .#checks.x86_64-linux.skills-eval` builds every pack and the
    bundle and checks front matter, name collisions and `pack.json`. Every
    skill is also checked against the Agent Skills spec while its pack builds
    (`validate.py`): the name is 1-64 characters of a-z, 0-9 and single

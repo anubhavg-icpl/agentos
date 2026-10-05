@@ -217,4 +217,14 @@
     rev = "53231d40b778d88eba23f35547bf99485d3ae9fc";
     hash = "sha256-FFgtdh/EcFvQWD7F7tv5jz0U1o4IjXBjw6ED/aHRIu0=";
   };
+
+  # herdr: persistent terminal workspaces for coding agents. Its skills/herdr
+  # skill teaches an agent to drive panes and other agents through the herdr
+  # CLI (agentos.herdr, docs/herdr.md).
+  herdr = fetchFromGitHub {
+    owner = "herdrdev";
+    repo = "herdr";
+    rev = "e35f3937b0efe40ec0dab675709c68e1d8e8c9e6";
+    hash = "sha256-3X3G75QuJcSTc3x2iblKZJgXUSrSWa9BlkybqlGm5Bw=";
+  };
 }

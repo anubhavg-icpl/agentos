@@ -187,6 +187,9 @@
           agent-fleet-web = import ./tests/agent-fleet-web.nix { inherit pkgs agentosModules; };
           # OpenClaw chat gateway wired to the model gateway and orchestrator.
           openclaw = import ./tests/openclaw.nix { inherit pkgs agentosModules; };
+          # herdr: agent-user server, status bridge and metrics, AgentOS and
+          # declared plugins linked.
+          herdr = import ./tests/herdr.nix { inherit pkgs agentosModules; };
           # Boots the i3 desktop, opens a terminal, screenshots it.
           desktop = import ./tests/desktop.nix { inherit pkgs agentosModules; };
           # Local inference backend registered as a gateway provider.

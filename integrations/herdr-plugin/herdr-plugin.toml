@@ -1,0 +1,66 @@
+id = "agentos.dashboard"
+name = "AgentOS"
+version = "0.1.0"
+min_herdr_version = "0.8.2"
+description = "AgentOS orchestrator tasks, factory items and budgets inside herdr, with approve and cancel for gated tasks"
+platforms = ["linux"]
+
+# Everything here runs panel.sh (shipped in this plugin, no network). It calls
+# the AgentOS CLIs (agentos-task, agentos-factory, agentos-budget) as the
+# user running herdr and shows what those CLIs print; a CLI that is missing or
+# not permitted for that user is reported in the pane instead of failing.
+
+[[panes]]
+id = "tasks"
+title = "AgentOS tasks"
+command = ["sh", "panel.sh", "tasks"]
+
+[[panes]]
+id = "factory"
+title = "AgentOS factory"
+command = ["sh", "panel.sh", "factory"]
+
+[[panes]]
+id = "budget"
+title = "AgentOS budgets"
+command = ["sh", "panel.sh", "budget"]
+
+[[panes]]
+id = "approve"
+title = "Approve a gated task"
+command = ["sh", "panel.sh", "approve"]
+
+[[panes]]
+id = "cancel"
+title = "Cancel a task"
+command = ["sh", "panel.sh", "cancel"]
+
+[[actions]]
+id = "tasks"
+title = "AgentOS: orchestrator tasks"
+contexts = ["workspace"]
+command = ["sh", "panel.sh", "open", "tasks"]
+
+[[actions]]
+id = "factory"
+title = "AgentOS: factory items"
+contexts = ["workspace"]
+command = ["sh", "panel.sh", "open", "factory"]
+
+[[actions]]
+id = "budget"
+title = "AgentOS: budgets"
+contexts = ["workspace"]
+command = ["sh", "panel.sh", "open", "budget"]
+
+[[actions]]
+id = "approve"
+title = "AgentOS: approve a gated task"
+contexts = ["workspace"]
+command = ["sh", "panel.sh", "open", "approve"]
+
+[[actions]]
+id = "cancel"
+title = "AgentOS: cancel a task"
+contexts = ["workspace"]
+command = ["sh", "panel.sh", "open", "cancel"]

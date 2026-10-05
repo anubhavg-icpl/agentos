@@ -303,6 +303,21 @@ Full reference: [docs/skills.md](docs/skills.md)
 
 ---
 
+## herdr
+
+`agentos.herdr` adds [herdr](https://herdr.dev), persistent terminal workspaces whose panes show whether an agent is working, blocked or idle. The agent user gets a sandboxed headless herdr server that operators attach to; `agentos-herdr status` and loopback Prometheus metrics report panes per state, and a blocked agent can raise an `agentos.notifications` message. An AgentOS plugin shows orchestrator tasks, factory items and budgets inside herdr and approves or cancels gated tasks. Plugins are declared with pinned commits (`agentos.herdr.plugins`) or managed with `agentos-herdr-plugins`: browse the marketplace, review exactly which commands a plugin runs, install pinned, update with a manifest diff. herdr does not sandbox plugins; installing the whole marketplace (`marketplace.installAll`) is off by default.
+
+```bash
+agentos-herdr status                       # panes and agents per user
+sudo agentos-herdr attach                  # the agent user's herdr
+agentos-herdr-plugins catalog              # marketplace: stars, licence, head commit
+agentos-herdr-plugins show owner/repo      # every command the plugin will run
+```
+
+Full reference: [docs/herdr.md](docs/herdr.md)
+
+---
+
 ## MCP Server Registry
 
 <div align="center">
@@ -407,6 +422,7 @@ The daemon, model gateway, budget and circuit-breaker boxes are implemented (`se
 | ai-ml | Ollama, llama.cpp, PyTorch, Jupyter | automatic |
 | vibe-integration | 853 modes, 5340 skills from VIBE | `agentos-vibe` |
 | skills | Skill packs linked into every agent CLI | `agentos-skills` |
+| herdr | Persistent agent workspaces, status bridge, plugin marketplace | `agentos-herdr`, `agentos-herdr-plugins` |
 
 † Planned service, not implemented yet ([status](docs/STATUS.md)).
 
@@ -483,6 +499,7 @@ agentos/
 │   ├── mcp-servers/                #   36 preconfigured MCP servers
 │   ├── vibe-integration/           #   5340 skills auto-installer
 │   ├── skills/                     #   Skill packs linked into every agent CLI
+│   ├── herdr/                      #   herdr workspaces, status bridge, plugins
 │   ├── context/                    #   Qdrant vector memory
 │   ├── orchestration/              #   Multi-agent coordination
 │   ├── policy/                     #   Policy-as-code and RBAC
