@@ -1897,7 +1897,8 @@ def cli_main(argv=None, stdin_isatty=None):
     def show_endpoint(ep):
         return ep.get("url") or fmt_host(ep["host"], ep["port"])
 
-    interactive = sys.stdin.isatty() if stdin_isatty is None else stdin_isatty
+    # ask only at a terminal: not when stdout goes to a file or a pipe
+    interactive = (sys.stdin.isatty() and sys.stdout.isatty()) if stdin_isatty is None else stdin_isatty
 
     if args.cmd == "pair":
         info = call("GET", "/url")

@@ -213,7 +213,7 @@ pkgs.testers.runNixOSTest {
         machine.fail("curl -sf http://127.0.0.1:7080/v1/info")
 
     with subtest("nestlo-mobile pair prints a QR code, the landing URL and the URI"):
-        machine.succeed("nestlo-mobile pair --ttl 600 > /tmp/pair.txt 2>&1")
+        machine.succeed("nestlo-mobile pair --via lan --ttl 600 < /dev/null > /tmp/pair.txt 2>&1", timeout=120)
         out = machine.succeed("cat /tmp/pair.txt")
         assert "http://" in out and ":7080/pair#v=1&name=" in out, out
         assert "nestlo://pair?v=1&" in out and "&host=nestlo.test" in out, out
@@ -229,7 +229,7 @@ pkgs.testers.runNixOSTest {
 
     with subtest("quick tunnel through the stub: pair --via tunnel prints its URL in the QR text"):
         machine.fail("systemctl is-active nestlo-mobile-tunnel.service")
-        out = machine.succeed("nestlo-mobile pair --via tunnel 2>&1")
+        out = machine.succeed("nestlo-mobile pair --via tunnel < /dev/null 2>&1", timeout=180)
         assert "https://fake-words-here.trycloudflare.com/pair#v=1&" in out, out
         assert "&url=https%3A%2F%2Ffake-words-here.trycloudflare.com&" in out, out
         assert "nestlo-mobile tunnel stop" in out, out
@@ -241,12 +241,12 @@ pkgs.testers.runNixOSTest {
         assert "ProtectSystem=strict" in props and "NoNewPrivileges=yes" in props, props
 
     with subtest("a raw TCP provider is listed as host:port; the tunnel can be switched and stopped"):
-        out = machine.succeed("nestlo-mobile pair --provider bore 2>&1")
+        out = machine.succeed("nestlo-mobile pair --provider bore < /dev/null 2>&1", timeout=180)
         assert "https://bore.pub:40123/pair#v=1&" in out and "&host=bore.pub%3A40123&" in out, out
         ep = json.loads(machine.succeed("cat /run/nestlo-mobile/tunnel.json"))
         assert ep == {"provider": "bore", "host": "bore.pub", "port": 40123, "trust": "pin"}, ep
         # a provider that is not enabled is refused before anything starts
-        rc, out = machine.execute("nestlo-mobile pair --provider ngrok 2>&1")
+        rc, out = machine.execute("nestlo-mobile pair --provider ngrok < /dev/null 2>&1", timeout=120)
         assert rc != 0 and "not configured" in out, (rc, out)
         machine.succeed("nestlo-mobile tunnel stop")
         machine.fail("systemctl is-active nestlo-mobile-tunnel.service")
