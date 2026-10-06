@@ -37,17 +37,6 @@
       "maintainers": ["just-every"]
     },
     {
-      "name": "grok",
-      "description": "Grok CLI - open-source terminal agent for xAI's Grok models",
-      "homepage": "https://www.npmjs.com/package/@vibe-kit/grok-cli",
-      "license": "MIT",
-      "kind": "npm",
-      "package": "@vibe-kit/grok-cli",
-      "version": "0.0.34",
-      "bin": "grok",
-      "maintainers": ["vibe-kit"]
-    },
-    {
       "name": "mini-swe-agent",
       "description": "mini-SWE-agent - minimal software engineering agent from the SWE-bench team",
       "homepage": "https://pypi.org/project/mini-swe-agent/",

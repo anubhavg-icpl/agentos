@@ -14,6 +14,7 @@
     ./audit
     ./observability
     ./dashboard
+    ./mobile
     ./agent-fleet-web
     ./fleet
     ./marketplace

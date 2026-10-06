@@ -91,6 +91,7 @@ EVENT_TYPES = frozenset({
     "security.redteam", "security.agent_scan", "security.pr_review",   # nestlo.agentSecurity runs
     "runtime.security",     # agent runtime security alert (nestlo.agentRuntimeSecurity)
     "terminal.tuios",       # TUIOS window, command, session and agent-state events (nestlo.tuios bridge)
+    "mobile.pair", "mobile.revoke", "mobile.terminal",   # phone pairing, revocation, terminal open/close (nestlo.mobile)
     "audit.dropped",        # client-side loss counter
 })
 WRITER_TYPES = frozenset({CHECKPOINT, "audit.retention", "audit.start"})

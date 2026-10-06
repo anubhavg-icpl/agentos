@@ -224,8 +224,8 @@ Each provider is a small adapter:
 | `tailscale` | tailnet | none (address only) | MagicDNS name or `100.x`, port 7443 | pin |
 | `ngrok` | ngrok authtoken (`authtokenFile`) | `ngrok http https://127.0.0.1:7443 --log stdout --log-format json [--url <domain>]` | `https://*.ngrok-free.app` or the reserved domain | webpki |
 | `zrok` | zrok enable token (`tokenFile`, run `zrok enable` once) | `zrok share public https://127.0.0.1:7443 --insecure --headless` | `https://*.share.zrok.io` (or self-hosted) | webpki |
-| `pinggy` | none (free sessions are time-limited) | `ssh -p 443 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -R0:127.0.0.1:7443 tls@a.pinggy.io` (TLS passthrough) | `<random>.a.pinggy.link:443` | pin (end to end) |
-| `localhost-run` | none | `ssh -o StrictHostKeyChecking=accept-new -R 80:127.0.0.1:7080 nokey@localhost.run` | `https://*.lhr.life`: the onboarding page only, plus LAN hosts for the API | webpki |
+| `pinggy` | none (free sessions are time-limited) | `ssh -p 443 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -R0:127.0.0.1:7443 -l tls a.pinggy.io` (TLS passthrough) | `<random>.a.pinggy.link:443` | pin (end to end) |
+| `localhost-run` | none | `ssh -o StrictHostKeyChecking=accept-new -R 80:127.0.0.1:7080 -l nokey localhost.run` | `https://*.lhr.life`: the onboarding page only, plus LAN hosts for the API | webpki |
 | `bore` | none (or own server, `server`/`secretFile`) | `bore local 7443 --to bore.pub` | `bore.pub:<port>`: raw TCP, so TLS stays end to end | pin |
 | `frp` | own frps server (`server`, `tokenFile`) | `frpc` with a generated TCP proxy for 7443 | `<server>:<remotePort>` | pin |
 

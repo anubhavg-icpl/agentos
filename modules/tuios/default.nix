@@ -345,7 +345,7 @@ let
   # ── ssh and web ────────────────────────────────────────────────────────
   authorizedKeysFile = pkgs.writeText "nestlo-tuios-authorized_keys"
     (lib.concatStringsSep "\n" cfg.ssh.authorizedKeys + "\n");
-  keyRe = "(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) [A-Za-z0-9+/=]+( .*)?";
+  keyRe = "(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\\.com|sk-ecdsa-sha2-nistp256@openssh\\.com) [A-Za-z0-9+/=]+( .*)?";
 
   sshUnit = {
     description = "TUIOS SSH server (a full shell as ${cfg.ssh.user}, public keys only)";

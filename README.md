@@ -117,6 +117,7 @@ open https://web.cloud.example.com/           # its private HTTPS URL
 
 **Run it like production**
 - [Nestlo Cloud](docs/cloud.md): VMs, HTTPS, sharing, teams
+- [Mobile](docs/mobile.md): pair an Android phone with one QR; agents, approvals, terminals and the desktop, over LAN, Tailscale or a tunnel
 - [Audit log](docs/audit.md) and [DLP](docs/dlp.md)
 - [Provenance](docs/provenance.md), [policy and RBAC](docs/policy.md)
 - [Identity and secrets](docs/agent-identity.md): SPIRE, Cedar, [OpenBao](docs/openbao.md)

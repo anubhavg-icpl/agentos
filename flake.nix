@@ -201,6 +201,8 @@
           herdr = import ./tests/herdr.nix { inherit pkgs nestloModules; };
           # TUIOS: per-user daemons, layouts, bridge (audit, metrics, notifications), SSH and web access.
           tuios = import ./tests/tuios.nix { inherit pkgs nestloModules; };
+          # Phone server: pairing, onboarding pages, REST, terminal over a PTY, events, revoke.
+          mobile = import ./tests/mobile.nix { inherit pkgs nestloModules; };
           # OpenShell gateway (mTLS, podman driver), CLI, declared policies, Nestlo
           # model gateway agent for sandbox inference.
           openshell = import ./tests/openshell.nix { inherit pkgs nestloModules; };
