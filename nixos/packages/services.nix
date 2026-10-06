@@ -6,7 +6,7 @@
 
 python3Packages.buildPythonApplication {
   pname = "nestlo-services";
-  version = "0.5.0";
+  version = "0.6.0";
   pyproject = true;
 
   src = lib.cleanSource ../../services;

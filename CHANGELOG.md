@@ -5,9 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-06
+
 ### Added
-- **Nestlo mobile** (`nestlo.mobile`, docs/mobile.md, docs/mobile-protocol.md) and the **Android app** (`apps/android`): one QR code from `nestlo-mobile pair` installs the app (landing page with an Android intent and an APK fallback) and pairs it with a certificate pinned from the QR. The phone gets agents, spend, kill, approvals, live events, terminals (the whole TUIOS screen or a login shell over a PTY) and the desktop (wayvnc and noVNC). It connects over the LAN, Tailscale, your own URL or a tunnel: Cloudflare quick or named, Tailscale Funnel, ngrok, zrok, Pinggy, localhost.run, bore or frp. Device tokens can be revoked, and pairing and terminals are audited. The app is Kotlin and Compose in a black-and-white dot-matrix style; its APK is built by `ci/proposed-workflows/android.yml`. VM test `mobile`.
+- **Nestlo mobile** (`nestlo.mobile`, docs/mobile.md, docs/mobile-protocol.md) and the **Android app** (`apps/android`): one QR code from `nestlo-mobile pair` installs the app (landing page with an Android intent and an APK fallback) and pairs it with a certificate pinned from the QR. The phone gets agents, spend, kill, approvals, live events, terminals (the whole TUIOS screen or a login shell over a PTY) and the desktop (wayvnc and noVNC). It connects over the LAN, Tailscale, your own URL or a tunnel: Cloudflare quick or named, Tailscale Funnel, ngrok, zrok, Pinggy, localhost.run, bore or frp. Device tokens can be revoked, and pairing and terminals are audited. The app is Kotlin and Compose in a black-and-white dot-matrix style; its APK is built by `.github/workflows/android.yml` and attached to each release as `nestlo-android.apk`. VM test `mobile`.
 - **Antigravity CLI** (`agy`, `packages.<system>.antigravity-cli`), Google's successor to Gemini CLI (retired 2026-06-18), as a first-class agent: `nestlo spawn agy`, orchestrator command, runtime map, secrets example, docs/AGENTS.md. With a `gemini` provider on the gateway, `nestlo spawn` now routes Gemini CLI and Antigravity CLI through it (`GOOGLE_GEMINI_BASE_URL`, managed key). **Grok CLI** (`grok`) added too. Gemini CLI stays installable and is marked deprecated.
+- **Website** (`site/`) published to GitHub Pages at https://anubhavg-icpl.github.io/nestlo/ by `.github/workflows/pages.yml`.
+
+### Changed
+- CI, release and vulnerability-scan workflows use a read-only token by default and pin every action to a commit SHA.
+
+### Removed
+- The `agentos` and `agentos-iso` flake aliases; use `nestlo` and `nestlo-iso`.
 
 ## [0.5.0] - 2026-10-05
 

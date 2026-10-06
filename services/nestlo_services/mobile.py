@@ -115,7 +115,7 @@ def version():
         from importlib import metadata
         return metadata.version("nestlo-services")
     except Exception:
-        return "0.5.0"
+        return "0.6.0"
 
 
 def write_json_atomic(path, obj, mode=0o600):
