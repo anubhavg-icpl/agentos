@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nestlo</string>
+    <string name="channel_attention">Needs attention</string>
+    <string name="channel_status">Background connection</string>
+</resources>
